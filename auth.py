@@ -232,8 +232,17 @@ def register_user(email: str, username: str, password: str) -> Optional[UserResp
             "INSERT INTO users (email, username, password_hash) VALUES (?, ?, ?)",
             (email.lower(), username, hash_password(password)),
         )
-        conn.commit()
         user_id = cursor.lastrowid
+        # Give new users a starting wallet balance of $10,000
+        conn.execute(
+            "INSERT INTO wallet_balance (user_id, balance, updated_at) VALUES (?, 10000.0, datetime('now'))",
+            (user_id,),
+        )
+        conn.execute(
+            "INSERT INTO wallet_transactions (user_id, type, amount, description, status) VALUES (?, 'signup_bonus', 10000.0, 'Welcome bonus - $10,000 starting balance', 'completed')",
+            (user_id,),
+        )
+        conn.commit()
         return _get_user_response(conn, user_id)
     except sqlite3.IntegrityError:
         return None
