@@ -1023,6 +1023,91 @@ async def health():
 
 
 # ══════════════════════════════════════════════════════════════════
+# AUTO-TRADER TRADE EMAIL NOTIFICATIONS
+# ══════════════════════════════════════════════════════════════════
+
+def _send_trade_cycle_emails(user_id: int, cycle_result: dict):
+    """Send email for every BUY/SELL action in an auto-trade cycle (background thread)."""
+    if not smtp_service.is_configured():
+        return
+    actions = cycle_result.get("actions", [])
+    if not actions:
+        return
+
+    user = auth.get_user_by_id(user_id)
+    if not user:
+        return
+
+    balance = trading_engine._get_wallet_balance(user_id)
+
+    # Parse each action string and look up full position/order details
+    conn = trading_engine._get_db()
+    try:
+        # Get recent orders for this cycle (last N orders matching action count)
+        recent_orders = conn.execute(
+            "SELECT * FROM trade_orders WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+            (user_id, len(actions) + 2)
+        ).fetchall()
+    finally:
+        conn.close()
+
+    for order in recent_orders[:len(actions)]:
+        order = dict(order)
+        action = order.get("action", "BUY")
+        symbol = order.get("symbol", "???")
+        coin_id = order.get("coin_id", "")
+        price = order.get("price", 0)
+        quantity = order.get("quantity", 0)
+        amount = order.get("amount", 0)
+        ai_reasoning = order.get("ai_reasoning", "")
+
+        # For sells, get P&L from the closed position
+        pnl = 0.0
+        pnl_pct = 0.0
+        stop_loss = 0.0
+        take_profit = 0.0
+        coin_name = symbol
+
+        if order.get("position_id"):
+            conn2 = trading_engine._get_db()
+            try:
+                pos = conn2.execute(
+                    "SELECT * FROM trade_positions WHERE id = ?",
+                    (order["position_id"],)
+                ).fetchone()
+                if pos:
+                    pos = dict(pos)
+                    coin_name = pos.get("coin_name", symbol)
+                    stop_loss = pos.get("stop_loss", 0)
+                    take_profit = pos.get("take_profit", 0)
+                    if action == "SELL":
+                        pnl = pos.get("pnl", 0)
+                        pnl_pct = pos.get("pnl_pct", 0)
+            finally:
+                conn2.close()
+
+        try:
+            smtp_service.send_trade_email(
+                to_email=user.email,
+                username=user.username,
+                action=action,
+                symbol=symbol,
+                coin_name=coin_name,
+                price=price,
+                quantity=quantity,
+                amount=amount,
+                ai_reasoning=ai_reasoning,
+                pnl=pnl,
+                pnl_pct=pnl_pct,
+                stop_loss=stop_loss,
+                take_profit=take_profit,
+                wallet_balance=balance,
+            )
+        except Exception as e:
+            logger.warning("Trade email failed for user %d (%s %s): %s", user_id, action, symbol, e)
+
+
+# ══════════════════════════════════════════════════════════════════
 # AUTO-TRADER BACKGROUND LOOP
 # ══════════════════════════════════════════════════════════════════
 
@@ -1046,6 +1131,13 @@ async def _auto_trade_loop():
                     )
                     if result.get("actions"):
                         logger.info("Auto-trade user %d: %s", row["user_id"], result["actions"])
+                        # Send email notifications for each trade in background
+                        import threading
+                        threading.Thread(
+                            target=_send_trade_cycle_emails,
+                            args=(row["user_id"], result),
+                            daemon=True,
+                        ).start()
                 except Exception as e:
                     logger.warning("Auto-trade failed for user %d: %s", row["user_id"], e)
 
@@ -1090,13 +1182,54 @@ async def update_trader_settings(body: TradeSettingsUpdate, user=Depends(require
 
 @app.post("/api/trader/toggle")
 async def toggle_auto_trade(user=Depends(require_user)):
-    """Toggle auto-trading on/off."""
+    """Toggle auto-trading on/off. When turning ON, immediately checks wallet and runs first cycle."""
     settings = trading_engine.get_trade_settings(user.id)
     new_state = 0 if settings["auto_trade_enabled"] else 1
     settings["auto_trade_enabled"] = new_state
     updated = trading_engine.update_trade_settings(user.id, settings)
     status = "enabled" if new_state else "disabled"
-    return {"success": True, "auto_trade_enabled": bool(new_state), "message": f"Auto-trading {status}"}
+
+    result = {
+        "success": True,
+        "auto_trade_enabled": bool(new_state),
+        "message": f"Auto-trading {status}",
+    }
+
+    # When turning ON: check wallet balance and run first trade cycle immediately
+    if new_state:
+        perf = trading_engine.get_performance_stats(user.id)
+        result["wallet_balance"] = perf["wallet_balance"]
+        result["total_value"] = perf["total_value"]
+        result["open_positions"] = perf["open_positions"]
+
+        if perf["wallet_balance"] <= 0:
+            result["message"] = "Auto-trading enabled but wallet is empty. Deposit funds to start trading."
+            result["cycle"] = {"status": "no_funds", "message": "No funds in wallet"}
+        else:
+            try:
+                cycle_result = await trading_engine.auto_trade_cycle(
+                    user.id, cg, dex, gemini_client
+                )
+                result["cycle"] = cycle_result
+                actions_count = len(cycle_result.get("actions", []))
+                result["message"] = (
+                    f"Auto-trading enabled — Balance: ${perf['wallet_balance']:,.2f} — "
+                    f"First cycle complete: {actions_count} action(s)"
+                )
+                # Send trade emails in background
+                if cycle_result.get("actions"):
+                    import threading
+                    threading.Thread(
+                        target=_send_trade_cycle_emails,
+                        args=(user.id, cycle_result),
+                        daemon=True,
+                    ).start()
+            except Exception as e:
+                logger.warning("First auto-trade cycle failed for user %d: %s", user.id, e)
+                result["cycle"] = {"status": "error", "message": str(e)}
+                result["message"] = f"Auto-trading enabled — Balance: ${perf['wallet_balance']:,.2f} — First cycle will retry shortly"
+
+    return result
 
 
 # ── Wallet Balance & Reset ──
@@ -1146,6 +1279,24 @@ async def sell_position(position_id: int, user=Depends(require_user)):
     result = trading_engine.execute_sell(user.id, position_id, current_price, "Manual sell")
     if not result["success"]:
         raise HTTPException(400, result["error"])
+
+    # Send sell email notification in background
+    if smtp_service.is_configured():
+        import threading
+        balance = trading_engine._get_wallet_balance(user.id)
+        threading.Thread(
+            target=smtp_service.send_trade_email,
+            kwargs=dict(
+                to_email=user.email, username=user.username,
+                action="SELL", symbol=pos["symbol"], coin_name=pos.get("coin_name", pos["symbol"]),
+                price=current_price, quantity=pos["quantity"], amount=result["amount"],
+                ai_reasoning="Manual sell order",
+                pnl=result["pnl"], pnl_pct=result["pnl_pct"],
+                wallet_balance=balance,
+            ),
+            daemon=True,
+        ).start()
+
     return result
 
 
@@ -1182,6 +1333,26 @@ async def manual_buy(body: ManualBuyRequest, user=Depends(require_user)):
     )
     if not result["success"]:
         raise HTTPException(400, result["error"])
+
+    # Send buy email notification in background
+    if smtp_service.is_configured():
+        import threading
+        balance = trading_engine._get_wallet_balance(user.id)
+        stop_loss = coin.current_price * (1 - settings["stop_loss_pct"] / 100)
+        take_profit = coin.current_price * (1 + settings["take_profit_pct"] / 100)
+        threading.Thread(
+            target=smtp_service.send_trade_email,
+            kwargs=dict(
+                to_email=user.email, username=user.username,
+                action="BUY", symbol=coin.symbol, coin_name=coin.name,
+                price=coin.current_price, quantity=result["quantity"], amount=result["amount"],
+                ai_reasoning="Manual buy order",
+                stop_loss=stop_loss, take_profit=take_profit,
+                wallet_balance=balance,
+            ),
+            daemon=True,
+        ).start()
+
     return result
 
 
@@ -1200,6 +1371,14 @@ async def run_research(user=Depends(require_user)):
 async def run_trade_cycle(user=Depends(require_user)):
     """Manually trigger one auto-trade cycle."""
     result = await trading_engine.auto_trade_cycle(user.id, cg, dex, gemini_client)
+    # Send trade emails in background
+    if result.get("actions"):
+        import threading
+        threading.Thread(
+            target=_send_trade_cycle_emails,
+            args=(user.id, result),
+            daemon=True,
+        ).start()
     return result
 
 
@@ -1218,3 +1397,459 @@ async def get_trader_history(limit: int = Query(50), user=Depends(require_user))
 @app.get("/api/trader/log")
 async def get_trader_log(limit: int = Query(50), user=Depends(require_user)):
     return trading_engine.get_trade_log_entries(user.id, limit)
+
+
+# ══════════════════════════════════════════════════════════════════
+# PUMPIQ WEB INSIGHT BOT
+# ══════════════════════════════════════════════════════════════════
+
+class BotAskRequest(BaseModel):
+    question: str
+    context: Optional[str] = None   # optional: "bitcoin", "solana", etc.
+
+
+@app.post("/api/bot/ask")
+async def bot_ask(body: BotAskRequest, user=Depends(require_user)):
+    """
+    AI chatbot that answers crypto questions using LIVE web data.
+    1. Parses question to detect coins/topics
+    2. Fetches real-time data from CoinGecko, DexScreener, news
+    3. Feeds everything to Gemini for a grounded, domain-specific answer
+    4. Falls back to data-driven answers when AI quota is exhausted
+    """
+    question = body.question.strip()
+    if not question:
+        raise HTTPException(400, "Question cannot be empty")
+
+    # ── 1. Detect coins / topics mentioned ──
+    q_lower = question.lower()
+    detected_coins: list[str] = []
+
+    # Common coin aliases
+    COIN_ALIASES = {
+        "btc": "bitcoin", "bitcoin": "bitcoin",
+        "eth": "ethereum", "ethereum": "ethereum",
+        "sol": "solana", "solana": "solana",
+        "bnb": "binancecoin", "doge": "dogecoin", "dogecoin": "dogecoin",
+        "xrp": "ripple", "ripple": "ripple",
+        "ada": "cardano", "cardano": "cardano",
+        "dot": "polkadot", "polkadot": "polkadot",
+        "avax": "avalanche-2", "avalanche": "avalanche-2",
+        "matic": "matic-network", "polygon": "matic-network",
+        "link": "chainlink", "chainlink": "chainlink",
+        "shib": "shiba-inu", "pepe": "pepe",
+        "sui": "sui", "apt": "aptos", "arb": "arbitrum",
+        "op": "optimism", "near": "near", "atom": "cosmos",
+    }
+
+    for alias, cg_id in COIN_ALIASES.items():
+        if alias in q_lower.split() or f"${alias}" in q_lower:
+            if cg_id not in detected_coins:
+                detected_coins.append(cg_id)
+
+    if body.context:
+        ctx = body.context.lower().strip()
+        if ctx in COIN_ALIASES:
+            cid = COIN_ALIASES[ctx]
+            if cid not in detected_coins:
+                detected_coins.insert(0, cid)
+
+    # ── 2. Fetch live web data in parallel ──
+    live_data_parts: list[str] = []
+
+    async def _fetch_coin_data(coin_id: str):
+        try:
+            detail = await cg.get_coin_detail(coin_id)
+            if detail:
+                part = (
+                    f"📊 {detail.name} ({detail.symbol.upper()}) — LIVE DATA:\n"
+                    f"  Price: ${detail.current_price:,.6f}\n"
+                    f"  24h Change: {detail.price_change_pct_24h:+.2f}%\n"
+                    f"  7d Change: {detail.price_change_pct_7d:+.2f}%\n"
+                    f"  Market Cap: ${detail.market_cap:,.0f} (Rank #{detail.market_cap_rank})\n"
+                    f"  24h Volume: ${detail.total_volume_24h:,.0f}\n"
+                    f"  ATH: ${detail.ath:,.6f}\n"
+                    f"  Circulating Supply: {detail.circulating_supply:,.0f}\n"
+                )
+                live_data_parts.append(part)
+        except Exception as e:
+            logger.warning("Bot coin fetch failed (%s): %s", coin_id, e)
+
+    async def _fetch_market_overview():
+        try:
+            top = await cg.get_top_coins(limit=10)
+            if top:
+                lines = ["📈 TOP 10 COINS BY MARKET CAP (LIVE):"]
+                for c in top[:10]:
+                    lines.append(
+                        f"  {c.market_cap_rank}. {c.name} ({c.symbol.upper()}) "
+                        f"— ${c.current_price:,.4f} | 24h: {c.price_change_pct_24h:+.1f}%"
+                    )
+                live_data_parts.append("\n".join(lines))
+        except Exception as e:
+            logger.warning("Bot market overview failed: %s", e)
+
+    async def _fetch_trending():
+        try:
+            trending = await cg.get_trending()
+            if trending:
+                lines = ["🔥 TRENDING COINS RIGHT NOW:"]
+                for t in trending[:7]:
+                    lines.append(f"  • {t.name} ({t.symbol.upper()}) — ${t.current_price:,.6f}")
+                live_data_parts.append("\n".join(lines))
+        except Exception as e:
+            logger.warning("Bot trending failed: %s", e)
+
+    async def _fetch_news_for(coin_symbol: str):
+        try:
+            nr = await news.collect(coin_symbol)
+            if nr and nr.articles:
+                lines = [f"📰 LATEST NEWS for {coin_symbol}:"]
+                for a in nr.articles[:5]:
+                    sent = "🟢" if a.sentiment > 0.1 else "🔴" if a.sentiment < -0.1 else "⚪"
+                    lines.append(f"  {sent} {a.title} (sentiment: {a.sentiment:+.2f})")
+                lines.append(f"  Overall sentiment: {nr.avg_sentiment:+.2f} — {nr.narrative}")
+                live_data_parts.append("\n".join(lines))
+        except Exception as e:
+            logger.warning("Bot news failed: %s", e)
+
+    async def _fetch_dex_search(term: str):
+        try:
+            pairs = await dex.search_pairs(term)
+            if pairs:
+                lines = [f"🔗 DEXSCREENER DATA for '{term}':"]
+                for p in pairs[:5]:
+                    lines.append(
+                        f"  • {p.base_token_symbol}/{p.quote_token_symbol} on {p.dex_id} "
+                        f"— ${p.price_usd:,.6f} | 24h: {p.price_change_24h:+.1f}% "
+                        f"| Vol: ${p.volume_24h:,.0f} | Liq: ${p.liquidity_usd:,.0f}"
+                    )
+                live_data_parts.append("\n".join(lines))
+        except Exception as e:
+            logger.warning("Bot dex search failed: %s", e)
+
+    # Build parallel tasks
+    tasks = []
+    for cid in detected_coins[:3]:  # max 3 coins
+        tasks.append(_fetch_coin_data(cid))
+
+    # Detect if user is asking about market overview / general
+    general_keywords = {"market", "top", "overview", "how is", "overall", "crypto market", "today"}
+    if any(kw in q_lower for kw in general_keywords) or not detected_coins:
+        tasks.append(_fetch_market_overview())
+        tasks.append(_fetch_trending())
+
+    # Fetch news for detected coins
+    for cid in detected_coins[:2]:
+        symbol = cid.upper()[:5]
+        for alias, cgid in COIN_ALIASES.items():
+            if cgid == cid and len(alias) <= 5:
+                symbol = alias.upper()
+                break
+        tasks.append(_fetch_news_for(symbol))
+
+    # DEX data for memecoin-ish queries
+    dex_keywords = {"dex", "pair", "liquidity", "swap", "pump", "meme", "new token", "dexscreener"}
+    if any(kw in q_lower for kw in dex_keywords):
+        search_term = detected_coins[0] if detected_coins else q_lower.split()[0]
+        for alias, cgid in COIN_ALIASES.items():
+            if cgid == search_term:
+                search_term = alias.upper()
+                break
+        tasks.append(_fetch_dex_search(search_term))
+
+    if tasks:
+        await asyncio.gather(*tasks)
+
+    # ── 3. Try Gemini AI first, fallback to data-driven answer ──
+    web_context = "\n\n".join(live_data_parts) if live_data_parts else "No specific live data was fetched for this query."
+    sources = [s.split("\n")[0] for s in live_data_parts]
+
+    # Try AI-powered answer
+    if gemini_client:
+        system_prompt = (
+            "You are PumpIQ Bot — an expert crypto intelligence assistant embedded in the PumpIQ platform. "
+            "You answer questions ONLY about cryptocurrency, blockchain, DeFi, trading, and the crypto market. "
+            "You ALWAYS ground your answers in the LIVE DATA provided below. "
+            "If the user asks something outside of crypto/blockchain, politely decline and redirect to crypto topics.\n\n"
+            "Rules:\n"
+            "- Use the live market data provided to give accurate, up-to-date answers\n"
+            "- Cite specific prices, percentages, and rankings from the data\n"
+            "- Be concise but thorough (3-6 sentences for simple questions, more for complex analysis)\n"
+            "- Use bullet points and formatting for readability\n"
+            "- Always mention data is real-time from CoinGecko/DexScreener\n"
+            "- For price predictions, give balanced analysis with bull/bear cases\n"
+            "- Never give financial advice — frame as analysis and insights\n"
+            "- If you don't have data for something, say so honestly\n"
+        )
+        user_prompt = (
+            f"LIVE WEB DATA (just fetched):\n"
+            f"{'=' * 60}\n"
+            f"{web_context}\n"
+            f"{'=' * 60}\n\n"
+            f"USER QUESTION: {question}"
+        )
+        try:
+            resp = await asyncio.wait_for(
+                gemini_client.chat(system_prompt, user_prompt, max_tokens=2048),
+                timeout=20,
+            )
+            if resp.success:
+                return {
+                    "answer": resp.content,
+                    "sources": sources,
+                    "coins_detected": detected_coins,
+                    "tokens_used": resp.total_tokens,
+                    "mode": "ai",
+                }
+            # If AI failed (quota etc.), fall through to data-driven answer
+            logger.warning("Gemini failed, using data-driven fallback: %s", resp.error)
+        except asyncio.TimeoutError:
+            logger.warning("Gemini timed out, using data-driven fallback")
+        except Exception as e:
+            logger.warning("Gemini error, using data-driven fallback: %s", e)
+
+    # ── 4. Data-driven fallback (no AI needed) ──
+    answer = _build_data_driven_answer(question, q_lower, detected_coins, live_data_parts)
+    return {
+        "answer": answer,
+        "sources": sources,
+        "coins_detected": detected_coins,
+        "tokens_used": 0,
+        "mode": "data",
+    }
+
+
+def _build_data_driven_answer(question: str, q_lower: str, coins: list, data_parts: list[str]) -> str:
+    """Build a professional, well-structured answer purely from fetched live data."""
+    if not data_parts:
+        return (
+            "I couldn't fetch live data for your question right now.\n\n"
+            "**Try asking about:**\n"
+            "• A specific coin — *\"How is Bitcoin doing?\"*\n"
+            "• Market overview — *\"How is the crypto market today?\"*\n"
+            "• Trending tokens — *\"What's trending right now?\"*"
+        )
+
+    # ── Categorize data parts by type ──
+    coin_details = []
+    market_overview = []
+    trending_data = []
+    news_data = []
+    dex_data = []
+
+    for part in data_parts:
+        header = part.strip().split("\n")[0]
+        if "LIVE DATA" in header:
+            coin_details.append(part)
+        elif "TOP" in header and "MARKET CAP" in header:
+            market_overview.append(part)
+        elif "TRENDING" in header:
+            trending_data.append(part)
+        elif "NEWS" in header:
+            news_data.append(part)
+        elif "DEXSCREENER" in header:
+            dex_data.append(part)
+        else:
+            coin_details.append(part)
+
+    lines: list[str] = []
+
+    # ── Opening statement ──
+    import re as _re
+    if coins:
+        coin_names = []
+        for part in coin_details:
+            m = _re.search(r"📊\s*(.+?)\s*—", part)
+            if m:
+                coin_names.append(m.group(1).strip())
+        if coin_names:
+            lines.append(f"Here's a real-time analysis of **{', '.join(coin_names)}** based on live market data.\n")
+        else:
+            lines.append("Here's your real-time market intelligence report.\n")
+    elif market_overview or trending_data:
+        lines.append("Here's your live crypto market briefing.\n")
+    else:
+        lines.append("Here's what I found from live market data.\n")
+
+    # ── Coin Detail Cards ──
+    for part in coin_details:
+        part_lines = [l.strip() for l in part.strip().split("\n") if l.strip()]
+        if not part_lines:
+            continue
+        # Extract coin name from header
+        header_match = _re.search(r"📊\s*(.+?)\s*\((\w+)\)", part_lines[0])
+        if header_match:
+            name, symbol = header_match.group(1), header_match.group(2)
+        else:
+            name, symbol = part_lines[0], ""
+
+        lines.append(f"### 📊 {name} ({symbol})")
+        lines.append("")
+
+        # Parse metrics into structured format
+        for pl in part_lines[1:]:
+            pl = pl.strip()
+            if not pl:
+                continue
+            if "Price:" in pl:
+                price = pl.split("Price:")[1].strip()
+                lines.append(f"**💰 Price:** {price}")
+            elif "24h Change:" in pl:
+                val = pl.split("24h Change:")[1].strip()
+                icon = "🟢" if "+" in val else "🔴"
+                lines.append(f"**{icon} 24h Change:** {val}")
+            elif "7d Change:" in pl:
+                val = pl.split("7d Change:")[1].strip()
+                icon = "🟢" if "+" in val else "🔴"
+                lines.append(f"**{icon} 7d Change:** {val}")
+            elif "Market Cap:" in pl:
+                val = pl.split("Market Cap:")[1].strip()
+                lines.append(f"**🏦 Market Cap:** {val}")
+            elif "24h Volume:" in pl:
+                val = pl.split("24h Volume:")[1].strip()
+                lines.append(f"**📊 24h Volume:** {val}")
+            elif "ATH:" in pl:
+                val = pl.split("ATH:")[1].strip()
+                lines.append(f"**🏆 All-Time High:** {val}")
+            elif "Circulating Supply:" in pl:
+                val = pl.split("Circulating Supply:")[1].strip()
+                lines.append(f"**🔄 Circulating Supply:** {val}")
+            else:
+                lines.append(f"  {pl}")
+        lines.append("")
+
+    # ── Market Overview Table ──
+    for part in market_overview:
+        part_lines = [l.strip() for l in part.strip().split("\n") if l.strip()]
+        if not part_lines:
+            continue
+        lines.append("### 📈 Market Overview — Top Coins")
+        lines.append("")
+        lines.append("| # | Coin | Price | 24h |")
+        lines.append("|---|------|-------|-----|")
+        for pl in part_lines[1:]:
+            # Parse: "1. Bitcoin (BTC) — $67,615.0000 | 24h: -2.3%"
+            m = _re.match(r"\s*(\d+)\.\s*(.+?)\s*\((\w+)\)\s*—\s*(\$[\d,.]+)\s*\|\s*24h:\s*([+\-][\d.]+%)", pl)
+            if m:
+                rank, cname, csym, price, change = m.groups()
+                icon = "🟢" if change.startswith("+") else "🔴"
+                lines.append(f"| {rank} | **{cname}** ({csym}) | {price} | {icon} {change} |")
+            else:
+                # Fallback: just add the line
+                cleaned = pl.lstrip("0123456789. ")
+                lines.append(f"| — | {cleaned} | — | — |")
+        lines.append("")
+
+    # ── Trending Section ──
+    for part in trending_data:
+        part_lines = [l.strip() for l in part.strip().split("\n") if l.strip()]
+        if not part_lines:
+            continue
+        lines.append("### 🔥 Trending Right Now")
+        lines.append("")
+        for pl in part_lines[1:]:
+            # "• Pepe (PEPE) — $0.000012"
+            m = _re.match(r"[•\-]\s*(.+?)\s*\((\w+)\)\s*—\s*(\$[\d,.]+)", pl)
+            if m:
+                tname, tsym, tprice = m.groups()
+                lines.append(f"• **{tname}** ({tsym}) — {tprice}")
+            else:
+                lines.append(f"• {pl.lstrip('•- ')}")
+        lines.append("")
+
+    # ── News Section ──
+    for part in news_data:
+        part_lines = [l.strip() for l in part.strip().split("\n") if l.strip()]
+        if not part_lines:
+            continue
+        lines.append("### 📰 Latest Headlines")
+        lines.append("")
+        for pl in part_lines[1:]:
+            if "Overall sentiment" in pl:
+                val = pl.replace("Overall sentiment:", "").strip()
+                lines.append(f"\n**📊 Sentiment Overview:** {val}")
+            elif pl.startswith(("🟢", "🔴", "⚪")):
+                lines.append(f"• {pl}")
+            else:
+                lines.append(f"• {pl}")
+        lines.append("")
+
+    # ── DEX Data ──
+    for part in dex_data:
+        part_lines = [l.strip() for l in part.strip().split("\n") if l.strip()]
+        if not part_lines:
+            continue
+        lines.append("### 🔗 DEX Trading Pairs")
+        lines.append("")
+        lines.append("| Pair | DEX | Price | 24h | Volume | Liquidity |")
+        lines.append("|------|-----|-------|-----|--------|-----------|")
+        for pl in part_lines[1:]:
+            m = _re.match(
+                r"[•\-]\s*(\w+/\w+)\s+on\s+(\w+)\s*—\s*(\$[\d,.]+)\s*\|\s*24h:\s*([+\-][\d.]+%)"
+                r"\s*\|\s*Vol:\s*(\$[\d,.]+)\s*\|\s*Liq:\s*(\$[\d,.]+)",
+                pl,
+            )
+            if m:
+                pair, dex_name, dprice, dchange, dvol, dliq = m.groups()
+                icon = "🟢" if dchange.startswith("+") else "🔴"
+                lines.append(f"| **{pair}** | {dex_name} | {dprice} | {icon} {dchange} | {dvol} | {dliq} |")
+            else:
+                lines.append(f"| {pl.lstrip('•- ')} | — | — | — | — | — |")
+        lines.append("")
+
+    # ── Smart Insights ──
+    full_text = "\n".join(data_parts).lower()
+    insights = []
+
+    # Detect strong positive or negative movers
+    big_gainers = []
+    big_losers = []
+    for part in data_parts:
+        for pline in part.split("\n"):
+            m = _re.search(r"([+\-]\d+\.?\d*)%", pline)
+            if m:
+                pct = float(m.group(1))
+                # Try to extract name
+                nm = _re.search(r"(\w[\w\s]+?)\s*\(", pline)
+                label = nm.group(1).strip() if nm else ""
+                if pct >= 5:
+                    big_gainers.append((label, pct))
+                elif pct <= -5:
+                    big_losers.append((label, pct))
+
+    if big_gainers:
+        top = sorted(big_gainers, key=lambda x: x[1], reverse=True)[:3]
+        names = ", ".join(f"**{g[0]}** ({g[1]:+.1f}%)" for g in top if g[0])
+        if names:
+            insights.append(f"📈 **Strong performers:** {names} — showing solid upward momentum.")
+
+    if big_losers:
+        bottom = sorted(big_losers, key=lambda x: x[1])[:3]
+        names = ", ".join(f"**{g[0]}** ({g[1]:+.1f}%)" for g in bottom if g[0])
+        if names:
+            insights.append(f"📉 **Under pressure:** {names} — consider reviewing stop-loss levels.")
+
+    if trending_data:
+        insights.append("🔥 Trending coins typically see heightened volatility — potential for quick moves in both directions.")
+
+    if news_data:
+        if "+0." in full_text and "overall sentiment" in full_text:
+            insights.append("📰 News sentiment is leaning **positive** — could support short-term price action.")
+        elif "-0." in full_text and "overall sentiment" in full_text:
+            insights.append("📰 News sentiment is leaning **negative** — watch for potential dips.")
+
+    if insights:
+        lines.append("---")
+        lines.append("### 💡 Key Insights")
+        lines.append("")
+        for ins in insights:
+            lines.append(ins)
+        lines.append("")
+
+    # ── Footer ──
+    lines.append("---")
+    lines.append("*📡 Live data from CoinGecko & DexScreener • Updated just now*")
+    lines.append("*💡 For deeper AI-powered analysis, try again shortly*")
+
+    return "\n".join(lines)

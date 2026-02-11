@@ -364,3 +364,163 @@ def send_login_alert_email(to_email: str, username: str, ip_address: str, user_a
         f"\U0001F6E1 PumpIQ Security Alert — New Login Detected",
         _base_template("New Login Detected", content),
     )
+
+
+# ── Trade Notification Emails ───────────────────────────────────
+
+def send_trade_email(
+    to_email: str,
+    username: str,
+    action: str,
+    symbol: str,
+    coin_name: str,
+    price: float,
+    quantity: float,
+    amount: float,
+    ai_reasoning: str,
+    pnl: float = 0.0,
+    pnl_pct: float = 0.0,
+    stop_loss: float = 0.0,
+    take_profit: float = 0.0,
+    wallet_balance: float = 0.0,
+) -> bool:
+    """Send a detailed trade notification email for every BUY or SELL."""
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).strftime("%B %d, %Y at %I:%M %p UTC")
+    base_url = _cfg("APP_BASE_URL", "http://localhost:8000")
+
+    is_buy = action.upper() == "BUY"
+    action_label = "BUY" if is_buy else "SELL"
+    action_color = "#10b981" if is_buy else "#ef4444"
+    action_emoji = "\U0001f7e2" if is_buy else "\U0001f534"
+    action_icon = "\U0001f4c8" if is_buy else "\U0001f4c9"
+
+    # Build trade details rows
+    details_rows = f"""
+        <tr>
+            <td style="color: #888; padding: 10px 0; font-size: 14px;">Action</td>
+            <td style="color: {action_color}; padding: 10px 0; font-size: 14px; font-weight: 700; text-align: right;">
+                {action_emoji} {action_label}
+            </td>
+        </tr>
+        <tr>
+            <td style="color: #888; padding: 10px 0; font-size: 14px; border-top: 1px solid #2a2a3a;">Coin</td>
+            <td style="color: #fff; padding: 10px 0; font-size: 14px; font-weight: 600; text-align: right; border-top: 1px solid #2a2a3a;">
+                {symbol.upper()} <span style="color:#888;font-weight:400">({coin_name})</span>
+            </td>
+        </tr>
+        <tr>
+            <td style="color: #888; padding: 10px 0; font-size: 14px; border-top: 1px solid #2a2a3a;">Price</td>
+            <td style="color: #fff; padding: 10px 0; font-size: 14px; font-weight: 600; text-align: right; border-top: 1px solid #2a2a3a;">
+                ${price:,.6f}
+            </td>
+        </tr>
+        <tr>
+            <td style="color: #888; padding: 10px 0; font-size: 14px; border-top: 1px solid #2a2a3a;">Quantity</td>
+            <td style="color: #fff; padding: 10px 0; font-size: 14px; text-align: right; border-top: 1px solid #2a2a3a;">
+                {quantity:,.6f}
+            </td>
+        </tr>
+        <tr>
+            <td style="color: #888; padding: 10px 0; font-size: 14px; border-top: 1px solid #2a2a3a;">Total Amount</td>
+            <td style="color: #fff; padding: 10px 0; font-size: 16px; font-weight: 700; text-align: right; border-top: 1px solid #2a2a3a;">
+                ${amount:,.2f}
+            </td>
+        </tr>
+    """
+
+    # For SELL, add P&L row
+    if not is_buy:
+        pnl_color = "#10b981" if pnl >= 0 else "#ef4444"
+        pnl_sign = "+" if pnl >= 0 else ""
+        details_rows += f"""
+        <tr>
+            <td style="color: #888; padding: 10px 0; font-size: 14px; border-top: 1px solid #2a2a3a;">Profit / Loss</td>
+            <td style="color: {pnl_color}; padding: 10px 0; font-size: 16px; font-weight: 700; text-align: right; border-top: 1px solid #2a2a3a;">
+                {pnl_sign}${pnl:,.2f} ({pnl_sign}{pnl_pct:.1f}%)
+            </td>
+        </tr>
+        """
+
+    # For BUY, add stop-loss & take-profit
+    if is_buy and stop_loss > 0:
+        details_rows += f"""
+        <tr>
+            <td style="color: #888; padding: 10px 0; font-size: 14px; border-top: 1px solid #2a2a3a;">Stop Loss</td>
+            <td style="color: #ef4444; padding: 10px 0; font-size: 14px; text-align: right; border-top: 1px solid #2a2a3a;">
+                ${stop_loss:,.6f}
+            </td>
+        </tr>
+        """
+    if is_buy and take_profit > 0:
+        details_rows += f"""
+        <tr>
+            <td style="color: #888; padding: 10px 0; font-size: 14px; border-top: 1px solid #2a2a3a;">Take Profit</td>
+            <td style="color: #10b981; padding: 10px 0; font-size: 14px; text-align: right; border-top: 1px solid #2a2a3a;">
+                ${take_profit:,.6f}
+            </td>
+        </tr>
+        """
+
+    # Wallet balance row
+    details_rows += f"""
+        <tr>
+            <td style="color: #888; padding: 10px 0; font-size: 14px; border-top: 1px solid #2a2a3a;">Wallet Balance</td>
+            <td style="color: #7c5cff; padding: 10px 0; font-size: 14px; font-weight: 600; text-align: right; border-top: 1px solid #2a2a3a;">
+                ${wallet_balance:,.2f}
+            </td>
+        </tr>
+    """
+
+    # Date row
+    details_rows += f"""
+        <tr>
+            <td style="color: #888; padding: 10px 0; font-size: 14px; border-top: 1px solid #2a2a3a;">Date &amp; Time</td>
+            <td style="color: #ccc; padding: 10px 0; font-size: 13px; text-align: right; border-top: 1px solid #2a2a3a;">{now}</td>
+        </tr>
+    """
+
+    content = f"""
+    <p style="color: #ccc; line-height: 1.6;">
+        Hey <strong>{username}</strong>,<br><br>
+        Your PumpIQ Auto Trader has executed a <strong style="color:{action_color}">{action_label}</strong> order.
+        Here are the details:
+    </p>
+
+    <div style="background: #1a1a2e; border-radius: 12px; padding: 24px; margin: 24px 0; border: 1px solid #2a2a3a;">
+        <p style="color: {action_color}; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 16px;">
+            {action_icon} Trade Executed &mdash; {action_label}
+        </p>
+        <table style="width: 100%; border-collapse: collapse;">
+            {details_rows}
+        </table>
+    </div>
+
+    <div style="background: #1a1a2e; border-radius: 12px; padding: 20px; margin: 20px 0; border: 1px solid #2a2a3a;">
+        <p style="color: #7c5cff; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 12px;">
+            \U0001f916 AI Analysis &amp; Reasoning
+        </p>
+        <p style="color: #ccc; font-size: 14px; line-height: 1.7; margin: 0;">
+            {ai_reasoning}
+        </p>
+    </div>
+
+    <div style="text-align: center; margin: 28px 0;">
+        <a href="{base_url}"
+           style="display: inline-block; background: linear-gradient(135deg, #7c5cff, #00d4aa);
+                  color: #fff; text-decoration: none; padding: 14px 36px; border-radius: 10px;
+                  font-weight: 600; font-size: 15px;">
+            View Auto Trader Dashboard
+        </a>
+    </div>
+
+    <p style="color: #888; font-size: 12px; line-height: 1.6; text-align: center;">
+        This trade was executed automatically by PumpIQ Auto Trader.<br>
+        You can manage your settings or turn off auto-trading from your dashboard.
+    </p>
+    """
+
+    pnl_str = f" | P&L: {'+' if pnl >= 0 else ''}{pnl_pct:.1f}%" if not is_buy else ""
+    subject = f"{action_emoji} PumpIQ Auto Trade: {action_label} {symbol.upper()} @ ${price:,.4f}{pnl_str}"
+
+    return _send_email(to_email, subject, _base_template(f"Trade Executed — {action_label} {symbol.upper()}", content))
