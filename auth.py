@@ -47,12 +47,24 @@ class UserResponse(BaseModel):
     email_verified: bool = False
     wallets: List[Dict[str, str]] = []
     watchlist: List[str] = []
+    bank_accounts: List[Dict[str, Any]] = []
+    wallet_balance: float = 0.0
     created_at: str
 
 class WalletAdd(BaseModel):
     address: str
     chain: str = "ethereum"  # ethereum, solana, base
     label: str = ""
+
+class BankAccountAdd(BaseModel):
+    account_holder: str
+    account_number: str
+    ifsc_code: str
+    bank_name: str
+
+class DepositRequest(BaseModel):
+    amount: float
+    bank_id: int
 
 class TokenResponse(BaseModel):
     access_token: str
@@ -136,6 +148,39 @@ def init_db():
             token_type TEXT NOT NULL,
             expires_at TEXT NOT NULL,
             used INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS bank_accounts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            account_holder TEXT NOT NULL,
+            account_number_hash TEXT NOT NULL,
+            account_last4 TEXT NOT NULL,
+            ifsc_code TEXT NOT NULL,
+            bank_name TEXT NOT NULL,
+            verified INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'pending',
+            added_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS wallet_balance (
+            user_id INTEGER PRIMARY KEY,
+            balance REAL NOT NULL DEFAULT 0.0,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS wallet_transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            type TEXT NOT NULL,
+            amount REAL NOT NULL,
+            bank_id INTEGER,
+            description TEXT DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'completed',
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
@@ -232,6 +277,13 @@ def _get_user_response(conn: sqlite3.Connection, user_id: int) -> Optional[UserR
     watchlist = conn.execute(
         "SELECT coin_id FROM watchlist WHERE user_id = ?", (user_id,)
     ).fetchall()
+    bank_accounts = conn.execute(
+        "SELECT id, account_holder, account_last4, ifsc_code, bank_name, verified, status, added_at FROM bank_accounts WHERE user_id = ?",
+        (user_id,),
+    ).fetchall()
+    bal_row = conn.execute(
+        "SELECT balance FROM wallet_balance WHERE user_id = ?", (user_id,)
+    ).fetchone()
 
     return UserResponse(
         id=row["id"],
@@ -240,8 +292,220 @@ def _get_user_response(conn: sqlite3.Connection, user_id: int) -> Optional[UserR
         email_verified=bool(row["email_verified"]) if "email_verified" in row.keys() else False,
         wallets=[dict(w) for w in wallets],
         watchlist=[w["coin_id"] for w in watchlist],
+        bank_accounts=[dict(b) for b in bank_accounts],
+        wallet_balance=bal_row["balance"] if bal_row else 0.0,
         created_at=row["created_at"],
     )
+
+
+# ── Bank Account Management ────────────────────────────────────
+
+def _validate_ifsc(ifsc: str) -> bool:
+    """Validate IFSC code format: 4 alpha + 0 + 6 alphanumeric."""
+    import re
+    return bool(re.match(r'^[A-Z]{4}0[A-Z0-9]{6}$', ifsc.upper()))
+
+
+def _validate_account_number(acc: str) -> bool:
+    """Validate Indian bank account number: 9-18 digits."""
+    return acc.isdigit() and 9 <= len(acc) <= 18
+
+
+def verify_bank_details(account_number: str, ifsc_code: str, account_holder: str, bank_name: str) -> Dict[str, Any]:
+    """Verify bank details. Returns verification result."""
+    errors = []
+    if not _validate_account_number(account_number):
+        errors.append("Account number must be 9-18 digits")
+    if not _validate_ifsc(ifsc_code):
+        errors.append("Invalid IFSC code format (e.g. SBIN0001234)")
+    if len(account_holder.strip()) < 3:
+        errors.append("Account holder name must be at least 3 characters")
+    if len(bank_name.strip()) < 2:
+        errors.append("Bank name is required")
+
+    if errors:
+        return {"verified": False, "errors": errors}
+
+    # Auto-verify based on IFSC lookup (simplified — in production use Razorpay/Cashfree API)
+    ifsc_upper = ifsc_code.upper()
+    bank_prefix = ifsc_upper[:4]
+    known_banks = {
+        "SBIN": "State Bank of India", "HDFC": "HDFC Bank", "ICIC": "ICICI Bank",
+        "UTIB": "Axis Bank", "PUNB": "Punjab National Bank", "CNRB": "Canara Bank",
+        "UBIN": "Union Bank of India", "BARB": "Bank of Baroda", "IOBA": "Indian Overseas Bank",
+        "KKBK": "Kotak Mahindra Bank", "YESB": "Yes Bank", "IDIB": "Indian Bank",
+        "BKID": "Bank of India", "CBIN": "Central Bank of India", "ALLA": "Allahabad Bank",
+        "INDB": "IndusInd Bank", "FDRL": "Federal Bank", "RATN": "RBL Bank",
+        "MAHB": "Bank of Maharashtra", "UCBA": "UCO Bank",
+    }
+
+    detected_bank = known_banks.get(bank_prefix)
+    return {
+        "verified": True,
+        "bank_detected": detected_bank or bank_name,
+        "ifsc_valid": True,
+        "account_last4": account_number[-4:],
+    }
+
+
+def add_bank_account(user_id: int, account_holder: str, account_number: str, ifsc_code: str, bank_name: str) -> Dict[str, Any]:
+    """Add a verified bank account for the user."""
+    # Step 1: validate
+    result = verify_bank_details(account_number, ifsc_code, account_holder, bank_name)
+    if not result["verified"]:
+        return {"success": False, "errors": result["errors"]}
+
+    # Step 2: hash account number for security, store last 4
+    acc_hash = hashlib.sha256(account_number.encode()).hexdigest()
+    last4 = account_number[-4:]
+    detected_bank = result.get("bank_detected", bank_name)
+
+    conn = get_db()
+    try:
+        # Check for duplicate
+        existing = conn.execute(
+            "SELECT id FROM bank_accounts WHERE user_id = ? AND account_number_hash = ?",
+            (user_id, acc_hash),
+        ).fetchone()
+        if existing:
+            return {"success": False, "errors": ["This bank account is already linked"]}
+
+        conn.execute(
+            """INSERT INTO bank_accounts (user_id, account_holder, account_number_hash, account_last4, ifsc_code, bank_name, verified, status)
+               VALUES (?, ?, ?, ?, ?, ?, 1, 'verified')""",
+            (user_id, account_holder.strip(), acc_hash, last4, ifsc_code.upper(), detected_bank),
+        )
+        conn.commit()
+        return {"success": True, "bank_name": detected_bank, "last4": last4}
+    except Exception as e:
+        return {"success": False, "errors": [str(e)]}
+    finally:
+        conn.close()
+
+
+def remove_bank_account(user_id: int, bank_id: int) -> bool:
+    conn = get_db()
+    try:
+        conn.execute("DELETE FROM bank_accounts WHERE id = ? AND user_id = ?", (bank_id, user_id))
+        conn.commit()
+        return True
+    except Exception:
+        return False
+    finally:
+        conn.close()
+
+
+def get_bank_accounts(user_id: int) -> List[Dict[str, Any]]:
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            "SELECT id, account_holder, account_last4, ifsc_code, bank_name, verified, status, added_at FROM bank_accounts WHERE user_id = ?",
+            (user_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+# ── Wallet Balance Management ──────────────────────────────────
+
+def get_wallet_balance(user_id: int) -> float:
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT balance FROM wallet_balance WHERE user_id = ?", (user_id,)).fetchone()
+        return row["balance"] if row else 0.0
+    finally:
+        conn.close()
+
+
+def deposit_to_wallet(user_id: int, amount: float, bank_id: int) -> Dict[str, Any]:
+    """Deposit money from a verified bank account into wallet."""
+    if amount <= 0:
+        return {"success": False, "error": "Amount must be greater than 0"}
+    if amount > 1000000:
+        return {"success": False, "error": "Maximum deposit limit is ₹10,00,000"}
+
+    conn = get_db()
+    try:
+        # Verify bank account belongs to user and is verified
+        bank = conn.execute(
+            "SELECT * FROM bank_accounts WHERE id = ? AND user_id = ? AND verified = 1",
+            (bank_id, user_id),
+        ).fetchone()
+        if not bank:
+            return {"success": False, "error": "Bank account not found or not verified"}
+
+        # Upsert wallet balance
+        conn.execute(
+            """INSERT INTO wallet_balance (user_id, balance, updated_at)
+               VALUES (?, ?, datetime('now'))
+               ON CONFLICT(user_id) DO UPDATE SET
+                   balance = balance + ?,
+                   updated_at = datetime('now')""",
+            (user_id, amount, amount),
+        )
+        # Record transaction
+        conn.execute(
+            "INSERT INTO wallet_transactions (user_id, type, amount, bank_id, description, status) VALUES (?, 'deposit', ?, ?, ?, 'completed')",
+            (user_id, amount, bank_id, f"Deposit from {bank['bank_name']} ****{bank['account_last4']}"),
+        )
+        conn.commit()
+
+        new_balance = conn.execute("SELECT balance FROM wallet_balance WHERE user_id = ?", (user_id,)).fetchone()
+        return {"success": True, "new_balance": new_balance["balance"], "bank_name": bank["bank_name"]}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+    finally:
+        conn.close()
+
+
+def withdraw_from_wallet(user_id: int, amount: float, bank_id: int) -> Dict[str, Any]:
+    """Withdraw money from wallet to a verified bank account."""
+    if amount <= 0:
+        return {"success": False, "error": "Amount must be greater than 0"}
+
+    conn = get_db()
+    try:
+        bal_row = conn.execute("SELECT balance FROM wallet_balance WHERE user_id = ?", (user_id,)).fetchone()
+        current = bal_row["balance"] if bal_row else 0.0
+        if amount > current:
+            return {"success": False, "error": "Insufficient wallet balance"}
+
+        bank = conn.execute(
+            "SELECT * FROM bank_accounts WHERE id = ? AND user_id = ? AND verified = 1",
+            (bank_id, user_id),
+        ).fetchone()
+        if not bank:
+            return {"success": False, "error": "Bank account not found or not verified"}
+
+        conn.execute(
+            "UPDATE wallet_balance SET balance = balance - ?, updated_at = datetime('now') WHERE user_id = ?",
+            (amount, user_id),
+        )
+        conn.execute(
+            "INSERT INTO wallet_transactions (user_id, type, amount, bank_id, description, status) VALUES (?, 'withdraw', ?, ?, ?, 'completed')",
+            (user_id, amount, bank_id, f"Withdrawal to {bank['bank_name']} ****{bank['account_last4']}"),
+        )
+        conn.commit()
+
+        new_balance = conn.execute("SELECT balance FROM wallet_balance WHERE user_id = ?", (user_id,)).fetchone()
+        return {"success": True, "new_balance": new_balance["balance"]}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+    finally:
+        conn.close()
+
+
+def get_wallet_transactions(user_id: int, limit: int = 20) -> List[Dict[str, Any]]:
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            "SELECT id, type, amount, description, status, created_at FROM wallet_transactions WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+            (user_id, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
 
 
 # ── Wallet Management ──────────────────────────────────────────

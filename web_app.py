@@ -20,7 +20,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import FastAPI, Query, HTTPException, Depends, Header
+from fastapi import FastAPI, Query, HTTPException, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -248,22 +248,33 @@ async def api_register(body: auth.UserRegister):
     user = auth.register_user(body.email, body.username, body.password)
     if not user:
         raise HTTPException(409, "Email or username already taken")
-    # Send verification email (non-blocking, won't fail registration if SMTP is down)
+    # Send welcome email with credentials
     try:
-        auth.send_verification_email(user.id)
+        smtp_service.send_registration_email(body.email, body.username, body.password)
     except Exception as e:
-        logger.warning("Failed to send verification email: %s", e)
+        logger.warning("Failed to send registration email: %s", e)
     token = auth.create_access_token(user.id, user.email)
-    return {"access_token": token, "token_type": "bearer", "user": user.model_dump(),
-            "smtp_configured": smtp_service.is_configured()}
+    return {"access_token": token, "token_type": "bearer", "user": user.model_dump()}
 
 
 @app.post("/api/auth/login")
-async def api_login(body: auth.UserLogin):
+async def api_login(body: auth.UserLogin, request: Request):
     user = auth.authenticate_user(body.email, body.password)
     if not user:
         raise HTTPException(401, "Invalid email or password")
     token = auth.create_access_token(user.id, user.email)
+    # Send login alert email in background (non-blocking)
+    try:
+        ip = request.headers.get("x-forwarded-for", request.client.host if request.client else "Unknown")
+        user_agent = request.headers.get("user-agent", "Unknown device")
+        import threading
+        threading.Thread(
+            target=smtp_service.send_login_alert_email,
+            args=(user.email, user.username, ip, user_agent),
+            daemon=True,
+        ).start()
+    except Exception as e:
+        logger.warning("Failed to send login alert: %s", e)
     return {"access_token": token, "token_type": "bearer", "user": user.model_dump()}
 
 
@@ -308,6 +319,28 @@ async def resend_verification(user=Depends(require_user)):
     if not ok:
         raise HTTPException(500, "Failed to send verification email. Check SMTP config.")
     return {"message": "Verification email sent"}
+
+
+class ResendByEmail(BaseModel):
+    email: str
+
+@app.post("/api/auth/resend-verification-by-email")
+async def resend_verification_by_email(body: ResendByEmail):
+    """Resend verification for users who can't log in yet (no token)."""
+    import sqlite3
+    conn = auth.get_db()
+    try:
+        row = conn.execute("SELECT id, email_verified FROM users WHERE email = ?", (body.email.lower(),)).fetchone()
+        if not row:
+            return {"message": "If an account with that email exists, a verification link has been sent."}
+        if row["email_verified"]:
+            return {"message": "Email is already verified. You can log in."}
+        auth.resend_verification(row["id"])
+    except Exception:
+        pass
+    finally:
+        conn.close()
+    return {"message": "If an account with that email exists, a verification link has been sent."}
 
 
 # ── Password Reset ──────────────────────────────────────────────
@@ -410,6 +443,69 @@ async def api_remove_wallet(address: str, chain: str = "ethereum", user=Depends(
 @app.get("/api/wallet/list")
 async def api_list_wallets(user=Depends(require_user)):
     return auth.get_wallets(user.id)
+
+
+# ══════════════════════════════════════════════════════════════════
+# BANK ACCOUNT ENDPOINTS
+# ══════════════════════════════════════════════════════════════════
+
+@app.post("/api/bank/verify")
+async def api_verify_bank(body: auth.BankAccountAdd, user=Depends(require_user)):
+    """Verify bank details before adding."""
+    result = auth.verify_bank_details(body.account_number, body.ifsc_code, body.account_holder, body.bank_name)
+    return result
+
+
+@app.post("/api/bank/add")
+async def api_add_bank(body: auth.BankAccountAdd, user=Depends(require_user)):
+    """Add a bank account after verification."""
+    result = auth.add_bank_account(user.id, body.account_holder, body.account_number, body.ifsc_code, body.bank_name)
+    if not result["success"]:
+        raise HTTPException(400, detail=result["errors"][0])
+    updated = auth.get_user_by_id(user.id)
+    return {"success": True, "bank_name": result["bank_name"], "last4": result["last4"], "bank_accounts": updated.bank_accounts}
+
+
+@app.delete("/api/bank/{bank_id}")
+async def api_remove_bank(bank_id: int, user=Depends(require_user)):
+    auth.remove_bank_account(user.id, bank_id)
+    updated = auth.get_user_by_id(user.id)
+    return {"success": True, "bank_accounts": updated.bank_accounts}
+
+
+@app.get("/api/bank/list")
+async def api_list_banks(user=Depends(require_user)):
+    return auth.get_bank_accounts(user.id)
+
+
+# ══════════════════════════════════════════════════════════════════
+# WALLET BALANCE ENDPOINTS
+# ══════════════════════════════════════════════════════════════════
+
+@app.get("/api/wallet/balance")
+async def api_wallet_balance(user=Depends(require_user)):
+    return {"balance": auth.get_wallet_balance(user.id)}
+
+
+@app.post("/api/wallet/deposit")
+async def api_wallet_deposit(body: auth.DepositRequest, user=Depends(require_user)):
+    result = auth.deposit_to_wallet(user.id, body.amount, body.bank_id)
+    if not result["success"]:
+        raise HTTPException(400, detail=result["error"])
+    return result
+
+
+@app.post("/api/wallet/withdraw")
+async def api_wallet_withdraw(body: auth.DepositRequest, user=Depends(require_user)):
+    result = auth.withdraw_from_wallet(user.id, body.amount, body.bank_id)
+    if not result["success"]:
+        raise HTTPException(400, detail=result["error"])
+    return result
+
+
+@app.get("/api/wallet/transactions")
+async def api_wallet_transactions(limit: int = Query(20), user=Depends(require_user)):
+    return auth.get_wallet_transactions(user.id, limit)
 
 
 # ══════════════════════════════════════════════════════════════════

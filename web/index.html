@@ -375,6 +375,62 @@ a:hover { text-decoration: underline; }
     background:var(--accent-glow); color:var(--accent); font-weight:600;
 }
 
+/* ── Wallet Balance Card ──────────────────────────────────── */
+.balance-card {
+    background: linear-gradient(135deg, #1a1040 0%, #0d2137 50%, #0a2a1a 100%);
+    border: 1px solid #2a2a4a;
+    border-radius: 16px; padding: 28px;
+    margin-bottom: 24px; position: relative; overflow: hidden;
+}
+.balance-card::before {
+    content: ''; position: absolute; top: -40px; right: -40px;
+    width: 120px; height: 120px; border-radius: 50%;
+    background: rgba(124,92,255,0.08);
+}
+.balance-label { font-size: 13px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+.balance-amount { font-size: 36px; font-weight: 700; color: #fff; margin-bottom: 16px; }
+.balance-amount .currency { font-size: 20px; color: #7c5cff; margin-right: 4px; }
+.balance-actions { display: flex; gap: 10px; }
+.balance-actions .btn { flex: 1; padding: 10px; font-size: 13px; }
+
+/* ── Bank Account Card ────────────────────────────────────── */
+.bank-card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px;
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 8px;
+}
+.bank-info { display: flex; align-items: center; gap: 12px; }
+.bank-icon {
+    width: 40px; height: 40px; border-radius: 10px;
+    background: linear-gradient(135deg, #7c5cff, #00d4aa);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; font-weight: 700; color: #fff;
+}
+.bank-name { font-weight: 600; font-size: 14px; }
+.bank-detail { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.bank-verified { color: #00d4aa; font-size: 11px; font-weight: 600; }
+
+/* ── Transaction List ─────────────────────────────────────── */
+.txn-item {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 0; border-bottom: 1px solid var(--border);
+}
+.txn-type { font-size: 12px; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+.txn-deposit { background: #0a2a1a; color: #00d4aa; }
+.txn-withdraw { background: #2a1a1a; color: #ff6b6b; }
+.txn-amount { font-weight: 600; font-size: 14px; }
+
+/* ── Verification Steps ───────────────────────────────────── */
+.verify-steps { display: flex; gap: 8px; margin: 16px 0; }
+.verify-step {
+    flex: 1; text-align: center; padding: 10px 8px;
+    border-radius: 8px; font-size: 11px; font-weight: 600;
+    background: var(--bg-card); border: 1px solid var(--border); color: var(--text-muted);
+}
+.verify-step.active { border-color: #7c5cff; color: #7c5cff; background: rgba(124,92,255,0.08); }
+.verify-step.done { border-color: #00d4aa; color: #00d4aa; background: rgba(0,212,170,0.08); }
+
 /* ── Portfolio ────────────────────────────────────────────── */
 .portfolio-table { width:100%; border-collapse:collapse; }
 .portfolio-table th {
@@ -590,6 +646,26 @@ a:hover { text-decoration: underline; }
     <div class="section-title" id="profileTitle">My Profile</div>
     <div class="section-desc" id="profileEmail"></div>
 
+    <!-- Wallet Balance Card -->
+    <div class="balance-card" style="margin-top:20px">
+        <div class="balance-label">Wallet Balance</div>
+        <div class="balance-amount"><span class="currency">₹</span><span id="walletBalanceDisplay">0.00</span></div>
+        <div class="balance-actions">
+            <button class="btn btn-primary" onclick="showDepositModal()">+ Add Money</button>
+            <button class="btn btn-outline" onclick="showWithdrawModal()">Withdraw</button>
+            <button class="btn btn-outline" onclick="showTransactionsModal()">History</button>
+        </div>
+    </div>
+
+    <!-- Bank Accounts -->
+    <div style="margin-top:24px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <h3 style="font-size:18px">🏦 Linked Bank Accounts</h3>
+            <button class="btn btn-outline btn-sm" onclick="showBankModal()">+ Add Bank</button>
+        </div>
+        <div id="bankList"></div>
+    </div>
+
     <!-- Wallets -->
     <div style="margin-top:24px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
@@ -699,6 +775,122 @@ a:hover { text-decoration: underline; }
             <input class="form-input" id="walletLabel" placeholder="e.g. My MetaMask">
         </div>
         <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="addWallet()">Add Wallet</button>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- ADD BANK ACCOUNT MODAL                                     -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="bankModal">
+    <div class="modal">
+        <button class="modal-close" onclick="closeModal('bankModal')">&times;</button>
+        <h2>🏦 Link Bank Account</h2>
+        <p style="color:var(--text-secondary);font-size:13px;margin-bottom:16px;">Your bank details are verified instantly and stored securely.</p>
+
+        <div class="verify-steps" id="bankSteps">
+            <div class="verify-step active" id="bankStep1">1. Enter Details</div>
+            <div class="verify-step" id="bankStep2">2. Verify</div>
+            <div class="verify-step" id="bankStep3">3. Linked ✓</div>
+        </div>
+
+        <div id="bankError" class="form-error"></div>
+        <div id="bankSuccess" style="display:none;color:#00d4aa;background:#0a2a1a;padding:12px;border-radius:8px;margin-bottom:12px;"></div>
+
+        <div id="bankFormFields">
+            <div class="form-group">
+                <label>Account Holder Name</label>
+                <input class="form-input" id="bankHolder" placeholder="As on bank passbook">
+            </div>
+            <div class="form-group">
+                <label>Account Number</label>
+                <input class="form-input" id="bankAccNum" placeholder="9-18 digit account number" maxlength="18">
+            </div>
+            <div class="form-group">
+                <label>Confirm Account Number</label>
+                <input class="form-input" id="bankAccNumConfirm" placeholder="Re-enter account number" maxlength="18">
+            </div>
+            <div class="form-group">
+                <label>IFSC Code</label>
+                <input class="form-input" id="bankIFSC" placeholder="e.g. SBIN0001234" maxlength="11" style="text-transform:uppercase">
+            </div>
+            <div class="form-group">
+                <label>Bank Name</label>
+                <input class="form-input" id="bankName" placeholder="e.g. State Bank of India">
+            </div>
+            <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="verifyAndAddBank()">Verify & Link Account</button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- DEPOSIT MODAL                                              -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="depositModal">
+    <div class="modal">
+        <button class="modal-close" onclick="closeModal('depositModal')">&times;</button>
+        <h2>💰 Add Money to Wallet</h2>
+        <div id="depositError" class="form-error"></div>
+        <div id="depositSuccess" style="display:none;color:#00d4aa;background:#0a2a1a;padding:12px;border-radius:8px;margin-bottom:12px;"></div>
+
+        <div id="depositNoBanks" style="display:none;text-align:center;padding:20px;color:var(--text-muted);">
+            <p>No bank account linked yet.</p>
+            <button class="btn btn-primary" style="margin-top:12px" onclick="closeModal('depositModal');showBankModal()">Link Bank Account</button>
+        </div>
+
+        <div id="depositFields">
+            <div class="form-group">
+                <label>Select Bank Account</label>
+                <select class="form-input" id="depositBank"></select>
+            </div>
+            <div class="form-group">
+                <label>Amount (₹)</label>
+                <input class="form-input" id="depositAmount" type="number" min="1" step="any" placeholder="Enter amount">
+            </div>
+            <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+                <button class="btn btn-outline btn-sm" onclick="setDepositAmount(500)">₹500</button>
+                <button class="btn btn-outline btn-sm" onclick="setDepositAmount(1000)">₹1,000</button>
+                <button class="btn btn-outline btn-sm" onclick="setDepositAmount(5000)">₹5,000</button>
+                <button class="btn btn-outline btn-sm" onclick="setDepositAmount(10000)">₹10,000</button>
+                <button class="btn btn-outline btn-sm" onclick="setDepositAmount(50000)">₹50,000</button>
+            </div>
+            <button class="btn btn-primary" style="width:100%" onclick="submitDeposit()">Deposit</button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- WITHDRAW MODAL                                             -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="withdrawModal">
+    <div class="modal">
+        <button class="modal-close" onclick="closeModal('withdrawModal')">&times;</button>
+        <h2>📤 Withdraw to Bank</h2>
+        <p style="color:var(--text-secondary);font-size:13px;margin-bottom:12px;">Available: <strong>₹<span id="withdrawAvailable">0.00</span></strong></p>
+        <div id="withdrawError" class="form-error"></div>
+        <div id="withdrawSuccess" style="display:none;color:#00d4aa;background:#0a2a1a;padding:12px;border-radius:8px;margin-bottom:12px;"></div>
+
+        <div id="withdrawFields">
+            <div class="form-group">
+                <label>Select Bank Account</label>
+                <select class="form-input" id="withdrawBank"></select>
+            </div>
+            <div class="form-group">
+                <label>Amount (₹)</label>
+                <input class="form-input" id="withdrawAmount" type="number" min="1" step="any" placeholder="Enter amount">
+            </div>
+            <button class="btn btn-primary" style="width:100%" onclick="submitWithdraw()">Withdraw</button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- TRANSACTIONS MODAL                                         -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="transactionsModal">
+    <div class="modal">
+        <button class="modal-close" onclick="closeModal('transactionsModal')">&times;</button>
+        <h2>📋 Transaction History</h2>
+        <div id="transactionsList" style="max-height:400px;overflow-y:auto;"></div>
     </div>
 </div>
 
@@ -854,6 +1046,7 @@ async function submitAuth() {
         updateAuthUI();
         closeModal('authModal');
     } catch (e) {
+        errEl.style.color = '#ff4d4d';
         errEl.textContent = e.message;
         errEl.style.display = 'block';
     }
@@ -898,6 +1091,20 @@ async function resendVerification() {
         alert(data.message || 'Verification email sent!');
     } catch (e) {
         alert(e.message || 'Failed to send verification email');
+    }
+}
+
+async function resendVerificationFromLogin(email) {
+    const errEl = document.getElementById('authError');
+    try {
+        const data = await api('/api/auth/resend-verification-by-email', {
+            method: 'POST',
+            body: JSON.stringify({ email }),
+        });
+        errEl.style.color = '#00d4aa';
+        errEl.innerHTML = data.message || 'Verification email sent! Check your inbox.';
+    } catch (e) {
+        errEl.innerHTML = e.message || 'Failed to resend';
     }
 }
 
@@ -979,6 +1186,217 @@ async function removeWallet(addr, chain) {
     }
 }
 
+// ── Bank Accounts ──────────────────────────────────────────────
+function showBankModal() {
+    document.getElementById('bankError').style.display = 'none';
+    document.getElementById('bankSuccess').style.display = 'none';
+    document.getElementById('bankFormFields').style.display = 'block';
+    document.getElementById('bankStep1').className = 'verify-step active';
+    document.getElementById('bankStep2').className = 'verify-step';
+    document.getElementById('bankStep3').className = 'verify-step';
+    ['bankHolder','bankAccNum','bankAccNumConfirm','bankIFSC','bankName'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('bankModal').classList.add('active');
+}
+
+// Auto-detect bank from IFSC
+document.addEventListener('DOMContentLoaded', () => {
+    const ifscEl = document.getElementById('bankIFSC');
+    if (ifscEl) {
+        ifscEl.addEventListener('input', function() {
+            const prefix = this.value.toUpperCase().substring(0, 4);
+            const banks = {
+                'SBIN':'State Bank of India','HDFC':'HDFC Bank','ICIC':'ICICI Bank',
+                'UTIB':'Axis Bank','PUNB':'Punjab National Bank','CNRB':'Canara Bank',
+                'UBIN':'Union Bank of India','BARB':'Bank of Baroda','KKBK':'Kotak Mahindra Bank',
+                'YESB':'Yes Bank','INDB':'IndusInd Bank','FDRL':'Federal Bank',
+                'IOBA':'Indian Overseas Bank','IDIB':'Indian Bank','BKID':'Bank of India',
+            };
+            if (banks[prefix]) document.getElementById('bankName').value = banks[prefix];
+        });
+    }
+});
+
+async function verifyAndAddBank() {
+    const holder = document.getElementById('bankHolder').value.trim();
+    const accNum = document.getElementById('bankAccNum').value.trim();
+    const accConfirm = document.getElementById('bankAccNumConfirm').value.trim();
+    const ifsc = document.getElementById('bankIFSC').value.trim().toUpperCase();
+    const bankName = document.getElementById('bankName').value.trim();
+    const errEl = document.getElementById('bankError');
+    const successEl = document.getElementById('bankSuccess');
+    errEl.style.display = 'none';
+    successEl.style.display = 'none';
+
+    // Client-side checks
+    if (!holder || !accNum || !ifsc || !bankName) {
+        errEl.textContent = 'All fields are required'; errEl.style.display = 'block'; return;
+    }
+    if (accNum !== accConfirm) {
+        errEl.textContent = 'Account numbers do not match'; errEl.style.display = 'block'; return;
+    }
+
+    // Step 2: Verifying
+    document.getElementById('bankStep1').className = 'verify-step done';
+    document.getElementById('bankStep2').className = 'verify-step active';
+
+    try {
+        // Verify first
+        const verifyResult = await api('/api/bank/verify', {
+            method: 'POST',
+            body: JSON.stringify({ account_holder: holder, account_number: accNum, ifsc_code: ifsc, bank_name: bankName }),
+        });
+        if (!verifyResult.verified) {
+            document.getElementById('bankStep2').className = 'verify-step';
+            document.getElementById('bankStep1').className = 'verify-step active';
+            errEl.textContent = verifyResult.errors.join(', '); errEl.style.display = 'block'; return;
+        }
+
+        // Add the account
+        const addResult = await api('/api/bank/add', {
+            method: 'POST',
+            body: JSON.stringify({ account_holder: holder, account_number: accNum, ifsc_code: ifsc, bank_name: bankName }),
+        });
+
+        document.getElementById('bankStep2').className = 'verify-step done';
+        document.getElementById('bankStep3').className = 'verify-step done';
+        document.getElementById('bankFormFields').style.display = 'none';
+        successEl.innerHTML = `✅ <strong>${addResult.bank_name}</strong> account ending in ****${addResult.last4} linked successfully!`;
+        successEl.style.display = 'block';
+
+        // Refresh profile after delay
+        setTimeout(() => { closeModal('bankModal'); loadProfile(); }, 2000);
+    } catch (e) {
+        document.getElementById('bankStep2').className = 'verify-step';
+        document.getElementById('bankStep1').className = 'verify-step active';
+        errEl.textContent = e.message; errEl.style.display = 'block';
+    }
+}
+
+async function removeBank(bankId) {
+    if (!confirm('Remove this bank account?')) return;
+    try {
+        await api(`/api/bank/${bankId}`, { method: 'DELETE' });
+        loadProfile();
+    } catch (e) { alert(e.message); }
+}
+
+// ── Deposit / Withdraw ─────────────────────────────────────────
+function populateBankSelect(selectId) {
+    const sel = document.getElementById(selectId);
+    const banks = (currentUser && currentUser.bank_accounts) || [];
+    sel.innerHTML = banks.filter(b => b.verified)
+        .map(b => `<option value="${b.id}">${b.bank_name} ••••${b.account_last4}</option>`)
+        .join('');
+    return banks.filter(b => b.verified).length;
+}
+
+function showDepositModal() {
+    document.getElementById('depositError').style.display = 'none';
+    document.getElementById('depositSuccess').style.display = 'none';
+    document.getElementById('depositAmount').value = '';
+    const count = populateBankSelect('depositBank');
+    document.getElementById('depositNoBanks').style.display = count === 0 ? 'block' : 'none';
+    document.getElementById('depositFields').style.display = count > 0 ? 'block' : 'none';
+    document.getElementById('depositModal').classList.add('active');
+}
+
+function showWithdrawModal() {
+    document.getElementById('withdrawError').style.display = 'none';
+    document.getElementById('withdrawSuccess').style.display = 'none';
+    document.getElementById('withdrawAmount').value = '';
+    document.getElementById('withdrawAvailable').textContent = formatINR(currentUser?.wallet_balance || 0);
+    populateBankSelect('withdrawBank');
+    document.getElementById('withdrawModal').classList.add('active');
+}
+
+function setDepositAmount(amt) {
+    document.getElementById('depositAmount').value = amt;
+}
+
+function formatINR(n) {
+    return Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+async function submitDeposit() {
+    const amount = parseFloat(document.getElementById('depositAmount').value);
+    const bank_id = parseInt(document.getElementById('depositBank').value);
+    const errEl = document.getElementById('depositError');
+    const successEl = document.getElementById('depositSuccess');
+    errEl.style.display = 'none'; successEl.style.display = 'none';
+
+    if (!amount || amount <= 0) { errEl.textContent = 'Enter a valid amount'; errEl.style.display = 'block'; return; }
+
+    try {
+        const res = await api('/api/wallet/deposit', {
+            method: 'POST',
+            body: JSON.stringify({ amount, bank_id }),
+        });
+        successEl.innerHTML = `✅ ₹${formatINR(amount)} deposited successfully! New balance: <strong>₹${formatINR(res.new_balance)}</strong>`;
+        successEl.style.display = 'block';
+        document.getElementById('depositFields').style.display = 'none';
+        // Update local state
+        if (currentUser) currentUser.wallet_balance = res.new_balance;
+        document.getElementById('walletBalanceDisplay').textContent = formatINR(res.new_balance);
+        setTimeout(() => { closeModal('depositModal'); document.getElementById('depositFields').style.display = 'block'; }, 2500);
+    } catch (e) {
+        errEl.textContent = e.message; errEl.style.display = 'block';
+    }
+}
+
+async function submitWithdraw() {
+    const amount = parseFloat(document.getElementById('withdrawAmount').value);
+    const bank_id = parseInt(document.getElementById('withdrawBank').value);
+    const errEl = document.getElementById('withdrawError');
+    const successEl = document.getElementById('withdrawSuccess');
+    errEl.style.display = 'none'; successEl.style.display = 'none';
+
+    if (!amount || amount <= 0) { errEl.textContent = 'Enter a valid amount'; errEl.style.display = 'block'; return; }
+
+    try {
+        const res = await api('/api/wallet/withdraw', {
+            method: 'POST',
+            body: JSON.stringify({ amount, bank_id }),
+        });
+        successEl.innerHTML = `✅ ₹${formatINR(amount)} withdrawal initiated. New balance: <strong>₹${formatINR(res.new_balance)}</strong>`;
+        successEl.style.display = 'block';
+        document.getElementById('withdrawFields').style.display = 'none';
+        if (currentUser) currentUser.wallet_balance = res.new_balance;
+        document.getElementById('walletBalanceDisplay').textContent = formatINR(res.new_balance);
+        setTimeout(() => { closeModal('withdrawModal'); document.getElementById('withdrawFields').style.display = 'block'; }, 2500);
+    } catch (e) {
+        errEl.textContent = e.message; errEl.style.display = 'block';
+    }
+}
+
+async function showTransactionsModal() {
+    document.getElementById('transactionsModal').classList.add('active');
+    const list = document.getElementById('transactionsList');
+    list.innerHTML = '<div class="loader"><div class="spinner"></div></div>';
+    try {
+        const txns = await api('/api/wallet/transactions?limit=30');
+        if (txns.length === 0) {
+            list.innerHTML = '<div class="empty-state"><p>No transactions yet</p></div>';
+            return;
+        }
+        list.innerHTML = txns.map(t => `
+            <div class="txn-item">
+                <div>
+                    <span class="txn-type ${t.type === 'deposit' ? 'txn-deposit' : 'txn-withdraw'}">
+                        ${t.type === 'deposit' ? '⬆ Deposit' : '⬇ Withdraw'}
+                    </span>
+                    <div style="font-size:12px;color:var(--text-muted);margin-top:4px">${t.description}</div>
+                    <div style="font-size:11px;color:var(--text-muted)">${new Date(t.created_at).toLocaleString()}</div>
+                </div>
+                <div class="txn-amount" style="color:${t.type === 'deposit' ? '#00d4aa' : '#ff6b6b'}">
+                    ${t.type === 'deposit' ? '+' : '-'}₹${formatINR(t.amount)}
+                </div>
+            </div>
+        `).join('');
+    } catch (e) {
+        list.innerHTML = `<div class="empty-state"><p>Error loading transactions</p></div>`;
+    }
+}
+
 // ── Portfolio ─────────────────────────────────────────────────
 function showPortfolioModal() {
     document.getElementById('portfolioModal').classList.add('active');
@@ -1018,6 +1436,30 @@ async function loadProfile() {
     } else {
         verifyBanner.innerHTML = '<div style="background:#2a1a00;border:1px solid #ff9900;border-radius:8px;padding:10px 16px;margin-top:8px;font-size:13px;color:#ffcc00;">'
             + '\u26A0\uFE0F Email not verified &mdash; <a href="#" style="color:#7c5cff;" onclick="resendVerification()">Resend verification email</a></div>';
+    }
+
+    // Wallet Balance
+    document.getElementById('walletBalanceDisplay').textContent = formatINR(currentUser.wallet_balance || 0);
+
+    // Bank Accounts
+    const banks = currentUser.bank_accounts || [];
+    const bl = document.getElementById('bankList');
+    if (banks.length === 0) {
+        bl.innerHTML = '<div class="empty-state" style="padding:20px"><p>No bank accounts linked yet</p><p style="font-size:12px;margin-top:4px">Link a bank account to add money to your wallet</p></div>';
+    } else {
+        bl.innerHTML = banks.map(b => `
+            <div class="bank-card">
+                <div class="bank-info">
+                    <div class="bank-icon">${b.bank_name.charAt(0)}</div>
+                    <div>
+                        <div class="bank-name">${b.bank_name}</div>
+                        <div class="bank-detail">${b.account_holder} &bull; ****${b.account_last4} &bull; ${b.ifsc_code}</div>
+                        <span class="bank-verified">${b.verified ? '\u2705 Verified' : '\u23f3 Pending'}</span>
+                    </div>
+                </div>
+                <button class="btn btn-sm btn-danger" onclick="removeBank(${b.id})">Remove</button>
+            </div>
+        `).join('');
     }
 
     // Wallets
