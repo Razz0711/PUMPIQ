@@ -493,6 +493,8 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
 
 async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=None):
     settings = get_trade_settings(user_id)
+    if not settings.get("auto_trade_enabled"):
+        return {"status": "disabled", "message": "Auto-trading is disabled. Turn on the toggle to start."}
 
     balance = _get_wallet_balance(user_id)
     stats = _get_trade_stats(user_id)
