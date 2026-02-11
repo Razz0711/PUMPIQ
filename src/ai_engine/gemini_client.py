@@ -166,6 +166,11 @@ class GeminiClient:
                     "Gemini attempt %d/%d failed: %s",
                     attempt, self.max_retries, e,
                 )
+                # Don't retry on quota exhaustion — it's a daily limit, not a burst
+                err_lower = last_error.lower()
+                if "resource_exhausted" in err_lower or "quota" in err_lower:
+                    logger.warning("Quota exhausted — skipping remaining retries")
+                    break
                 if attempt < self.max_retries:
                     await asyncio.sleep(self.retry_delay * attempt)
 
