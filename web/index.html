@@ -742,8 +742,8 @@ a:hover { text-decoration: underline; }
 <div class="page" id="page-trader">
     <div class="trader-header">
         <div>
-            <div class="trader-title">🤖 Auto Trader <span>Paper Trading</span></div>
-            <div style="color:var(--text-secondary);font-size:13px;margin-top:4px">AI-powered autonomous trading with virtual money — no real funds at risk</div>
+            <div class="trader-title">🤖 Auto Trader <span>Live Trading</span></div>
+            <div style="color:var(--text-secondary);font-size:13px;margin-top:4px">AI-powered autonomous trading using your real wallet balance</div>
         </div>
         <div style="display:flex;align-items:center;gap:16px">
             <div id="traderStatusBadge" class="trader-status inactive">● Inactive</div>
@@ -757,8 +757,8 @@ a:hover { text-decoration: underline; }
     <!-- Stats Cards -->
     <div class="trader-grid" style="grid-template-columns:repeat(4,1fr);margin-top:16px">
         <div class="trader-stat-card">
-            <div class="trader-stat-label">Paper Balance</div>
-            <div class="trader-stat-value" id="traderBalance">₹1,00,000</div>
+            <div class="trader-stat-label">Wallet Balance</div>
+            <div class="trader-stat-value" id="traderBalance">₹0</div>
             <div class="trader-stat-sub" id="traderReturn">0% return</div>
         </div>
         <div class="trader-stat-card">
@@ -784,7 +784,7 @@ a:hover { text-decoration: underline; }
         <button class="btn btn-outline" onclick="runResearch()">🔍 Research Market</button>
         <button class="btn btn-outline" onclick="showManualBuyModal()">🛒 Manual Buy</button>
         <button class="btn btn-outline" onclick="showTraderSettings()">⚙️ Settings</button>
-        <button class="btn btn-danger btn-sm" onclick="resetPaperTrading()" style="margin-left:auto">🔄 Reset</button>
+        <button class="btn btn-danger btn-sm" onclick="resetTrading()" style="margin-left:auto">🔄 Reset Stats</button>
     </div>
 
     <!-- Open Positions -->
@@ -2031,9 +2031,10 @@ async function loadTraderDashboard() {
         ]);
 
         // Stats
-        document.getElementById('traderBalance').textContent = '₹' + formatINR(perf.paper_balance);
-        const retCls = perf.total_return_pct >= 0 ? 'color:var(--green)' : 'color:var(--red)';
-        document.getElementById('traderReturn').innerHTML = `<span style="${retCls}">${perf.total_return_pct >= 0 ? '+' : ''}${perf.total_return_pct.toFixed(2)}% return</span>`;
+        document.getElementById('traderBalance').textContent = '₹' + formatINR(perf.wallet_balance);
+        const totalPnl = (perf.realized_pnl || 0) + (perf.unrealized_pnl || 0);
+        const retCls = totalPnl >= 0 ? 'color:var(--green)' : 'color:var(--red)';
+        document.getElementById('traderReturn').innerHTML = `<span style="${retCls}">P&L: ₹${formatINR(totalPnl)}</span>`;
         
         const pnlCls = perf.realized_pnl >= 0 ? 'color:var(--green)' : 'color:var(--red)';
         document.getElementById('traderPnl').innerHTML = `<span style="${pnlCls}">₹${formatINR(perf.realized_pnl)}</span>`;
@@ -2178,7 +2179,7 @@ async function sellPosition(posId) {
 function showManualBuyModal() {
     if (!currentUser) return showAuthModal('login');
     const html = `
-        <h2>🛒 Manual Paper Buy</h2>
+        <h2>🛒 Buy Crypto</h2>
         <div class="form-group"><label>Coin ID (e.g. bitcoin, ethereum, solana)</label>
             <input class="form-input" id="manualBuyCoin" placeholder="bitcoin"></div>
         <div class="form-group"><label>Amount (₹)</label>
@@ -2190,7 +2191,7 @@ function showManualBuyModal() {
                 <button class="btn btn-sm btn-outline" onclick="document.getElementById('manualBuyAmount').value=20000">₹20K</button>
             </div>
         </div>
-        <button class="btn btn-green" style="width:100%;margin-top:8px" onclick="submitManualBuy()">Buy Now (Paper)</button>
+        <button class="btn btn-green" style="width:100%;margin-top:8px" onclick="submitManualBuy()">Buy Now</button>
     `;
     showDynamicModal(html);
 }
@@ -2205,7 +2206,7 @@ async function submitManualBuy() {
             body: JSON.stringify({ coin_id, amount }),
         });
         closeDynamicModal();
-        alert(`Paper buy order placed for ₹${amount.toLocaleString()}`);
+        alert(`Buy order placed for ₹${amount.toLocaleString()}`);
         loadTraderDashboard();
     } catch(e) { alert(e.message); }
 }
@@ -2296,11 +2297,11 @@ async function saveTraderSettings() {
     } catch(e) { alert(e.message); }
 }
 
-async function resetPaperTrading() {
-    if (!confirm('Reset paper trading? This will close all positions and reset balance to ₹1,00,000.')) return;
+async function resetTrading() {
+    if (!confirm('Reset trading? This will close all open positions and refund invested amounts to your wallet.')) return;
     try {
         await api('/api/trader/reset', { method: 'POST' });
-        alert('Paper trading reset!');
+        alert('Trading stats reset! Open positions refunded to wallet.');
         loadTraderDashboard();
     } catch(e) { alert(e.message); }
 }

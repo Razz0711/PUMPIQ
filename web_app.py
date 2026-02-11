@@ -1099,17 +1099,17 @@ async def toggle_auto_trade(user=Depends(require_user)):
     return {"success": True, "auto_trade_enabled": bool(new_state), "message": f"Auto-trading {status}"}
 
 
-# ── Paper Balance ──
+# ── Wallet Balance & Reset ──
 
 @app.get("/api/trader/balance")
 async def get_trader_balance(user=Depends(require_user)):
-    return trading_engine.get_paper_balance(user.id)
+    return trading_engine.get_performance_stats(user.id)
 
 
 @app.post("/api/trader/reset")
 async def reset_trader_balance(user=Depends(require_user)):
-    """Reset paper trading balance to ₹1,00,000."""
-    return trading_engine.reset_paper_balance(user.id)
+    """Reset trading stats and close all positions (refunds invested amount to wallet)."""
+    return trading_engine.reset_trading(user.id)
 
 
 # ── Positions ──
@@ -1124,7 +1124,7 @@ async def get_trader_positions(user=Depends(require_user)):
 
 @app.post("/api/trader/sell/{position_id}")
 async def sell_position(position_id: int, user=Depends(require_user)):
-    """Manually sell/close a paper position."""
+    """Manually sell/close a position."""
     # Get current price
     pos = None
     for p in trading_engine.get_open_positions(user.id):
@@ -1143,7 +1143,7 @@ async def sell_position(position_id: int, user=Depends(require_user)):
     except Exception:
         pass
 
-    result = trading_engine.execute_paper_sell(user.id, position_id, current_price, "Manual sell")
+    result = trading_engine.execute_sell(user.id, position_id, current_price, "Manual sell")
     if not result["success"]:
         raise HTTPException(400, result["error"])
     return result
@@ -1158,7 +1158,7 @@ class ManualBuyRequest(BaseModel):
 
 @app.post("/api/trader/buy")
 async def manual_buy(body: ManualBuyRequest, user=Depends(require_user)):
-    """Manually buy a coin with paper money."""
+    """Manually buy a coin using real wallet balance."""
     if body.amount <= 0:
         raise HTTPException(400, "Amount must be > 0")
 
@@ -1168,7 +1168,7 @@ async def manual_buy(body: ManualBuyRequest, user=Depends(require_user)):
         raise HTTPException(404, "Coin not found")
 
     settings = trading_engine.get_trade_settings(user.id)
-    result = trading_engine.execute_paper_buy(
+    result = trading_engine.execute_buy(
         user_id=user.id,
         coin_id=coin.coin_id,
         coin_name=coin.name,
