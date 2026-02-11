@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -758,18 +758,18 @@ a:hover { text-decoration: underline; }
     <div class="trader-grid" style="grid-template-columns:repeat(4,1fr);margin-top:16px">
         <div class="trader-stat-card">
             <div class="trader-stat-label">Wallet Balance</div>
-            <div class="trader-stat-value" id="traderBalance">₹0</div>
+            <div class="trader-stat-value" id="traderBalance">$0</div>
             <div class="trader-stat-sub" id="traderReturn">0% return</div>
         </div>
         <div class="trader-stat-card">
             <div class="trader-stat-label">Total P&L</div>
-            <div class="trader-stat-value" id="traderPnl">₹0.00</div>
+            <div class="trader-stat-value" id="traderPnl">$0.00</div>
             <div class="trader-stat-sub" id="traderWinRate">Win rate: --</div>
         </div>
         <div class="trader-stat-card">
             <div class="trader-stat-label">Open Positions</div>
             <div class="trader-stat-value" id="traderOpenCount">0</div>
-            <div class="trader-stat-sub" id="traderInvested">₹0 invested</div>
+            <div class="trader-stat-sub" id="traderInvested">$0 invested</div>
         </div>
         <div class="trader-stat-card">
             <div class="trader-stat-label">Total Trades</div>
@@ -820,7 +820,7 @@ a:hover { text-decoration: underline; }
     <!-- Wallet Balance Card -->
     <div class="balance-card" style="margin-top:20px">
         <div class="balance-label">Wallet Balance</div>
-        <div class="balance-amount"><span class="currency">₹</span><span id="walletBalanceDisplay">0.00</span></div>
+        <div class="balance-amount"><span class="currency">$</span><span id="walletBalanceDisplay">0.00</span></div>
         <div class="balance-actions">
             <button class="btn btn-primary" onclick="showDepositModal()">+ Add Money</button>
             <button class="btn btn-outline" onclick="showWithdrawModal()">Withdraw</button>
@@ -1014,15 +1014,15 @@ a:hover { text-decoration: underline; }
                 <select class="form-input" id="depositBank"></select>
             </div>
             <div class="form-group">
-                <label>Amount (₹)</label>
+                <label>Amount ($)</label>
                 <input class="form-input" id="depositAmount" type="number" min="1" step="any" placeholder="Enter amount">
             </div>
             <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-                <button class="btn btn-outline btn-sm" onclick="setDepositAmount(500)">₹500</button>
-                <button class="btn btn-outline btn-sm" onclick="setDepositAmount(1000)">₹1,000</button>
-                <button class="btn btn-outline btn-sm" onclick="setDepositAmount(5000)">₹5,000</button>
-                <button class="btn btn-outline btn-sm" onclick="setDepositAmount(10000)">₹10,000</button>
-                <button class="btn btn-outline btn-sm" onclick="setDepositAmount(50000)">₹50,000</button>
+                <button class="btn btn-outline btn-sm" onclick="setDepositAmount(500)">$500</button>
+                <button class="btn btn-outline btn-sm" onclick="setDepositAmount(1000)">$1,000</button>
+                <button class="btn btn-outline btn-sm" onclick="setDepositAmount(5000)">$5,000</button>
+                <button class="btn btn-outline btn-sm" onclick="setDepositAmount(10000)">$10,000</button>
+                <button class="btn btn-outline btn-sm" onclick="setDepositAmount(50000)">$50,000</button>
             </div>
             <button class="btn btn-primary" style="width:100%" onclick="submitDeposit()">Deposit</button>
         </div>
@@ -1036,7 +1036,7 @@ a:hover { text-decoration: underline; }
     <div class="modal">
         <button class="modal-close" onclick="closeModal('withdrawModal')">&times;</button>
         <h2>📤 Withdraw to Bank</h2>
-        <p style="color:var(--text-secondary);font-size:13px;margin-bottom:12px;">Available: <strong>₹<span id="withdrawAvailable">0.00</span></strong></p>
+        <p style="color:var(--text-secondary);font-size:13px;margin-bottom:12px;">Available: <strong>$<span id="withdrawAvailable">0.00</span></strong></p>
         <div id="withdrawError" class="form-error"></div>
         <div id="withdrawSuccess" style="display:none;color:#00d4aa;background:#0a2a1a;padding:12px;border-radius:8px;margin-bottom:12px;"></div>
 
@@ -1046,7 +1046,7 @@ a:hover { text-decoration: underline; }
                 <select class="form-input" id="withdrawBank"></select>
             </div>
             <div class="form-group">
-                <label>Amount (₹)</label>
+                <label>Amount ($)</label>
                 <input class="form-input" id="withdrawAmount" type="number" min="1" step="any" placeholder="Enter amount">
             </div>
             <button class="btn btn-primary" style="width:100%" onclick="submitWithdraw()">Withdraw</button>
@@ -1476,7 +1476,7 @@ function showWithdrawModal() {
     document.getElementById('withdrawError').style.display = 'none';
     document.getElementById('withdrawSuccess').style.display = 'none';
     document.getElementById('withdrawAmount').value = '';
-    document.getElementById('withdrawAvailable').textContent = formatINR(currentUser?.wallet_balance || 0);
+    document.getElementById('withdrawAvailable').textContent = formatUSD(currentUser?.wallet_balance || 0);
     populateBankSelect('withdrawBank');
     document.getElementById('withdrawModal').classList.add('active');
 }
@@ -1485,8 +1485,8 @@ function setDepositAmount(amt) {
     document.getElementById('depositAmount').value = amt;
 }
 
-function formatINR(n) {
-    return Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function formatUSD(n) {
+    return Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 async function submitDeposit() {
@@ -1503,12 +1503,12 @@ async function submitDeposit() {
             method: 'POST',
             body: JSON.stringify({ amount, bank_id }),
         });
-        successEl.innerHTML = `✅ ₹${formatINR(amount)} deposited successfully! New balance: <strong>₹${formatINR(res.new_balance)}</strong>`;
+        successEl.innerHTML = `✅ $${formatUSD(amount)} deposited successfully! New balance: <strong>$${formatUSD(res.new_balance)}</strong>`;
         successEl.style.display = 'block';
         document.getElementById('depositFields').style.display = 'none';
         // Update local state
         if (currentUser) currentUser.wallet_balance = res.new_balance;
-        document.getElementById('walletBalanceDisplay').textContent = formatINR(res.new_balance);
+        document.getElementById('walletBalanceDisplay').textContent = formatUSD(res.new_balance);
         setTimeout(() => { closeModal('depositModal'); document.getElementById('depositFields').style.display = 'block'; }, 2500);
     } catch (e) {
         errEl.textContent = e.message; errEl.style.display = 'block';
@@ -1529,11 +1529,11 @@ async function submitWithdraw() {
             method: 'POST',
             body: JSON.stringify({ amount, bank_id }),
         });
-        successEl.innerHTML = `✅ ₹${formatINR(amount)} withdrawal initiated. New balance: <strong>₹${formatINR(res.new_balance)}</strong>`;
+        successEl.innerHTML = `✅ $${formatUSD(amount)} withdrawal initiated. New balance: <strong>$${formatUSD(res.new_balance)}</strong>`;
         successEl.style.display = 'block';
         document.getElementById('withdrawFields').style.display = 'none';
         if (currentUser) currentUser.wallet_balance = res.new_balance;
-        document.getElementById('walletBalanceDisplay').textContent = formatINR(res.new_balance);
+        document.getElementById('walletBalanceDisplay').textContent = formatUSD(res.new_balance);
         setTimeout(() => { closeModal('withdrawModal'); document.getElementById('withdrawFields').style.display = 'block'; }, 2500);
     } catch (e) {
         errEl.textContent = e.message; errEl.style.display = 'block';
@@ -1560,7 +1560,7 @@ async function showTransactionsModal() {
                     <div style="font-size:11px;color:var(--text-muted)">${new Date(t.created_at).toLocaleString()}</div>
                 </div>
                 <div class="txn-amount" style="color:${t.type === 'deposit' ? '#00d4aa' : '#ff6b6b'}">
-                    ${t.type === 'deposit' ? '+' : '-'}₹${formatINR(t.amount)}
+                    ${t.type === 'deposit' ? '+' : '-'}$${formatUSD(t.amount)}
                 </div>
             </div>
         `).join('');
@@ -1611,7 +1611,7 @@ async function loadProfile() {
     }
 
     // Wallet Balance
-    document.getElementById('walletBalanceDisplay').textContent = formatINR(currentUser.wallet_balance || 0);
+    document.getElementById('walletBalanceDisplay').textContent = formatUSD(currentUser.wallet_balance || 0);
 
     // Bank Accounts
     const banks = currentUser.bank_accounts || [];
@@ -2031,20 +2031,20 @@ async function loadTraderDashboard() {
         ]);
 
         // Stats
-        document.getElementById('traderBalance').textContent = '₹' + formatINR(perf.wallet_balance);
+        document.getElementById('traderBalance').textContent = '$' + formatUSD(perf.wallet_balance);
         const totalPnl = (perf.realized_pnl || 0) + (perf.unrealized_pnl || 0);
         const retCls = totalPnl >= 0 ? 'color:var(--green)' : 'color:var(--red)';
-        document.getElementById('traderReturn').innerHTML = `<span style="${retCls}">P&L: ₹${formatINR(totalPnl)}</span>`;
+        document.getElementById('traderReturn').innerHTML = `<span style="${retCls}">P&L: $${formatUSD(totalPnl)}</span>`;
         
         const pnlCls = perf.realized_pnl >= 0 ? 'color:var(--green)' : 'color:var(--red)';
-        document.getElementById('traderPnl').innerHTML = `<span style="${pnlCls}">₹${formatINR(perf.realized_pnl)}</span>`;
+        document.getElementById('traderPnl').innerHTML = `<span style="${pnlCls}">$${formatUSD(perf.realized_pnl)}</span>`;
         document.getElementById('traderWinRate').textContent = `Win rate: ${perf.win_rate}% (${perf.winning_trades}W / ${perf.losing_trades}L)`;
 
         document.getElementById('traderOpenCount').textContent = perf.open_positions;
-        document.getElementById('traderInvested').textContent = `₹${formatINR(perf.invested_in_positions)} invested`;
+        document.getElementById('traderInvested').textContent = `$${formatUSD(perf.invested_in_positions)} invested`;
 
         document.getElementById('traderTradeCount').textContent = perf.total_trades;
-        document.getElementById('traderBestWorst').textContent = `Best: ₹${formatINR(perf.best_trade)} | Worst: ₹${formatINR(perf.worst_trade)}`;
+        document.getElementById('traderBestWorst').textContent = `Best: $${formatUSD(perf.best_trade)} | Worst: $${formatUSD(perf.worst_trade)}`;
 
         // Toggle state
         const settings = await api('/api/trader/settings');
@@ -2080,19 +2080,21 @@ function renderTraderPositions(positions) {
             <div class="position-header">
                 <div class="position-coin">${p.symbol} <span style="color:var(--text-muted);font-weight:400;font-size:13px">${p.coin_name}</span></div>
                 <div style="display:flex;align-items:center;gap:10px">
-                    <span class="position-badge ${pnlCls}">${pnlSign}₹${Math.abs(p.pnl).toFixed(2)} (${p.pnl_pct >= 0 ? '+' : ''}${p.pnl_pct.toFixed(1)}%)</span>
+                    <span class="position-badge ${pnlCls}">${pnlSign}$${Math.abs(p.pnl).toFixed(2)} (${p.pnl_pct >= 0 ? '+' : ''}${p.pnl_pct.toFixed(1)}%)</span>
                     <button class="btn btn-sm btn-danger" onclick="sellPosition(${p.id})">Sell</button>
                 </div>
             </div>
             <div class="position-details">
-                <div><span>Entry Price</span><strong>₹${p.entry_price.toFixed(2)}</strong></div>
-                <div><span>Current</span><strong>₹${p.current_price.toFixed(2)}</strong></div>
+                <div><span>Entry Price</span><strong>$${p.entry_price.toFixed(2)}</strong></div>
+                <div><span>Current</span><strong>$${p.current_price.toFixed(2)}</strong></div>
                 <div><span>Quantity</span><strong>${p.quantity.toFixed(6)}</strong></div>
-                <div><span>Invested</span><strong>₹${formatINR(p.invested_amount)}</strong></div>
-                <div><span>Stop Loss</span><strong>₹${p.stop_loss.toFixed(2)}</strong></div>
-                <div><span>Take Profit</span><strong>₹${p.take_profit.toFixed(2)}</strong></div>
+                <div><span>Invested</span><strong>$${formatUSD(p.invested_amount)}</strong></div>
+                <div><span>Stop Loss</span><strong>$${p.stop_loss.toFixed(2)}</strong></div>
+                <div><span>Take Profit</span><strong>$${p.take_profit.toFixed(2)}</strong></div>
             </div>
-            <div style="margin-top:8px;font-size:12px;color:var(--text-muted)">🤖 ${p.ai_reasoning}</div>
+            <div style="margin-top:8px;padding:8px;background:var(--bg-primary);border-radius:6px;font-size:12px;color:var(--text-secondary);line-height:1.5">
+                <strong style="color:var(--accent)">🤖 AI Analysis:</strong> ${p.ai_reasoning}
+            </div>
         </div>`;
     }).join('');
 }
@@ -2154,7 +2156,7 @@ async function runResearch() {
             <div class="opp-card">
                 <div class="opp-info">
                     <div class="opp-name">${o.symbol} <span style="color:var(--text-muted);font-weight:400">${o.name}</span></div>
-                    <div class="opp-detail">₹${o.price.toFixed(4)} | 24h: ${o.change_24h >= 0 ? '+' : ''}${o.change_24h.toFixed(1)}% | Vol: $${(o.volume_24h/1000).toFixed(0)}K</div>
+                    <div class="opp-detail">$${o.price.toFixed(4)} | 24h: ${o.change_24h >= 0 ? '+' : ''}${o.change_24h.toFixed(1)}% | Vol: $${(o.volume_24h/1000).toFixed(0)}K</div>
                     <div class="opp-detail" style="margin-top:4px">💡 ${o.reasoning}</div>
                 </div>
                 <div class="opp-score ${scoreCls}">${o.score}</div>
@@ -2171,7 +2173,7 @@ async function sellPosition(posId) {
     if (!confirm('Sell this position?')) return;
     try {
         const result = await api(`/api/trader/sell/${posId}`, { method: 'POST' });
-        alert(`Sold! P&L: ₹${result.pnl.toFixed(2)} (${result.pnl_pct >= 0 ? '+' : ''}${result.pnl_pct.toFixed(1)}%)`);
+        alert(`Sold! P&L: $${result.pnl.toFixed(2)} (${result.pnl_pct >= 0 ? '+' : ''}${result.pnl_pct.toFixed(1)}%)`);
         loadTraderDashboard();
     } catch(e) { alert(e.message); }
 }
@@ -2182,13 +2184,13 @@ function showManualBuyModal() {
         <h2>🛒 Buy Crypto</h2>
         <div class="form-group"><label>Coin ID (e.g. bitcoin, ethereum, solana)</label>
             <input class="form-input" id="manualBuyCoin" placeholder="bitcoin"></div>
-        <div class="form-group"><label>Amount (₹)</label>
+        <div class="form-group"><label>Amount ($)</label>
             <input class="form-input" id="manualBuyAmount" type="number" placeholder="5000">
             <div style="display:flex;gap:6px;margin-top:6px">
-                <button class="btn btn-sm btn-outline" onclick="document.getElementById('manualBuyAmount').value=1000">₹1K</button>
-                <button class="btn btn-sm btn-outline" onclick="document.getElementById('manualBuyAmount').value=5000">₹5K</button>
-                <button class="btn btn-sm btn-outline" onclick="document.getElementById('manualBuyAmount').value=10000">₹10K</button>
-                <button class="btn btn-sm btn-outline" onclick="document.getElementById('manualBuyAmount').value=20000">₹20K</button>
+                <button class="btn btn-sm btn-outline" onclick="document.getElementById('manualBuyAmount').value=1000">$1K</button>
+                <button class="btn btn-sm btn-outline" onclick="document.getElementById('manualBuyAmount').value=5000">$5K</button>
+                <button class="btn btn-sm btn-outline" onclick="document.getElementById('manualBuyAmount').value=10000">$10K</button>
+                <button class="btn btn-sm btn-outline" onclick="document.getElementById('manualBuyAmount').value=20000">$20K</button>
             </div>
         </div>
         <button class="btn btn-green" style="width:100%;margin-top:8px" onclick="submitManualBuy()">Buy Now</button>
@@ -2206,7 +2208,7 @@ async function submitManualBuy() {
             body: JSON.stringify({ coin_id, amount }),
         });
         closeDynamicModal();
-        alert(`Buy order placed for ₹${amount.toLocaleString()}`);
+        alert(`Buy order placed for $${amount.toLocaleString()}`);
         loadTraderDashboard();
     } catch(e) { alert(e.message); }
 }
@@ -2318,8 +2320,8 @@ async function loadTraderHistory() {
                     <td style="font-size:12px">${new Date(t.created_at).toLocaleString()}</td>
                     <td style="${actionCls};font-weight:600">${t.action}</td>
                     <td>${t.symbol}</td>
-                    <td>₹${t.price.toFixed(2)}</td>
-                    <td>₹${formatINR(t.amount)}</td>
+                    <td>$${t.price.toFixed(2)}</td>
+                    <td>$${formatUSD(t.amount)}</td>
                     <td>${t.ai_score}/100</td>
                 </tr>`;
             }).join('') + '</tbody></table>';
@@ -2354,12 +2356,12 @@ async function loadClosedPositions() {
             <div class="position-card">
                 <div class="position-header">
                     <div class="position-coin">${p.symbol} <span style="color:var(--text-muted);font-weight:400;font-size:13px">${p.coin_name}</span></div>
-                    <span class="position-badge ${pnlCls}">${sign}₹${Math.abs(p.pnl).toFixed(2)} (${p.pnl_pct >= 0 ? '+' : ''}${p.pnl_pct.toFixed(1)}%)</span>
+                    <span class="position-badge ${pnlCls}">${sign}$${Math.abs(p.pnl).toFixed(2)} (${p.pnl_pct >= 0 ? '+' : ''}${p.pnl_pct.toFixed(1)}%)</span>
                 </div>
                 <div class="position-details">
-                    <div><span>Entry</span><strong>₹${p.entry_price.toFixed(2)}</strong></div>
-                    <div><span>Exit</span><strong>₹${p.current_price.toFixed(2)}</strong></div>
-                    <div><span>Invested</span><strong>₹${formatINR(p.invested_amount)}</strong></div>
+                    <div><span>Entry</span><strong>$${p.entry_price.toFixed(2)}</strong></div>
+                    <div><span>Exit</span><strong>$${p.current_price.toFixed(2)}</strong></div>
+                    <div><span>Invested</span><strong>$${formatUSD(p.invested_amount)}</strong></div>
                 </div>
                 <div style="margin-top:6px;font-size:11px;color:var(--text-muted)">Closed: ${new Date(p.closed_at).toLocaleString()}</div>
             </div>`;

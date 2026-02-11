@@ -198,7 +198,7 @@ def _get_wallet_balance(user_id: int) -> float:
 def _deduct_wallet(conn, user_id: int, amount: float):
     conn.execute("UPDATE wallet_balance SET balance = balance - ?, updated_at = datetime('now') WHERE user_id = ?", (amount, user_id))
     conn.execute("INSERT INTO wallet_transactions (user_id, type, amount, description, status) VALUES (?, 'trade_buy', ?, ?, 'completed')",
-                 (user_id, amount, f"Auto-trade: invested {amount:,.0f}"))
+                 (user_id, amount, f"Auto-trade: invested ${amount:,.2f}"))
 
 
 def _credit_wallet(conn, user_id: int, amount: float, description: str = ""):
@@ -239,7 +239,7 @@ def reset_trading(user_id: int) -> Dict[str, Any]:
                 winning_trades=0, losing_trades=0, best_trade_pnl=0, worst_trade_pnl=0, updated_at=datetime('now')
         ''', (user_id,))
         conn.commit()
-        _log_event(conn, user_id, "RESET", f"Trading reset - {refund:,.0f} refunded to wallet")
+        _log_event(conn, user_id, "RESET", f"Trading reset — ${refund:,.0f} refunded to wallet")
         conn.commit()
         return {"success": True, "refunded": refund}
     finally:
@@ -326,7 +326,7 @@ def execute_buy(user_id, coin_id, coin_name, symbol, price, amount, ai_score, ai
             ON CONFLICT(user_id) DO UPDATE SET total_invested = total_invested + ?, total_trades = total_trades + 1, updated_at = datetime('now')
         ''', (user_id, amount, amount))
 
-        _log_event(conn, user_id, "BUY", f"Bought {quantity:.6f} {symbol.upper()} at {price:,.2f} ({amount:,.0f}) | Score: {ai_score}/100 | {ai_reasoning[:100]}")
+        _log_event(conn, user_id, "BUY", f"Bought {quantity:.6f} {symbol.upper()} at ${price:,.2f} (${amount:,.0f}) | Score: {ai_score}/100 | {ai_reasoning[:200]}")
         conn.commit()
         return {"success": True, "position_id": position_id, "quantity": quantity, "amount": amount}
     except Exception as e:
@@ -357,7 +357,7 @@ def execute_sell(user_id, position_id, current_price, reason="manual"):
             VALUES (?, ?, ?, ?, 'SELL', ?, ?, ?, ?)
         ''', (user_id, position_id, pos["coin_id"], pos["symbol"], current_price, pos["quantity"], current_value, reason))
 
-        _credit_wallet(conn, user_id, current_value, f"Sold {pos['symbol']} - P&L: {pnl:,.2f} ({pnl_pct:+.1f}%)")
+        _credit_wallet(conn, user_id, current_value, f"Sold {pos['symbol']} — P&L: ${pnl:,.2f} ({pnl_pct:+.1f}%)")
 
         win_inc = 1 if pnl > 0 else 0
         loss_inc = 1 if pnl < 0 else 0
@@ -370,7 +370,7 @@ def execute_sell(user_id, position_id, current_price, reason="manual"):
         ''', (pnl, win_inc, loss_inc, pnl, pnl, user_id))
 
         emoji = "gain" if pnl > 0 else "loss"
-        _log_event(conn, user_id, "SELL", f"Sold {pos['quantity']:.6f} {pos['symbol']} at {current_price:,.2f} | P&L: {pnl:,.2f} ({pnl_pct:+.1f}%) | Reason: {reason}")
+        _log_event(conn, user_id, "SELL", f"Sold {pos['quantity']:.6f} {pos['symbol']} at ${current_price:,.2f} | P&L: ${pnl:,.2f} ({pnl_pct:+.1f}%) | Reason: {reason}")
         conn.commit()
         return {"success": True, "pnl": round(pnl, 2), "pnl_pct": round(pnl_pct, 2), "amount": round(current_value, 2)}
     except Exception as e:
@@ -458,13 +458,30 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
     if gemini_client and opportunities:
         try:
             top5 = sorted(opportunities, key=lambda x: x["score"], reverse=True)[:5]
-            prompt = ("You are PumpIQ auto-trader AI. Analyze these crypto opportunities and give a 1-line trade recommendation for each. "
-                      "Focus on risk/reward. Be concise.\n\n"
-                      + "\n".join(f"- {t['name']} ({t['symbol']}): Price ${t['price']:,.6f}, 24h: {t['change_24h']:+.1f}%, Volume: ${t['volume_24h']:,.0f}, Score: {t['score']}/100" for t in top5))
-            resp = await asyncio.wait_for(gemini_client.chat("You are a crypto trading AI assistant.", prompt), timeout=10)
+            prompt = (
+                "You are PumpIQ, an expert crypto trading AI. For each coin below, write a detailed 2-3 sentence analysis explaining:\n"
+                "1. WHY you would buy it right now (momentum, volume, trend signals)\n"
+                "2. What RISKS exist (volatility, market cap, recent dumps)\n"
+                "3. Your RECOMMENDATION (Strong Buy, Buy, Hold, or Avoid) with a target % gain\n\n"
+                "Coins to analyze:\n"
+                + "\n".join(
+                    f"- {t['name']} ({t['symbol']}): Price ${t['price']:,.6f}, "
+                    f"24h Change: {t['change_24h']:+.1f}%, Market Cap: ${t['market_cap']:,.0f}, "
+                    f"Volume: ${t['volume_24h']:,.0f}, PumpIQ Score: {t['score']}/100"
+                    for t in top5
+                )
+                + "\n\nFormat: COIN_SYMBOL: [Recommendation] - Detailed reasoning..."
+            )
+            resp = await asyncio.wait_for(gemini_client.chat("You are a crypto trading AI assistant.", prompt), timeout=15)
             if resp.success:
                 for opp in top5:
                     opp["ai_analysis"] = resp.content
+                    # Also enhance the reasoning field with AI insight
+                    symbol = opp["symbol"].upper()
+                    for line in resp.content.split("\n"):
+                        if symbol in line.upper():
+                            opp["reasoning"] = line.strip()[:300]
+                            break
         except Exception as e:
             logger.warning("AI analysis failed: %s", e)
 
@@ -476,8 +493,6 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
 
 async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=None):
     settings = get_trade_settings(user_id)
-    if not settings.get("auto_trade_enabled"):
-        return {"status": "disabled", "message": "Auto-trading is disabled"}
 
     balance = _get_wallet_balance(user_id)
     stats = _get_trade_stats(user_id)
@@ -519,14 +534,18 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
             conn.close()
             results["positions_updated"] += 1
             if pnl_pct <= -settings["stop_loss_pct"]:
-                sell_result = execute_sell(user_id, pos["id"], current_price, f"Stop-loss triggered ({pnl_pct:.1f}%)")
+                sell_reason = (f"STOP-LOSS TRIGGERED: {pos['symbol']} dropped {pnl_pct:.1f}% from entry price ${pos['entry_price']:.2f} to ${current_price:.2f}. "
+                               f"Loss of ${abs(pnl):.2f} on ${pos['invested_amount']:.2f} invested. Selling to prevent further losses.")
+                sell_result = execute_sell(user_id, pos["id"], current_price, sell_reason)
                 if sell_result["success"]:
-                    results["actions"].append(f"Stop-loss: Sold {pos['symbol']} at {current_price:,.2f} (P&L: {pnl_pct:+.1f}%)")
+                    results["actions"].append(f"Stop-loss: Sold {pos['symbol']} at ${current_price:,.2f} (P&L: {pnl_pct:+.1f}%) — Price fell below safety threshold")
                 continue
             if pnl_pct >= settings["take_profit_pct"]:
-                sell_result = execute_sell(user_id, pos["id"], current_price, f"Take-profit triggered ({pnl_pct:.1f}%)")
+                sell_reason = (f"TAKE-PROFIT TRIGGERED: {pos['symbol']} gained {pnl_pct:.1f}% from entry ${pos['entry_price']:.2f} to ${current_price:.2f}. "
+                               f"Profit of ${pnl:.2f} on ${pos['invested_amount']:.2f} invested. Locking in profits at target.")
+                sell_result = execute_sell(user_id, pos["id"], current_price, sell_reason)
                 if sell_result["success"]:
-                    results["actions"].append(f"Take-profit: Sold {pos['symbol']} at {current_price:,.2f} (P&L: {pnl_pct:+.1f}%)")
+                    results["actions"].append(f"Take-profit: Sold {pos['symbol']} at ${current_price:,.2f} (P&L: {pnl_pct:+.1f}%) — Target profit reached, securing gains")
                 continue
         except Exception as e:
             logger.warning("Position update failed for %s: %s", pos["coin_id"], e)
@@ -534,30 +553,44 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
     balance = _get_wallet_balance(user_id)
     open_count = len([p for p in get_open_positions(user_id) if p["status"] == "open"])
 
-    if open_count < settings["max_open_positions"] and balance > 1000:
+    if open_count < settings["max_open_positions"] and balance > 100:
         opportunities = await research_opportunities(cg_collector, dex_collector, gemini_client)
         held_coins = {p["coin_id"] for p in get_open_positions(user_id)}
         opportunities = [o for o in opportunities if o["coin_id"] not in held_coins]
         opportunities = [o for o in opportunities if o["market_cap"] >= settings["min_market_cap"]]
 
-        for opp in opportunities[:2]:
+        for opp in opportunities[:3]:  # Up to 3 buys per cycle
             if open_count >= settings["max_open_positions"]:
                 break
             max_trade = balance * (settings["max_trade_pct"] / 100)
             trade_amount = min(max_trade, balance * 0.15)
-            if trade_amount < 500:
+            if trade_amount < 50:
                 break
+
+            # Build detailed AI reasoning for the buy
+            detailed_reasoning = (
+                f"BUY SIGNAL for {opp['name']} ({opp['symbol']}): "
+                f"Price ${opp['price']:,.6f} | 24h: {opp['change_24h']:+.1f}% | "
+                f"Market Cap: ${opp['market_cap']:,.0f} | Volume: ${opp['volume_24h']:,.0f} | "
+                f"Score: {opp['score']}/100. "
+                f"Analysis: {opp['reasoning']}. "
+                f"Investing ${trade_amount:,.2f} ({trade_amount/balance*100:.1f}% of wallet) with "
+                f"stop-loss at -{settings['stop_loss_pct']}% and take-profit at +{settings['take_profit_pct']}%."
+            )
+            if opp.get("ai_analysis"):
+                detailed_reasoning += f" AI Insight: {opp['ai_analysis'][:200]}"
+
             buy_result = execute_buy(
                 user_id=user_id, coin_id=opp["coin_id"], coin_name=opp["name"],
                 symbol=opp["symbol"], price=opp["price"], amount=trade_amount,
-                ai_score=opp["score"], ai_reasoning=opp["reasoning"],
+                ai_score=opp["score"], ai_reasoning=detailed_reasoning,
                 stop_loss_pct=settings["stop_loss_pct"], take_profit_pct=settings["take_profit_pct"],
             )
             if buy_result["success"]:
                 results["new_trades"] += 1
                 open_count += 1
                 balance -= trade_amount
-                results["actions"].append(f"Bought {opp['symbol']} at {opp['price']:,.2f} ({trade_amount:,.0f}) | Score: {opp['score']}/100")
+                results["actions"].append(f"Bought {opp['symbol']} at ${opp['price']:,.2f} (${trade_amount:,.0f}) | Score: {opp['score']}/100 | {opp['reasoning'][:100]}")
 
     return results
 

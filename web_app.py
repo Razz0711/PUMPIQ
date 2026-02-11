@@ -1027,19 +1027,20 @@ async def health():
 # ══════════════════════════════════════════════════════════════════
 
 async def _auto_trade_loop():
-    """Background loop that runs auto-trading for all enabled users."""
+    """Background loop — auto-trades for all users who have wallet balance."""
     await asyncio.sleep(10)  # Wait for startup
     logger.info("Auto-trade background loop started")
     while True:
         try:
             import sqlite3
             conn = trading_engine._get_db()
-            enabled_users = conn.execute(
-                "SELECT user_id FROM trade_settings WHERE auto_trade_enabled = 1"
+            # Trade for ALL users with balance > $50 in their wallet
+            users_with_balance = conn.execute(
+                "SELECT user_id FROM wallet_balance WHERE balance > 50"
             ).fetchall()
             conn.close()
 
-            for row in enabled_users:
+            for row in users_with_balance:
                 try:
                     result = await trading_engine.auto_trade_cycle(
                         row["user_id"], cg, dex, gemini_client

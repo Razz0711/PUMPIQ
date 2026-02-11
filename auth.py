@@ -432,7 +432,7 @@ def deposit_to_wallet(user_id: int, amount: float, bank_id: int) -> Dict[str, An
     if amount <= 0:
         return {"success": False, "error": "Amount must be greater than 0"}
     if amount > 1000000:
-        return {"success": False, "error": "Maximum deposit limit is ₹10,00,000"}
+        return {"success": False, "error": "Maximum deposit limit is $1,000,000"}
 
     conn = get_db()
     try:
