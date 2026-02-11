@@ -17,6 +17,8 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
 
+import smtp_service
+
 # ── Config ──────────────────────────────────────────────────────
 SECRET_KEY = os.getenv("SECRET_KEY", "pumpiq_dev_secret_key_change_in_production")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
@@ -42,6 +44,7 @@ class UserResponse(BaseModel):
     id: int
     email: str
     username: str
+    email_verified: bool = False
     wallets: List[Dict[str, str]] = []
     watchlist: List[str] = []
     created_at: str
@@ -76,6 +79,7 @@ def init_db():
             email TEXT UNIQUE NOT NULL,
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
+            email_verified INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             last_login TEXT
         );
@@ -124,7 +128,24 @@ def init_db():
             tx_hash TEXT DEFAULT '',
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
+
+        CREATE TABLE IF NOT EXISTS email_tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            token TEXT UNIQUE NOT NULL,
+            token_type TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            used INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
     """)
+    # Migration: add email_verified column if missing (existing DBs)
+    try:
+        conn.execute("ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # column already exists
     conn.commit()
     conn.close()
 
@@ -216,6 +237,7 @@ def _get_user_response(conn: sqlite3.Connection, user_id: int) -> Optional[UserR
         id=row["id"],
         email=row["email"],
         username=row["username"],
+        email_verified=bool(row["email_verified"]) if "email_verified" in row.keys() else False,
         wallets=[dict(w) for w in wallets],
         watchlist=[w["coin_id"] for w in watchlist],
         created_at=row["created_at"],
@@ -342,6 +364,128 @@ def get_portfolio(user_id: int) -> List[Dict[str, Any]]:
         return [dict(r) for r in rows]
     finally:
         conn.close()
+
+
+# ── Email Verification ──────────────────────────────────────────
+
+def send_verification_email(user_id: int) -> bool:
+    """Generate token and send verification email."""
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT email, username FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not row:
+            return False
+
+        token = smtp_service.generate_verification_token()
+        expires = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+
+        conn.execute(
+            "INSERT INTO email_tokens (user_id, token, token_type, expires_at) VALUES (?, ?, 'verify', ?)",
+            (user_id, token, expires),
+        )
+        conn.commit()
+
+        return smtp_service.send_verification_email(row["email"], row["username"], token)
+    finally:
+        conn.close()
+
+
+def verify_email(token: str) -> Optional[str]:
+    """Verify email from token. Returns error string or None on success."""
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT * FROM email_tokens WHERE token = ? AND token_type = 'verify' AND used = 0",
+            (token,),
+        ).fetchone()
+        if not row:
+            return "Invalid or expired verification link"
+
+        if datetime.fromisoformat(row["expires_at"]) < datetime.now(timezone.utc):
+            return "Verification link has expired"
+
+        conn.execute("UPDATE users SET email_verified = 1 WHERE id = ?", (row["user_id"],))
+        conn.execute("UPDATE email_tokens SET used = 1 WHERE id = ?", (row["id"],))
+        conn.commit()
+
+        # Send welcome email
+        user = conn.execute("SELECT email, username FROM users WHERE id = ?", (row["user_id"],)).fetchone()
+        if user:
+            smtp_service.send_welcome_email(user["email"], user["username"])
+
+        return None  # success
+    finally:
+        conn.close()
+
+
+# ── Password Reset ──────────────────────────────────────────────
+
+def request_password_reset(email: str) -> bool:
+    """Generate reset token and send email. Returns True if user exists."""
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT id, username FROM users WHERE email = ?", (email.lower(),)
+        ).fetchone()
+        if not row:
+            return False  # user not found (don't reveal this to frontend)
+
+        token = smtp_service.generate_reset_token()
+        expires = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+
+        # Invalidate old reset tokens
+        conn.execute(
+            "UPDATE email_tokens SET used = 1 WHERE user_id = ? AND token_type = 'reset' AND used = 0",
+            (row["id"],),
+        )
+        conn.execute(
+            "INSERT INTO email_tokens (user_id, token, token_type, expires_at) VALUES (?, ?, 'reset', ?)",
+            (row["id"], token, expires),
+        )
+        conn.commit()
+
+        return smtp_service.send_password_reset_email(email.lower(), row["username"], token)
+    finally:
+        conn.close()
+
+
+def reset_password(token: str, new_password: str) -> Optional[str]:
+    """Reset password from token. Returns error string or None on success."""
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT * FROM email_tokens WHERE token = ? AND token_type = 'reset' AND used = 0",
+            (token,),
+        ).fetchone()
+        if not row:
+            return "Invalid or expired reset link"
+
+        if datetime.fromisoformat(row["expires_at"]) < datetime.now(timezone.utc):
+            return "Reset link has expired"
+
+        conn.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?",
+            (hash_password(new_password), row["user_id"]),
+        )
+        conn.execute("UPDATE email_tokens SET used = 1 WHERE id = ?", (row["id"],))
+        conn.commit()
+        return None  # success
+    finally:
+        conn.close()
+
+
+def resend_verification(user_id: int) -> bool:
+    """Resend verification email, invalidating old tokens."""
+    conn = get_db()
+    try:
+        conn.execute(
+            "UPDATE email_tokens SET used = 1 WHERE user_id = ? AND token_type = 'verify' AND used = 0",
+            (user_id,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return send_verification_email(user_id)
 
 
 # Initialize DB on import

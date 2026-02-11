@@ -32,6 +32,7 @@ from src.data_collectors.news_collector import NewsCollector
 from src.data_collectors.technical_analyzer import TechnicalAnalyzer
 
 import auth
+import smtp_service
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -247,8 +248,14 @@ async def api_register(body: auth.UserRegister):
     user = auth.register_user(body.email, body.username, body.password)
     if not user:
         raise HTTPException(409, "Email or username already taken")
+    # Send verification email (non-blocking, won't fail registration if SMTP is down)
+    try:
+        auth.send_verification_email(user.id)
+    except Exception as e:
+        logger.warning("Failed to send verification email: %s", e)
     token = auth.create_access_token(user.id, user.email)
-    return {"access_token": token, "token_type": "bearer", "user": user.model_dump()}
+    return {"access_token": token, "token_type": "bearer", "user": user.model_dump(),
+            "smtp_configured": smtp_service.is_configured()}
 
 
 @app.post("/api/auth/login")
@@ -263,6 +270,121 @@ async def api_login(body: auth.UserLogin):
 @app.get("/api/auth/me")
 async def api_me(user=Depends(require_user)):
     return user.model_dump()
+
+
+# ── Email Verification ──────────────────────────────────────────
+
+@app.get("/verify-email")
+async def verify_email_page(token: str = Query(...)):
+    error = auth.verify_email(token)
+    if error:
+        html = f"""
+        <html><head><meta charset="utf-8"><title>PumpIQ</title></head>
+        <body style="background:#0a0a0f;color:#e0e0e0;font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;">
+            <div style="text-align:center;">
+                <h1 style="color:#ff4d4d;">Verification Failed</h1>
+                <p>{error}</p>
+                <a href="/" style="color:#7c5cff;">Back to PumpIQ</a>
+            </div>
+        </body></html>"""
+    else:
+        html = """
+        <html><head><meta charset="utf-8"><title>PumpIQ</title></head>
+        <body style="background:#0a0a0f;color:#e0e0e0;font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;">
+            <div style="text-align:center;">
+                <h1 style="color:#00d4aa;">\u2705 Email Verified!</h1>
+                <p>Your account is now fully active.</p>
+                <a href="/" style="color:#7c5cff;">Go to PumpIQ</a>
+            </div>
+        </body></html>"""
+    return HTMLResponse(html)
+
+
+@app.post("/api/auth/resend-verification")
+async def resend_verification(user=Depends(require_user)):
+    if user.email_verified:
+        return {"message": "Email already verified"}
+    ok = auth.resend_verification(user.id)
+    if not ok:
+        raise HTTPException(500, "Failed to send verification email. Check SMTP config.")
+    return {"message": "Verification email sent"}
+
+
+# ── Password Reset ──────────────────────────────────────────────
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+
+@app.post("/api/auth/forgot-password")
+async def forgot_password(body: ForgotPasswordRequest):
+    # Always return success to prevent email enumeration
+    auth.request_password_reset(body.email)
+    return {"message": "If an account with that email exists, a reset link has been sent."}
+
+
+@app.get("/reset-password")
+async def reset_password_page(token: str = Query(...)):
+    html = f"""
+    <html><head><meta charset="utf-8"><title>PumpIQ — Reset Password</title></head>
+    <body style="background:#0a0a0f;color:#e0e0e0;font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;">
+        <div style="max-width:400px;width:100%;background:#14141f;border-radius:16px;padding:40px;border:1px solid #2a2a3a;">
+            <h1 style="color:#7c5cff;text-align:center;">Reset Password</h1>
+            <div id="msg" style="color:#ff4d4d;margin-bottom:12px;"></div>
+            <input id="pw1" type="password" placeholder="New password (min 6 chars)"
+                   style="width:100%;padding:12px;margin-bottom:12px;background:#1a1a2e;border:1px solid #2a2a3a;border-radius:8px;color:#fff;">
+            <input id="pw2" type="password" placeholder="Confirm password"
+                   style="width:100%;padding:12px;margin-bottom:16px;background:#1a1a2e;border:1px solid #2a2a3a;border-radius:8px;color:#fff;">
+            <button onclick="doReset()"
+                    style="width:100%;padding:14px;background:linear-gradient(135deg,#7c5cff,#00d4aa);color:#fff;border:none;border-radius:10px;font-weight:600;cursor:pointer;">
+                Reset Password
+            </button>
+        </div>
+        <script>
+        async function doReset() {{
+            const pw1 = document.getElementById('pw1').value;
+            const pw2 = document.getElementById('pw2').value;
+            const msg = document.getElementById('msg');
+            if (pw1.length < 6) {{ msg.textContent = 'Password must be at least 6 characters'; return; }}
+            if (pw1 !== pw2) {{ msg.textContent = 'Passwords do not match'; return; }}
+            try {{
+                const res = await fetch('/api/auth/reset-password', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{ token: '{token}', new_password: pw1 }})
+                }});
+                const data = await res.json();
+                if (res.ok) {{
+                    msg.style.color = '#00d4aa';
+                    msg.textContent = 'Password reset! Redirecting...';
+                    setTimeout(() => window.location.href = '/', 2000);
+                }} else {{
+                    msg.textContent = data.detail || 'Reset failed';
+                }}
+            }} catch (e) {{ msg.textContent = 'Network error'; }}
+        }}
+        </script>
+    </body></html>"""
+    return HTMLResponse(html)
+
+
+@app.post("/api/auth/reset-password")
+async def reset_password_api(body: ResetPasswordRequest):
+    if len(body.new_password) < 6:
+        raise HTTPException(400, "Password must be at least 6 characters")
+    error = auth.reset_password(body.token, body.new_password)
+    if error:
+        raise HTTPException(400, error)
+    return {"message": "Password reset successfully"}
+
+
+@app.get("/api/smtp/status")
+async def smtp_status():
+    return {"configured": smtp_service.is_configured()}
 
 
 # ══════════════════════════════════════════════════════════════════
