@@ -33,6 +33,7 @@ from src.data_collectors.technical_analyzer import TechnicalAnalyzer
 
 import auth
 import smtp_service
+import trading_engine
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -218,7 +219,11 @@ async def startup():
             logger.warning("Gemini init failed: %s", e)
 
     auth.init_db()
-    logger.info("PumpIQ v2 ready at http://localhost:8000")
+    trading_engine.init_trading_tables()
+
+    # Start auto-trade background loop
+    asyncio.create_task(_auto_trade_loop())
+    logger.info("PumpIQ v2 ready at http://localhost:8000 — Auto-trader initialized")
 
 
 # ── Serve frontend ────────────────────────────────────────────────
@@ -1015,3 +1020,201 @@ async def health():
             "technical": ta is not None,
         },
     }
+
+
+# ══════════════════════════════════════════════════════════════════
+# AUTO-TRADER BACKGROUND LOOP
+# ══════════════════════════════════════════════════════════════════
+
+async def _auto_trade_loop():
+    """Background loop that runs auto-trading for all enabled users."""
+    await asyncio.sleep(10)  # Wait for startup
+    logger.info("Auto-trade background loop started")
+    while True:
+        try:
+            import sqlite3
+            conn = trading_engine._get_db()
+            enabled_users = conn.execute(
+                "SELECT user_id FROM trade_settings WHERE auto_trade_enabled = 1"
+            ).fetchall()
+            conn.close()
+
+            for row in enabled_users:
+                try:
+                    result = await trading_engine.auto_trade_cycle(
+                        row["user_id"], cg, dex, gemini_client
+                    )
+                    if result.get("actions"):
+                        logger.info("Auto-trade user %d: %s", row["user_id"], result["actions"])
+                except Exception as e:
+                    logger.warning("Auto-trade failed for user %d: %s", row["user_id"], e)
+
+        except Exception as e:
+            logger.warning("Auto-trade loop error: %s", e)
+
+        await asyncio.sleep(300)  # Run every 5 minutes
+
+
+# ══════════════════════════════════════════════════════════════════
+# AUTO-TRADER ENDPOINTS
+# ══════════════════════════════════════════════════════════════════
+
+# ── Settings ──
+
+class TradeSettingsUpdate(BaseModel):
+    auto_trade_enabled: Optional[bool] = None
+    max_trade_pct: Optional[float] = None
+    daily_loss_limit_pct: Optional[float] = None
+    max_open_positions: Optional[int] = None
+    stop_loss_pct: Optional[float] = None
+    take_profit_pct: Optional[float] = None
+    cooldown_minutes: Optional[int] = None
+    min_market_cap: Optional[float] = None
+    risk_level: Optional[str] = None
+
+
+@app.get("/api/trader/settings")
+async def get_trader_settings(user=Depends(require_user)):
+    return trading_engine.get_trade_settings(user.id)
+
+
+@app.post("/api/trader/settings")
+async def update_trader_settings(body: TradeSettingsUpdate, user=Depends(require_user)):
+    current = trading_engine.get_trade_settings(user.id)
+    updates = body.model_dump(exclude_none=True)
+    if "auto_trade_enabled" in updates:
+        updates["auto_trade_enabled"] = 1 if updates["auto_trade_enabled"] else 0
+    current.update(updates)
+    return trading_engine.update_trade_settings(user.id, current)
+
+
+@app.post("/api/trader/toggle")
+async def toggle_auto_trade(user=Depends(require_user)):
+    """Toggle auto-trading on/off."""
+    settings = trading_engine.get_trade_settings(user.id)
+    new_state = 0 if settings["auto_trade_enabled"] else 1
+    settings["auto_trade_enabled"] = new_state
+    updated = trading_engine.update_trade_settings(user.id, settings)
+    status = "enabled" if new_state else "disabled"
+    return {"success": True, "auto_trade_enabled": bool(new_state), "message": f"Auto-trading {status}"}
+
+
+# ── Paper Balance ──
+
+@app.get("/api/trader/balance")
+async def get_trader_balance(user=Depends(require_user)):
+    return trading_engine.get_paper_balance(user.id)
+
+
+@app.post("/api/trader/reset")
+async def reset_trader_balance(user=Depends(require_user)):
+    """Reset paper trading balance to ₹1,00,000."""
+    return trading_engine.reset_paper_balance(user.id)
+
+
+# ── Positions ──
+
+@app.get("/api/trader/positions")
+async def get_trader_positions(user=Depends(require_user)):
+    return {
+        "open": trading_engine.get_open_positions(user.id),
+        "closed": trading_engine.get_closed_positions(user.id, limit=20),
+    }
+
+
+@app.post("/api/trader/sell/{position_id}")
+async def sell_position(position_id: int, user=Depends(require_user)):
+    """Manually sell/close a paper position."""
+    # Get current price
+    pos = None
+    for p in trading_engine.get_open_positions(user.id):
+        if p["id"] == position_id:
+            pos = p
+            break
+    if not pos:
+        raise HTTPException(404, "Position not found")
+
+    # Fetch latest price
+    current_price = pos["current_price"]
+    try:
+        if pos["coin_id"] and not pos["coin_id"].startswith("0x"):
+            prices = await cg.get_simple_price([pos["coin_id"]])
+            current_price = prices.get(pos["coin_id"], pos["current_price"])
+    except Exception:
+        pass
+
+    result = trading_engine.execute_paper_sell(user.id, position_id, current_price, "Manual sell")
+    if not result["success"]:
+        raise HTTPException(400, result["error"])
+    return result
+
+
+# ── Manual Buy ──
+
+class ManualBuyRequest(BaseModel):
+    coin_id: str
+    amount: float
+
+
+@app.post("/api/trader/buy")
+async def manual_buy(body: ManualBuyRequest, user=Depends(require_user)):
+    """Manually buy a coin with paper money."""
+    if body.amount <= 0:
+        raise HTTPException(400, "Amount must be > 0")
+
+    # Fetch coin info
+    coin = await cg.get_coin_detail(body.coin_id.lower())
+    if not coin or coin.current_price <= 0:
+        raise HTTPException(404, "Coin not found")
+
+    settings = trading_engine.get_trade_settings(user.id)
+    result = trading_engine.execute_paper_buy(
+        user_id=user.id,
+        coin_id=coin.coin_id,
+        coin_name=coin.name,
+        symbol=coin.symbol,
+        price=coin.current_price,
+        amount=body.amount,
+        ai_score=50,
+        ai_reasoning="Manual buy order",
+        stop_loss_pct=settings["stop_loss_pct"],
+        take_profit_pct=settings["take_profit_pct"],
+    )
+    if not result["success"]:
+        raise HTTPException(400, result["error"])
+    return result
+
+
+# ── Research ──
+
+@app.get("/api/trader/research")
+async def run_research(user=Depends(require_user)):
+    """Manually trigger AI research and return opportunities."""
+    opportunities = await trading_engine.research_opportunities(cg, dex, gemini_client)
+    return {"opportunities": opportunities[:15], "total": len(opportunities)}
+
+
+# ── Run trade cycle manually ──
+
+@app.post("/api/trader/run-cycle")
+async def run_trade_cycle(user=Depends(require_user)):
+    """Manually trigger one auto-trade cycle."""
+    result = await trading_engine.auto_trade_cycle(user.id, cg, dex, gemini_client)
+    return result
+
+
+# ── Performance & History ──
+
+@app.get("/api/trader/performance")
+async def get_trader_performance(user=Depends(require_user)):
+    return trading_engine.get_performance_stats(user.id)
+
+
+@app.get("/api/trader/history")
+async def get_trader_history(limit: int = Query(50), user=Depends(require_user)):
+    return trading_engine.get_trade_history(user.id, limit)
+
+
+@app.get("/api/trader/log")
+async def get_trader_log(limit: int = Query(50), user=Depends(require_user)):
+    return trading_engine.get_trade_log_entries(user.id, limit)

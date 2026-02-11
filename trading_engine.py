@@ -1,0 +1,749 @@
+"""
+PumpIQ Autonomous Trading Engine (Phase 1 — Paper Trading)
+============================================================
+AI-powered autonomous crypto trading bot that:
+1. Checks wallet balance
+2. Researches market opportunities using CoinGecko + DexScreener + Gemini AI
+3. Makes buy/sell decisions with risk management
+4. Executes paper trades (virtual, no real money)
+5. Tracks P&L and performance
+
+Safety Controls:
+- Max trade size: 20% of wallet per trade
+- Daily loss limit: 10% of wallet
+- Max open positions: 5
+- Stop-loss: -8% per position
+- Take-profit: +20% per position
+- Cooldown: 5 min between trades
+- Only trades top coins (whitelist or market cap > $1M)
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import os
+import sqlite3
+import threading
+import time
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
+
+DB_PATH = os.path.join(os.path.dirname(__file__), "pumpiq.db")
+
+
+# ── Database ──────────────────────────────────────────────────────
+
+def _get_db() -> sqlite3.Connection:
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
+    return conn
+
+
+def init_trading_tables():
+    """Create trading-related tables."""
+    conn = _get_db()
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS trade_settings (
+            user_id INTEGER PRIMARY KEY,
+            auto_trade_enabled INTEGER NOT NULL DEFAULT 0,
+            max_trade_pct REAL NOT NULL DEFAULT 20.0,
+            daily_loss_limit_pct REAL NOT NULL DEFAULT 10.0,
+            max_open_positions INTEGER NOT NULL DEFAULT 5,
+            stop_loss_pct REAL NOT NULL DEFAULT 8.0,
+            take_profit_pct REAL NOT NULL DEFAULT 20.0,
+            cooldown_minutes INTEGER NOT NULL DEFAULT 5,
+            min_market_cap REAL NOT NULL DEFAULT 1000000,
+            risk_level TEXT NOT NULL DEFAULT 'moderate',
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS paper_positions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            coin_id TEXT NOT NULL,
+            coin_name TEXT NOT NULL DEFAULT '',
+            symbol TEXT NOT NULL DEFAULT '',
+            side TEXT NOT NULL DEFAULT 'long',
+            entry_price REAL NOT NULL,
+            current_price REAL NOT NULL DEFAULT 0,
+            quantity REAL NOT NULL,
+            invested_amount REAL NOT NULL,
+            current_value REAL NOT NULL DEFAULT 0,
+            pnl REAL NOT NULL DEFAULT 0,
+            pnl_pct REAL NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'open',
+            stop_loss REAL NOT NULL DEFAULT 0,
+            take_profit REAL NOT NULL DEFAULT 0,
+            ai_reasoning TEXT NOT NULL DEFAULT '',
+            opened_at TEXT NOT NULL DEFAULT (datetime('now')),
+            closed_at TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS paper_trades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            position_id INTEGER,
+            coin_id TEXT NOT NULL,
+            symbol TEXT NOT NULL DEFAULT '',
+            action TEXT NOT NULL,
+            price REAL NOT NULL,
+            quantity REAL NOT NULL,
+            amount REAL NOT NULL,
+            ai_score INTEGER NOT NULL DEFAULT 0,
+            ai_reasoning TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'executed',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS trade_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            event TEXT NOT NULL,
+            details TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS paper_balance (
+            user_id INTEGER PRIMARY KEY,
+            balance REAL NOT NULL DEFAULT 100000.0,
+            initial_balance REAL NOT NULL DEFAULT 100000.0,
+            total_invested REAL NOT NULL DEFAULT 0,
+            total_pnl REAL NOT NULL DEFAULT 0,
+            total_trades INTEGER NOT NULL DEFAULT 0,
+            winning_trades INTEGER NOT NULL DEFAULT 0,
+            losing_trades INTEGER NOT NULL DEFAULT 0,
+            best_trade_pnl REAL NOT NULL DEFAULT 0,
+            worst_trade_pnl REAL NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+    """)
+    conn.commit()
+    conn.close()
+
+
+# ── Settings ──────────────────────────────────────────────────────
+
+def get_trade_settings(user_id: int) -> Dict[str, Any]:
+    conn = _get_db()
+    try:
+        row = conn.execute("SELECT * FROM trade_settings WHERE user_id = ?", (user_id,)).fetchone()
+        if row:
+            return dict(row)
+        # Return defaults
+        return {
+            "user_id": user_id,
+            "auto_trade_enabled": 0,
+            "max_trade_pct": 20.0,
+            "daily_loss_limit_pct": 10.0,
+            "max_open_positions": 5,
+            "stop_loss_pct": 8.0,
+            "take_profit_pct": 20.0,
+            "cooldown_minutes": 5,
+            "min_market_cap": 1000000,
+            "risk_level": "moderate",
+        }
+    finally:
+        conn.close()
+
+
+def update_trade_settings(user_id: int, settings: Dict[str, Any]) -> Dict[str, Any]:
+    conn = _get_db()
+    try:
+        conn.execute("""
+            INSERT INTO trade_settings (user_id, auto_trade_enabled, max_trade_pct, daily_loss_limit_pct,
+                max_open_positions, stop_loss_pct, take_profit_pct, cooldown_minutes, min_market_cap, risk_level, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            ON CONFLICT(user_id) DO UPDATE SET
+                auto_trade_enabled = excluded.auto_trade_enabled,
+                max_trade_pct = excluded.max_trade_pct,
+                daily_loss_limit_pct = excluded.daily_loss_limit_pct,
+                max_open_positions = excluded.max_open_positions,
+                stop_loss_pct = excluded.stop_loss_pct,
+                take_profit_pct = excluded.take_profit_pct,
+                cooldown_minutes = excluded.cooldown_minutes,
+                min_market_cap = excluded.min_market_cap,
+                risk_level = excluded.risk_level,
+                updated_at = datetime('now')
+        """, (
+            user_id,
+            settings.get("auto_trade_enabled", 0),
+            settings.get("max_trade_pct", 20.0),
+            settings.get("daily_loss_limit_pct", 10.0),
+            settings.get("max_open_positions", 5),
+            settings.get("stop_loss_pct", 8.0),
+            settings.get("take_profit_pct", 20.0),
+            settings.get("cooldown_minutes", 5),
+            settings.get("min_market_cap", 1000000),
+            settings.get("risk_level", "moderate"),
+        ))
+        conn.commit()
+        return get_trade_settings(user_id)
+    finally:
+        conn.close()
+
+
+# ── Paper Balance ─────────────────────────────────────────────────
+
+def get_paper_balance(user_id: int) -> Dict[str, Any]:
+    conn = _get_db()
+    try:
+        row = conn.execute("SELECT * FROM paper_balance WHERE user_id = ?", (user_id,)).fetchone()
+        if row:
+            return dict(row)
+        # Initialize with ₹1,00,000 paper money
+        conn.execute(
+            "INSERT INTO paper_balance (user_id, balance, initial_balance) VALUES (?, 100000.0, 100000.0)",
+            (user_id,),
+        )
+        conn.commit()
+        return {
+            "user_id": user_id, "balance": 100000.0, "initial_balance": 100000.0,
+            "total_invested": 0, "total_pnl": 0, "total_trades": 0,
+            "winning_trades": 0, "losing_trades": 0,
+            "best_trade_pnl": 0, "worst_trade_pnl": 0,
+        }
+    finally:
+        conn.close()
+
+
+def reset_paper_balance(user_id: int, amount: float = 100000.0) -> Dict[str, Any]:
+    conn = _get_db()
+    try:
+        # Close all open positions
+        conn.execute("UPDATE paper_positions SET status = 'closed', closed_at = datetime('now') WHERE user_id = ? AND status = 'open'", (user_id,))
+        # Reset balance
+        conn.execute("""
+            INSERT INTO paper_balance (user_id, balance, initial_balance, total_invested, total_pnl,
+                total_trades, winning_trades, losing_trades, best_trade_pnl, worst_trade_pnl, updated_at)
+            VALUES (?, ?, ?, 0, 0, 0, 0, 0, 0, 0, datetime('now'))
+            ON CONFLICT(user_id) DO UPDATE SET
+                balance = excluded.balance, initial_balance = excluded.initial_balance,
+                total_invested = 0, total_pnl = 0, total_trades = 0,
+                winning_trades = 0, losing_trades = 0,
+                best_trade_pnl = 0, worst_trade_pnl = 0, updated_at = datetime('now')
+        """, (user_id, amount, amount))
+        conn.commit()
+        _log_event(conn, user_id, "RESET", f"Paper balance reset to ₹{amount:,.0f}")
+        return get_paper_balance(user_id)
+    finally:
+        conn.close()
+
+
+# ── Positions ─────────────────────────────────────────────────────
+
+def get_open_positions(user_id: int) -> List[Dict[str, Any]]:
+    conn = _get_db()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM paper_positions WHERE user_id = ? AND status = 'open' ORDER BY opened_at DESC",
+            (user_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_closed_positions(user_id: int, limit: int = 50) -> List[Dict[str, Any]]:
+    conn = _get_db()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM paper_positions WHERE user_id = ? AND status = 'closed' ORDER BY closed_at DESC LIMIT ?",
+            (user_id, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_trade_history(user_id: int, limit: int = 50) -> List[Dict[str, Any]]:
+    conn = _get_db()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM paper_trades WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+            (user_id, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_trade_log_entries(user_id: int, limit: int = 50) -> List[Dict[str, Any]]:
+    conn = _get_db()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM trade_log WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+            (user_id, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def _log_event(conn: sqlite3.Connection, user_id: int, event: str, details: str):
+    conn.execute(
+        "INSERT INTO trade_log (user_id, event, details) VALUES (?, ?, ?)",
+        (user_id, event, details),
+    )
+
+
+# ── Core Trading Logic ───────────────────────────────────────────
+
+def execute_paper_buy(
+    user_id: int,
+    coin_id: str,
+    coin_name: str,
+    symbol: str,
+    price: float,
+    amount: float,
+    ai_score: int,
+    ai_reasoning: str,
+    stop_loss_pct: float = 8.0,
+    take_profit_pct: float = 20.0,
+) -> Dict[str, Any]:
+    """Execute a paper buy order."""
+    conn = _get_db()
+    try:
+        # Get balance
+        bal = conn.execute("SELECT balance FROM paper_balance WHERE user_id = ?", (user_id,)).fetchone()
+        balance = bal["balance"] if bal else 0
+
+        if amount > balance:
+            return {"success": False, "error": "Insufficient paper balance"}
+        if amount <= 0:
+            return {"success": False, "error": "Invalid amount"}
+
+        quantity = amount / price
+        stop_loss = price * (1 - stop_loss_pct / 100)
+        take_profit = price * (1 + take_profit_pct / 100)
+
+        # Create position
+        cursor = conn.execute("""
+            INSERT INTO paper_positions (user_id, coin_id, coin_name, symbol, entry_price, current_price,
+                quantity, invested_amount, current_value, stop_loss, take_profit, ai_reasoning)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (user_id, coin_id, coin_name, symbol.upper(), price, price, quantity, amount, amount, stop_loss, take_profit, ai_reasoning))
+        position_id = cursor.lastrowid
+
+        # Record trade
+        conn.execute("""
+            INSERT INTO paper_trades (user_id, position_id, coin_id, symbol, action, price, quantity, amount, ai_score, ai_reasoning)
+            VALUES (?, ?, ?, ?, 'BUY', ?, ?, ?, ?, ?)
+        """, (user_id, position_id, coin_id, symbol.upper(), price, quantity, amount, ai_score, ai_reasoning))
+
+        # Deduct from paper balance
+        conn.execute("""
+            UPDATE paper_balance SET
+                balance = balance - ?,
+                total_invested = total_invested + ?,
+                total_trades = total_trades + 1,
+                updated_at = datetime('now')
+            WHERE user_id = ?
+        """, (amount, amount, user_id))
+
+        _log_event(conn, user_id, "BUY",
+                   f"Bought {quantity:.6f} {symbol.upper()} at ₹{price:,.2f} (₹{amount:,.0f}) | Score: {ai_score}/100 | {ai_reasoning[:100]}")
+
+        conn.commit()
+        return {"success": True, "position_id": position_id, "quantity": quantity, "amount": amount}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+    finally:
+        conn.close()
+
+
+def execute_paper_sell(user_id: int, position_id: int, current_price: float, reason: str = "manual") -> Dict[str, Any]:
+    """Close a paper position (sell)."""
+    conn = _get_db()
+    try:
+        pos = conn.execute(
+            "SELECT * FROM paper_positions WHERE id = ? AND user_id = ? AND status = 'open'",
+            (position_id, user_id),
+        ).fetchone()
+        if not pos:
+            return {"success": False, "error": "Position not found or already closed"}
+
+        current_value = pos["quantity"] * current_price
+        pnl = current_value - pos["invested_amount"]
+        pnl_pct = (pnl / pos["invested_amount"]) * 100
+
+        # Close position
+        conn.execute("""
+            UPDATE paper_positions SET
+                status = 'closed', current_price = ?, current_value = ?,
+                pnl = ?, pnl_pct = ?, closed_at = datetime('now')
+            WHERE id = ?
+        """, (current_price, current_value, pnl, pnl_pct, position_id))
+
+        # Record trade
+        conn.execute("""
+            INSERT INTO paper_trades (user_id, position_id, coin_id, symbol, action, price, quantity, amount, ai_reasoning)
+            VALUES (?, ?, ?, ?, 'SELL', ?, ?, ?, ?)
+        """, (user_id, position_id, pos["coin_id"], pos["symbol"], current_price, pos["quantity"], current_value, reason))
+
+        # Update balance & stats
+        win_inc = 1 if pnl > 0 else 0
+        loss_inc = 1 if pnl < 0 else 0
+        conn.execute("""
+            UPDATE paper_balance SET
+                balance = balance + ?,
+                total_pnl = total_pnl + ?,
+                total_trades = total_trades + 1,
+                winning_trades = winning_trades + ?,
+                losing_trades = losing_trades + ?,
+                best_trade_pnl = MAX(best_trade_pnl, ?),
+                worst_trade_pnl = MIN(worst_trade_pnl, ?),
+                updated_at = datetime('now')
+            WHERE user_id = ?
+        """, (current_value, pnl, win_inc, loss_inc, pnl, pnl, user_id))
+
+        emoji = "📈" if pnl > 0 else "📉"
+        _log_event(conn, user_id, "SELL",
+                   f"{emoji} Sold {pos['quantity']:.6f} {pos['symbol']} at ₹{current_price:,.2f} | P&L: ₹{pnl:,.2f} ({pnl_pct:+.1f}%) | Reason: {reason}")
+
+        conn.commit()
+        return {"success": True, "pnl": round(pnl, 2), "pnl_pct": round(pnl_pct, 2), "amount": round(current_value, 2)}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+    finally:
+        conn.close()
+
+
+# ── AI Research Engine ────────────────────────────────────────────
+
+async def research_opportunities(cg_collector, dex_collector, gemini_client=None) -> List[Dict[str, Any]]:
+    """
+    Research market opportunities using CoinGecko + DexScreener data.
+    Returns scored opportunities sorted by quality.
+    """
+    opportunities = []
+
+    try:
+        # 1. Get top coins from CoinGecko
+        top_coins = await cg_collector.get_top_coins(limit=30)
+        trending = await cg_collector.get_trending()
+
+        # Merge trending coin_ids
+        trending_ids = {t.coin_id for t in trending} if trending else set()
+
+        for coin in top_coins:
+            score = 0
+            reasons = []
+
+            # Price momentum
+            change_24h = coin.price_change_pct_24h
+            if 3 < change_24h < 15:
+                score += 25
+                reasons.append(f"Strong 24h momentum: {change_24h:+.1f}%")
+            elif 1 < change_24h <= 3:
+                score += 15
+                reasons.append(f"Positive momentum: {change_24h:+.1f}%")
+            elif change_24h < -10:
+                score -= 10
+                reasons.append(f"Heavy decline: {change_24h:+.1f}%")
+
+            # Volume / Market cap ratio (high = active trading)
+            if coin.market_cap > 0:
+                vol_ratio = coin.total_volume_24h / coin.market_cap
+                if vol_ratio > 0.3:
+                    score += 20
+                    reasons.append(f"High volume/mcap ratio: {vol_ratio:.2f}")
+                elif vol_ratio > 0.1:
+                    score += 10
+                    reasons.append(f"Healthy volume: {vol_ratio:.2f}")
+
+            # Trending bonus
+            if coin.coin_id in trending_ids:
+                score += 15
+                reasons.append("Trending on CoinGecko")
+
+            # Market cap safety (prefer established coins)
+            if coin.market_cap > 10_000_000_000:
+                score += 10
+                reasons.append("Large cap — lower risk")
+            elif coin.market_cap > 1_000_000_000:
+                score += 5
+                reasons.append("Mid cap")
+
+            # Price relative to ATH
+            if hasattr(coin, 'ath') and coin.ath > 0:
+                ath_ratio = coin.current_price / coin.ath
+                if 0.3 < ath_ratio < 0.7:
+                    score += 10
+                    reasons.append(f"Room to grow — {(1-ath_ratio)*100:.0f}% below ATH")
+
+            score = max(0, min(100, score))
+
+            if score >= 25:  # Only include viable opportunities
+                opportunities.append({
+                    "coin_id": coin.coin_id,
+                    "name": coin.name,
+                    "symbol": coin.symbol.upper(),
+                    "price": coin.current_price,
+                    "change_24h": change_24h,
+                    "market_cap": coin.market_cap,
+                    "volume_24h": coin.total_volume_24h,
+                    "score": score,
+                    "reasons": reasons,
+                    "reasoning": " | ".join(reasons),
+                    "source": "coingecko",
+                })
+
+    except Exception as e:
+        logger.warning("CoinGecko research failed: %s", e)
+
+    try:
+        # 2. Get DexScreener opportunities
+        for term in ["SOL", "ETH", "PEPE"]:
+            pairs = await dex_collector.search_pairs(term)
+            for p in (pairs or [])[:10]:
+                buys = p.txns_buys_24h
+                sells = p.txns_sells_24h
+                bsr = buys / max(sells, 1)
+                score = 0
+                reasons = []
+
+                if p.volume_24h > 50000:
+                    score += 20
+                    reasons.append(f"Volume: ${p.volume_24h:,.0f}")
+                if p.liquidity_usd > 50000:
+                    score += 15
+                    reasons.append(f"Liquidity: ${p.liquidity_usd:,.0f}")
+                if 1.5 < bsr < 5:
+                    score += 15
+                    reasons.append(f"Buy pressure: {bsr:.1f}x")
+                if 2 < p.price_change_24h < 30:
+                    score += 20
+                    reasons.append(f"Price up {p.price_change_24h:+.1f}%")
+                if p.market_cap > 1000000:
+                    score += 10
+
+                score = max(0, min(100, score))
+
+                if score >= 30:
+                    opportunities.append({
+                        "coin_id": p.base_token_address,
+                        "name": p.base_token_name,
+                        "symbol": p.base_token_symbol,
+                        "price": p.price_usd,
+                        "change_24h": p.price_change_24h,
+                        "market_cap": p.market_cap,
+                        "volume_24h": p.volume_24h,
+                        "score": score,
+                        "reasons": reasons,
+                        "reasoning": " | ".join(reasons),
+                        "source": "dexscreener",
+                    })
+    except Exception as e:
+        logger.warning("DexScreener research failed: %s", e)
+
+    # 3. Optional: Use Gemini AI for final analysis
+    if gemini_client and opportunities:
+        try:
+            top5 = sorted(opportunities, key=lambda x: x["score"], reverse=True)[:5]
+            prompt = (
+                "You are PumpIQ auto-trader AI. Analyze these crypto opportunities and give a 1-line trade recommendation for each. "
+                "Focus on risk/reward. Be concise.\n\n"
+                + "\n".join(
+                    f"- {t['name']} ({t['symbol']}): Price ${t['price']:,.6f}, 24h: {t['change_24h']:+.1f}%, "
+                    f"Volume: ${t['volume_24h']:,.0f}, Score: {t['score']}/100"
+                    for t in top5
+                )
+            )
+            resp = await asyncio.wait_for(
+                gemini_client.chat("You are a crypto trading AI assistant.", prompt),
+                timeout=10,
+            )
+            if resp.success:
+                for opp in top5:
+                    opp["ai_analysis"] = resp.content
+        except Exception as e:
+            logger.warning("AI analysis failed: %s", e)
+
+    # Sort by score
+    opportunities.sort(key=lambda x: x["score"], reverse=True)
+    return opportunities
+
+
+# ── Autonomous Trading Loop ──────────────────────────────────────
+
+async def auto_trade_cycle(user_id: int, cg_collector, dex_collector, gemini_client=None):
+    """
+    One cycle of the autonomous trading loop:
+    1. Check settings & safety limits
+    2. Update open positions (check stop-loss / take-profit)
+    3. Research new opportunities
+    4. Execute trades if conditions met
+    """
+    settings = get_trade_settings(user_id)
+    if not settings.get("auto_trade_enabled"):
+        return {"status": "disabled", "message": "Auto-trading is disabled"}
+
+    balance_info = get_paper_balance(user_id)
+    balance = balance_info["balance"]
+    initial = balance_info["initial_balance"]
+    total_pnl = balance_info["total_pnl"]
+
+    results = {"actions": [], "positions_updated": 0, "new_trades": 0}
+
+    conn = _get_db()
+    try:
+        # ── Safety Check: Daily loss limit ──
+        daily_loss_pct = (total_pnl / initial) * 100 if initial > 0 else 0
+        if daily_loss_pct < -settings["daily_loss_limit_pct"]:
+            _log_event(conn, user_id, "SAFETY", f"Daily loss limit hit: {daily_loss_pct:.1f}%")
+            conn.commit()
+            return {"status": "paused", "message": f"Daily loss limit reached ({daily_loss_pct:.1f}%)"}
+
+        # ── Cooldown check ──
+        last_trade = conn.execute(
+            "SELECT created_at FROM paper_trades WHERE user_id = ? ORDER BY created_at DESC LIMIT 1",
+            (user_id,),
+        ).fetchone()
+        if last_trade:
+            last_time = datetime.fromisoformat(last_trade["created_at"])
+            cooldown = timedelta(minutes=settings["cooldown_minutes"])
+            if datetime.utcnow() - last_time < cooldown:
+                return {"status": "cooldown", "message": f"Cooldown active ({settings['cooldown_minutes']}min)"}
+    finally:
+        conn.close()
+
+    # ── Step 1: Update open positions ──
+    open_positions = get_open_positions(user_id)
+    for pos in open_positions:
+        try:
+            # Get current price from CoinGecko
+            if pos["coin_id"] and not pos["coin_id"].startswith("0x"):
+                prices = await cg_collector.get_simple_price([pos["coin_id"]])
+                current_price = prices.get(pos["coin_id"], pos["current_price"])
+            else:
+                current_price = pos["current_price"]  # DEX tokens — price stays from entry
+
+            # Update position
+            current_value = pos["quantity"] * current_price
+            pnl = current_value - pos["invested_amount"]
+            pnl_pct = (pnl / pos["invested_amount"]) * 100
+
+            conn = _get_db()
+            conn.execute("""
+                UPDATE paper_positions SET current_price = ?, current_value = ?, pnl = ?, pnl_pct = ?
+                WHERE id = ?
+            """, (current_price, current_value, pnl, pnl_pct, pos["id"]))
+            conn.commit()
+            conn.close()
+            results["positions_updated"] += 1
+
+            # ── Stop-loss check ──
+            if pnl_pct <= -settings["stop_loss_pct"]:
+                sell_result = execute_paper_sell(user_id, pos["id"], current_price, f"Stop-loss triggered ({pnl_pct:.1f}%)")
+                if sell_result["success"]:
+                    results["actions"].append(f"🛑 Stop-loss: Sold {pos['symbol']} at ₹{current_price:,.2f} (P&L: {pnl_pct:+.1f}%)")
+                continue
+
+            # ── Take-profit check ──
+            if pnl_pct >= settings["take_profit_pct"]:
+                sell_result = execute_paper_sell(user_id, pos["id"], current_price, f"Take-profit triggered ({pnl_pct:.1f}%)")
+                if sell_result["success"]:
+                    results["actions"].append(f"🎯 Take-profit: Sold {pos['symbol']} at ₹{current_price:,.2f} (P&L: {pnl_pct:+.1f}%)")
+                continue
+
+        except Exception as e:
+            logger.warning("Position update failed for %s: %s", pos["coin_id"], e)
+
+    # ── Step 2: Research & buy new positions ──
+    open_count = len([p for p in get_open_positions(user_id) if p["status"] == "open"])
+    if open_count < settings["max_open_positions"] and balance > 1000:
+        opportunities = await research_opportunities(cg_collector, dex_collector, gemini_client)
+
+        # Filter: skip coins we already hold
+        held_coins = {p["coin_id"] for p in get_open_positions(user_id)}
+        opportunities = [o for o in opportunities if o["coin_id"] not in held_coins]
+
+        # Filter: minimum market cap
+        opportunities = [o for o in opportunities if o["market_cap"] >= settings["min_market_cap"]]
+
+        for opp in opportunities[:2]:  # Max 2 buys per cycle
+            if open_count >= settings["max_open_positions"]:
+                break
+
+            # Calculate trade size
+            max_trade = balance * (settings["max_trade_pct"] / 100)
+            trade_amount = min(max_trade, balance * 0.15)  # Conservative: 15% or max_trade_pct
+
+            if trade_amount < 500:
+                break  # Too small to trade
+
+            buy_result = execute_paper_buy(
+                user_id=user_id,
+                coin_id=opp["coin_id"],
+                coin_name=opp["name"],
+                symbol=opp["symbol"],
+                price=opp["price"],
+                amount=trade_amount,
+                ai_score=opp["score"],
+                ai_reasoning=opp["reasoning"],
+                stop_loss_pct=settings["stop_loss_pct"],
+                take_profit_pct=settings["take_profit_pct"],
+            )
+
+            if buy_result["success"]:
+                results["new_trades"] += 1
+                open_count += 1
+                balance -= trade_amount
+                results["actions"].append(
+                    f"🛒 Bought {opp['symbol']} at ₹{opp['price']:,.2f} (₹{trade_amount:,.0f}) | Score: {opp['score']}/100"
+                )
+
+    return results
+
+
+# ── Performance Stats ─────────────────────────────────────────────
+
+def get_performance_stats(user_id: int) -> Dict[str, Any]:
+    """Calculate comprehensive trading performance statistics."""
+    bal = get_paper_balance(user_id)
+    open_pos = get_open_positions(user_id)
+    closed_pos = get_closed_positions(user_id, limit=100)
+
+    # Calculate open P&L
+    open_pnl = sum(p["pnl"] for p in open_pos)
+    open_value = sum(p["current_value"] for p in open_pos)
+
+    total_trades = bal.get("total_trades", 0)
+    winning = bal.get("winning_trades", 0)
+    losing = bal.get("losing_trades", 0)
+    win_rate = (winning / total_trades * 100) if total_trades > 0 else 0
+
+    total_value = bal["balance"] + open_value
+    total_return = ((total_value - bal["initial_balance"]) / bal["initial_balance"]) * 100
+
+    return {
+        "paper_balance": round(bal["balance"], 2),
+        "initial_balance": bal["initial_balance"],
+        "total_value": round(total_value, 2),
+        "total_return_pct": round(total_return, 2),
+        "realized_pnl": round(bal.get("total_pnl", 0), 2),
+        "unrealized_pnl": round(open_pnl, 2),
+        "open_positions": len(open_pos),
+        "total_trades": total_trades,
+        "winning_trades": winning,
+        "losing_trades": losing,
+        "win_rate": round(win_rate, 1),
+        "best_trade": round(bal.get("best_trade_pnl", 0), 2),
+        "worst_trade": round(bal.get("worst_trade_pnl", 0), 2),
+        "invested_in_positions": round(open_value, 2),
+    }
+
+
+# Initialize tables on import
+init_trading_tables()

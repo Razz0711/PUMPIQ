@@ -442,6 +442,102 @@ a:hover { text-decoration: underline; }
     padding:12px 14px; border-bottom:1px solid var(--border); font-size:14px;
 }
 
+/* ── Auto Trader ──────────────────────────────────────────── */
+.trader-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px; }
+@media(max-width:768px) { .trader-grid { grid-template-columns:1fr; } }
+.trader-stat-card {
+    background: var(--bg-card); border:1px solid var(--border);
+    border-radius: var(--radius); padding:20px;
+}
+.trader-stat-label { font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; }
+.trader-stat-value { font-size:28px; font-weight:700; margin-top:4px; }
+.trader-stat-sub { font-size:12px; color:var(--text-secondary); margin-top:4px; }
+
+.trader-header {
+    background: linear-gradient(135deg, #0d1a2d 0%, #1a0d2e 50%, #0d2a1a 100%);
+    border: 1px solid #2a2a4a; border-radius:16px; padding:24px;
+    display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;
+}
+.trader-title { font-size:24px; font-weight:700; }
+.trader-title span { font-size:14px; font-weight:400; color:var(--text-muted); margin-left:8px; }
+.trader-status {
+    padding:6px 16px; border-radius:20px; font-size:13px; font-weight:600;
+    display:inline-flex; align-items:center; gap:6px;
+}
+.trader-status.active { background:rgba(16,185,129,0.15); color:var(--green); border:1px solid rgba(16,185,129,0.3); }
+.trader-status.inactive { background:rgba(239,68,68,0.1); color:var(--red); border:1px solid rgba(239,68,68,0.2); }
+
+.toggle-switch {
+    position:relative; width:52px; height:28px; cursor:pointer;
+}
+.toggle-switch input { display:none; }
+.toggle-slider {
+    position:absolute; top:0; left:0; right:0; bottom:0;
+    background:var(--bg-card); border:1px solid var(--border);
+    border-radius:14px; transition:all 0.3s;
+}
+.toggle-slider::before {
+    content:''; position:absolute; width:22px; height:22px;
+    left:2px; bottom:2px; background:#fff; border-radius:50%;
+    transition:transform 0.3s;
+}
+.toggle-switch input:checked + .toggle-slider {
+    background:var(--green); border-color:var(--green);
+}
+.toggle-switch input:checked + .toggle-slider::before {
+    transform:translateX(24px);
+}
+
+.position-card {
+    background:var(--bg-card); border:1px solid var(--border);
+    border-radius:var(--radius); padding:16px; margin-bottom:10px;
+}
+.position-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+.position-coin { font-weight:700; font-size:16px; }
+.position-badge {
+    padding:3px 10px; border-radius:12px; font-size:11px; font-weight:600;
+}
+.position-badge.profit { background:var(--green-bg); color:var(--green); }
+.position-badge.loss { background:var(--red-bg); color:var(--red); }
+.position-details { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; font-size:12px; color:var(--text-secondary); }
+.position-details span { display:block; }
+.position-details strong { color:var(--text-primary); font-size:13px; }
+
+.opp-card {
+    background:var(--bg-card); border:1px solid var(--border);
+    border-radius:var(--radius); padding:14px; margin-bottom:8px;
+    display:flex; justify-content:space-between; align-items:center;
+}
+.opp-info { flex:1; }
+.opp-name { font-weight:600; font-size:14px; }
+.opp-detail { font-size:12px; color:var(--text-secondary); margin-top:2px; }
+.opp-score {
+    width:48px; height:48px; border-radius:50%; display:flex;
+    align-items:center; justify-content:center; font-weight:700;
+    font-size:16px; margin-left:12px; flex-shrink:0;
+}
+.opp-score.high { background:var(--green-bg); color:var(--green); border:2px solid var(--green); }
+.opp-score.mid { background:rgba(245,158,11,0.1); color:var(--yellow); border:2px solid var(--yellow); }
+.opp-score.low { background:var(--red-bg); color:var(--red); border:2px solid var(--red); }
+
+.log-item { padding:8px 0; border-bottom:1px solid var(--border); font-size:13px; }
+.log-time { color:var(--text-muted); font-size:11px; }
+.log-event { font-weight:600; margin:0 6px; }
+
+.settings-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px; }
+@media(max-width:768px) { .settings-grid { grid-template-columns:1fr; } }
+.setting-item {
+    background:var(--bg-card); border:1px solid var(--border);
+    border-radius:var(--radius-sm); padding:14px;
+}
+.setting-label { font-size:12px; color:var(--text-muted); margin-bottom:6px; }
+.setting-input {
+    width:100%; padding:8px 12px; background:var(--bg-secondary);
+    border:1px solid var(--border); border-radius:6px;
+    color:var(--text-primary); font-size:14px; outline:none;
+}
+.setting-input:focus { border-color:var(--accent); }
+
 /* ── Loader ───────────────────────────────────────────────── */
 .loader { display:flex; justify-content:center; padding:60px; }
 .spinner {
@@ -478,6 +574,7 @@ a:hover { text-decoration: underline; }
         <button class="nav-tab" data-page="ai">AI Recs</button>
         <button class="nav-tab" data-page="leaderboard">Leaderboard</button>
         <button class="nav-tab" data-page="market">Market</button>
+        <button class="nav-tab" data-page="trader">🤖 Auto Trader</button>
     </div>
     <div class="header-right">
         <input class="search-box" id="globalSearch" placeholder="Search tokens..." onkeydown="if(event.key==='Enter')doSearch()">
@@ -636,6 +733,80 @@ a:hover { text-decoration: underline; }
             <thead><tr><th>#</th><th>Token</th><th>Price</th><th>24h</th><th>Market Cap</th><th>Volume 24h</th></tr></thead>
             <tbody id="marketBody"></tbody>
         </table>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- AUTO TRADER PAGE                                           -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div class="page" id="page-trader">
+    <div class="trader-header">
+        <div>
+            <div class="trader-title">🤖 Auto Trader <span>Paper Trading</span></div>
+            <div style="color:var(--text-secondary);font-size:13px;margin-top:4px">AI-powered autonomous trading with virtual money — no real funds at risk</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:16px">
+            <div id="traderStatusBadge" class="trader-status inactive">● Inactive</div>
+            <label class="toggle-switch">
+                <input type="checkbox" id="autoTradeToggle" onchange="toggleAutoTrade()">
+                <span class="toggle-slider"></span>
+            </label>
+        </div>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="trader-grid" style="grid-template-columns:repeat(4,1fr);margin-top:16px">
+        <div class="trader-stat-card">
+            <div class="trader-stat-label">Paper Balance</div>
+            <div class="trader-stat-value" id="traderBalance">₹1,00,000</div>
+            <div class="trader-stat-sub" id="traderReturn">0% return</div>
+        </div>
+        <div class="trader-stat-card">
+            <div class="trader-stat-label">Total P&L</div>
+            <div class="trader-stat-value" id="traderPnl">₹0.00</div>
+            <div class="trader-stat-sub" id="traderWinRate">Win rate: --</div>
+        </div>
+        <div class="trader-stat-card">
+            <div class="trader-stat-label">Open Positions</div>
+            <div class="trader-stat-value" id="traderOpenCount">0</div>
+            <div class="trader-stat-sub" id="traderInvested">₹0 invested</div>
+        </div>
+        <div class="trader-stat-card">
+            <div class="trader-stat-label">Total Trades</div>
+            <div class="trader-stat-value" id="traderTradeCount">0</div>
+            <div class="trader-stat-sub" id="traderBestWorst">Best: -- | Worst: --</div>
+        </div>
+    </div>
+
+    <!-- Action Buttons -->
+    <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="runTradeCycle()">⚡ Run Trade Cycle</button>
+        <button class="btn btn-outline" onclick="runResearch()">🔍 Research Market</button>
+        <button class="btn btn-outline" onclick="showManualBuyModal()">🛒 Manual Buy</button>
+        <button class="btn btn-outline" onclick="showTraderSettings()">⚙️ Settings</button>
+        <button class="btn btn-danger btn-sm" onclick="resetPaperTrading()" style="margin-left:auto">🔄 Reset</button>
+    </div>
+
+    <!-- Open Positions -->
+    <div style="margin-top:24px">
+        <h3 style="font-size:18px;margin-bottom:12px">📈 Open Positions</h3>
+        <div id="traderPositions"><div class="empty-state"><p>No open positions</p></div></div>
+    </div>
+
+    <!-- AI Opportunities -->
+    <div style="margin-top:24px">
+        <h3 style="font-size:18px;margin-bottom:12px">🎯 AI Opportunities</h3>
+        <div id="traderOpportunities"><div class="empty-state"><p>Click "Research Market" to find opportunities</p></div></div>
+    </div>
+
+    <!-- Trade History & Log tabs -->
+    <div style="margin-top:24px">
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+            <button class="btn btn-sm btn-outline" onclick="loadTraderHistory()" id="histTabBtn">📋 Trade History</button>
+            <button class="btn btn-sm btn-outline" onclick="loadTraderLog()" id="logTabBtn">📝 AI Log</button>
+            <button class="btn btn-sm btn-outline" onclick="loadClosedPositions()" id="closedTabBtn">📊 Closed Positions</button>
+        </div>
+        <div id="traderHistoryArea"></div>
     </div>
 </div>
 
@@ -997,6 +1168,7 @@ function navigate(page) {
     else if (page === 'ai') { loadAIGlobal(); }
     else if (page === 'leaderboard') { loadLeaderboard(); }
     else if (page === 'market') { loadMarket(); }
+    else if (page === 'trader') { loadTraderDashboard(); }
     else if (page === 'profile') { loadProfile(); }
 }
 
@@ -1844,6 +2016,354 @@ async function doSearch() {
     // Try to open as CoinGecko token first
     navigate('market');
     openToken(q.toLowerCase(), q);
+}
+
+// ══════════════════════════════════════════════════════════════
+// AUTO TRADER FUNCTIONS
+// ══════════════════════════════════════════════════════════════
+
+async function loadTraderDashboard() {
+    if (!currentUser) { showAuthModal('login'); return; }
+    try {
+        const [perf, positions] = await Promise.all([
+            api('/api/trader/performance'),
+            api('/api/trader/positions'),
+        ]);
+
+        // Stats
+        document.getElementById('traderBalance').textContent = '₹' + formatINR(perf.paper_balance);
+        const retCls = perf.total_return_pct >= 0 ? 'color:var(--green)' : 'color:var(--red)';
+        document.getElementById('traderReturn').innerHTML = `<span style="${retCls}">${perf.total_return_pct >= 0 ? '+' : ''}${perf.total_return_pct.toFixed(2)}% return</span>`;
+        
+        const pnlCls = perf.realized_pnl >= 0 ? 'color:var(--green)' : 'color:var(--red)';
+        document.getElementById('traderPnl').innerHTML = `<span style="${pnlCls}">₹${formatINR(perf.realized_pnl)}</span>`;
+        document.getElementById('traderWinRate').textContent = `Win rate: ${perf.win_rate}% (${perf.winning_trades}W / ${perf.losing_trades}L)`;
+
+        document.getElementById('traderOpenCount').textContent = perf.open_positions;
+        document.getElementById('traderInvested').textContent = `₹${formatINR(perf.invested_in_positions)} invested`;
+
+        document.getElementById('traderTradeCount').textContent = perf.total_trades;
+        document.getElementById('traderBestWorst').textContent = `Best: ₹${formatINR(perf.best_trade)} | Worst: ₹${formatINR(perf.worst_trade)}`;
+
+        // Toggle state
+        const settings = await api('/api/trader/settings');
+        document.getElementById('autoTradeToggle').checked = !!settings.auto_trade_enabled;
+        const badge = document.getElementById('traderStatusBadge');
+        if (settings.auto_trade_enabled) {
+            badge.className = 'trader-status active';
+            badge.textContent = '● Active';
+        } else {
+            badge.className = 'trader-status inactive';
+            badge.textContent = '● Inactive';
+        }
+
+        // Open Positions
+        renderTraderPositions(positions.open || []);
+
+    } catch(e) {
+        console.error('Trader load failed:', e);
+    }
+}
+
+function renderTraderPositions(positions) {
+    const el = document.getElementById('traderPositions');
+    if (!positions.length) {
+        el.innerHTML = '<div class="empty-state" style="padding:20px"><p>No open positions — the bot will buy when it finds opportunities</p></div>';
+        return;
+    }
+    el.innerHTML = positions.map(p => {
+        const pnlCls = p.pnl >= 0 ? 'profit' : 'loss';
+        const pnlSign = p.pnl >= 0 ? '+' : '';
+        return `
+        <div class="position-card">
+            <div class="position-header">
+                <div class="position-coin">${p.symbol} <span style="color:var(--text-muted);font-weight:400;font-size:13px">${p.coin_name}</span></div>
+                <div style="display:flex;align-items:center;gap:10px">
+                    <span class="position-badge ${pnlCls}">${pnlSign}₹${Math.abs(p.pnl).toFixed(2)} (${p.pnl_pct >= 0 ? '+' : ''}${p.pnl_pct.toFixed(1)}%)</span>
+                    <button class="btn btn-sm btn-danger" onclick="sellPosition(${p.id})">Sell</button>
+                </div>
+            </div>
+            <div class="position-details">
+                <div><span>Entry Price</span><strong>₹${p.entry_price.toFixed(2)}</strong></div>
+                <div><span>Current</span><strong>₹${p.current_price.toFixed(2)}</strong></div>
+                <div><span>Quantity</span><strong>${p.quantity.toFixed(6)}</strong></div>
+                <div><span>Invested</span><strong>₹${formatINR(p.invested_amount)}</strong></div>
+                <div><span>Stop Loss</span><strong>₹${p.stop_loss.toFixed(2)}</strong></div>
+                <div><span>Take Profit</span><strong>₹${p.take_profit.toFixed(2)}</strong></div>
+            </div>
+            <div style="margin-top:8px;font-size:12px;color:var(--text-muted)">🤖 ${p.ai_reasoning}</div>
+        </div>`;
+    }).join('');
+}
+
+async function toggleAutoTrade() {
+    if (!currentUser) return;
+    try {
+        const data = await api('/api/trader/toggle', { method: 'POST' });
+        const badge = document.getElementById('traderStatusBadge');
+        if (data.auto_trade_enabled) {
+            badge.className = 'trader-status active';
+            badge.textContent = '● Active';
+        } else {
+            badge.className = 'trader-status inactive';
+            badge.textContent = '● Inactive';
+        }
+    } catch(e) { alert(e.message); }
+}
+
+async function runTradeCycle() {
+    if (!currentUser) return showAuthModal('login');
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = '⏳ Running...';
+    try {
+        const result = await api('/api/trader/run-cycle', { method: 'POST' });
+        let msg = `Status: ${result.status || 'done'}\n`;
+        if (result.actions?.length) {
+            msg += result.actions.join('\n');
+        } else if (result.message) {
+            msg += result.message;
+        } else {
+            msg += `Positions updated: ${result.positions_updated || 0}, New trades: ${result.new_trades || 0}`;
+        }
+        alert(msg);
+        loadTraderDashboard();
+    } catch(e) { alert('Error: ' + e.message); }
+    finally {
+        btn.disabled = false;
+        btn.textContent = '⚡ Run Trade Cycle';
+    }
+}
+
+async function runResearch() {
+    if (!currentUser) return showAuthModal('login');
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = '🔍 Researching...';
+    try {
+        const data = await api('/api/trader/research');
+        const el = document.getElementById('traderOpportunities');
+        if (!data.opportunities?.length) {
+            el.innerHTML = '<div class="empty-state"><p>No opportunities found right now</p></div>';
+            return;
+        }
+        el.innerHTML = data.opportunities.map(o => {
+            const scoreCls = o.score >= 60 ? 'high' : o.score >= 35 ? 'mid' : 'low';
+            return `
+            <div class="opp-card">
+                <div class="opp-info">
+                    <div class="opp-name">${o.symbol} <span style="color:var(--text-muted);font-weight:400">${o.name}</span></div>
+                    <div class="opp-detail">₹${o.price.toFixed(4)} | 24h: ${o.change_24h >= 0 ? '+' : ''}${o.change_24h.toFixed(1)}% | Vol: $${(o.volume_24h/1000).toFixed(0)}K</div>
+                    <div class="opp-detail" style="margin-top:4px">💡 ${o.reasoning}</div>
+                </div>
+                <div class="opp-score ${scoreCls}">${o.score}</div>
+            </div>`;
+        }).join('');
+    } catch(e) { alert('Research failed: ' + e.message); }
+    finally {
+        btn.disabled = false;
+        btn.textContent = '🔍 Research Market';
+    }
+}
+
+async function sellPosition(posId) {
+    if (!confirm('Sell this position?')) return;
+    try {
+        const result = await api(`/api/trader/sell/${posId}`, { method: 'POST' });
+        alert(`Sold! P&L: ₹${result.pnl.toFixed(2)} (${result.pnl_pct >= 0 ? '+' : ''}${result.pnl_pct.toFixed(1)}%)`);
+        loadTraderDashboard();
+    } catch(e) { alert(e.message); }
+}
+
+function showManualBuyModal() {
+    if (!currentUser) return showAuthModal('login');
+    const html = `
+        <h2>🛒 Manual Paper Buy</h2>
+        <div class="form-group"><label>Coin ID (e.g. bitcoin, ethereum, solana)</label>
+            <input class="form-input" id="manualBuyCoin" placeholder="bitcoin"></div>
+        <div class="form-group"><label>Amount (₹)</label>
+            <input class="form-input" id="manualBuyAmount" type="number" placeholder="5000">
+            <div style="display:flex;gap:6px;margin-top:6px">
+                <button class="btn btn-sm btn-outline" onclick="document.getElementById('manualBuyAmount').value=1000">₹1K</button>
+                <button class="btn btn-sm btn-outline" onclick="document.getElementById('manualBuyAmount').value=5000">₹5K</button>
+                <button class="btn btn-sm btn-outline" onclick="document.getElementById('manualBuyAmount').value=10000">₹10K</button>
+                <button class="btn btn-sm btn-outline" onclick="document.getElementById('manualBuyAmount').value=20000">₹20K</button>
+            </div>
+        </div>
+        <button class="btn btn-green" style="width:100%;margin-top:8px" onclick="submitManualBuy()">Buy Now (Paper)</button>
+    `;
+    showDynamicModal(html);
+}
+
+async function submitManualBuy() {
+    const coin_id = document.getElementById('manualBuyCoin').value.trim().toLowerCase();
+    const amount = parseFloat(document.getElementById('manualBuyAmount').value);
+    if (!coin_id || !amount || amount <= 0) return alert('Enter coin and amount');
+    try {
+        await api('/api/trader/buy', {
+            method: 'POST',
+            body: JSON.stringify({ coin_id, amount }),
+        });
+        closeDynamicModal();
+        alert(`Paper buy order placed for ₹${amount.toLocaleString()}`);
+        loadTraderDashboard();
+    } catch(e) { alert(e.message); }
+}
+
+function showDynamicModal(html) {
+    let overlay = document.getElementById('dynamicModal');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'dynamicModal';
+        overlay.className = 'modal-overlay';
+        overlay.innerHTML = '<div class="modal" id="dynamicModalContent"></div>';
+        overlay.addEventListener('click', e => { if (e.target === overlay) closeDynamicModal(); });
+        document.body.appendChild(overlay);
+    }
+    document.getElementById('dynamicModalContent').innerHTML = `<button class="modal-close" onclick="closeDynamicModal()">&times;</button>` + html;
+    overlay.classList.add('active');
+}
+function closeDynamicModal() {
+    document.getElementById('dynamicModal')?.classList.remove('active');
+}
+
+function showTraderSettings() {
+    if (!currentUser) return showAuthModal('login');
+    api('/api/trader/settings').then(s => {
+        const html = `
+            <h2>⚙️ Trading Settings</h2>
+            <div class="settings-grid">
+                <div class="setting-item">
+                    <div class="setting-label">Max Trade Size (%)</div>
+                    <input class="setting-input" id="setMaxTrade" type="number" value="${s.max_trade_pct}" min="1" max="50">
+                </div>
+                <div class="setting-item">
+                    <div class="setting-label">Daily Loss Limit (%)</div>
+                    <input class="setting-input" id="setDailyLoss" type="number" value="${s.daily_loss_limit_pct}" min="1" max="50">
+                </div>
+                <div class="setting-item">
+                    <div class="setting-label">Max Open Positions</div>
+                    <input class="setting-input" id="setMaxPos" type="number" value="${s.max_open_positions}" min="1" max="20">
+                </div>
+                <div class="setting-item">
+                    <div class="setting-label">Stop Loss (%)</div>
+                    <input class="setting-input" id="setStopLoss" type="number" value="${s.stop_loss_pct}" min="1" max="50">
+                </div>
+                <div class="setting-item">
+                    <div class="setting-label">Take Profit (%)</div>
+                    <input class="setting-input" id="setTakeProfit" type="number" value="${s.take_profit_pct}" min="5" max="200">
+                </div>
+                <div class="setting-item">
+                    <div class="setting-label">Cooldown (minutes)</div>
+                    <input class="setting-input" id="setCooldown" type="number" value="${s.cooldown_minutes}" min="1" max="60">
+                </div>
+                <div class="setting-item">
+                    <div class="setting-label">Min Market Cap ($)</div>
+                    <input class="setting-input" id="setMinMcap" type="number" value="${s.min_market_cap}">
+                </div>
+                <div class="setting-item">
+                    <div class="setting-label">Risk Level</div>
+                    <select class="setting-input" id="setRiskLevel">
+                        <option value="conservative" ${s.risk_level==='conservative'?'selected':''}>Conservative</option>
+                        <option value="moderate" ${s.risk_level==='moderate'?'selected':''}>Moderate</option>
+                        <option value="aggressive" ${s.risk_level==='aggressive'?'selected':''}>Aggressive</option>
+                    </select>
+                </div>
+            </div>
+            <button class="btn btn-primary" style="width:100%;margin-top:16px" onclick="saveTraderSettings()">Save Settings</button>
+        `;
+        showDynamicModal(html);
+    });
+}
+
+async function saveTraderSettings() {
+    try {
+        await api('/api/trader/settings', {
+            method: 'POST',
+            body: JSON.stringify({
+                max_trade_pct: parseFloat(document.getElementById('setMaxTrade').value),
+                daily_loss_limit_pct: parseFloat(document.getElementById('setDailyLoss').value),
+                max_open_positions: parseInt(document.getElementById('setMaxPos').value),
+                stop_loss_pct: parseFloat(document.getElementById('setStopLoss').value),
+                take_profit_pct: parseFloat(document.getElementById('setTakeProfit').value),
+                cooldown_minutes: parseInt(document.getElementById('setCooldown').value),
+                min_market_cap: parseFloat(document.getElementById('setMinMcap').value),
+                risk_level: document.getElementById('setRiskLevel').value,
+            }),
+        });
+        closeDynamicModal();
+        alert('Settings saved!');
+    } catch(e) { alert(e.message); }
+}
+
+async function resetPaperTrading() {
+    if (!confirm('Reset paper trading? This will close all positions and reset balance to ₹1,00,000.')) return;
+    try {
+        await api('/api/trader/reset', { method: 'POST' });
+        alert('Paper trading reset!');
+        loadTraderDashboard();
+    } catch(e) { alert(e.message); }
+}
+
+async function loadTraderHistory() {
+    try {
+        const trades = await api('/api/trader/history?limit=25');
+        const el = document.getElementById('traderHistoryArea');
+        if (!trades.length) { el.innerHTML = '<div class="empty-state"><p>No trades yet</p></div>'; return; }
+        el.innerHTML = `<table class="feed-table"><thead><tr><th>Time</th><th>Action</th><th>Coin</th><th>Price</th><th>Amount</th><th>Score</th></tr></thead><tbody>` +
+            trades.map(t => {
+                const actionCls = t.action === 'BUY' ? 'color:var(--green)' : 'color:var(--red)';
+                return `<tr>
+                    <td style="font-size:12px">${new Date(t.created_at).toLocaleString()}</td>
+                    <td style="${actionCls};font-weight:600">${t.action}</td>
+                    <td>${t.symbol}</td>
+                    <td>₹${t.price.toFixed(2)}</td>
+                    <td>₹${formatINR(t.amount)}</td>
+                    <td>${t.ai_score}/100</td>
+                </tr>`;
+            }).join('') + '</tbody></table>';
+    } catch(e) { console.error(e); }
+}
+
+async function loadTraderLog() {
+    try {
+        const logs = await api('/api/trader/log?limit=30');
+        const el = document.getElementById('traderHistoryArea');
+        if (!logs.length) { el.innerHTML = '<div class="empty-state"><p>No log entries yet</p></div>'; return; }
+        el.innerHTML = logs.map(l => `
+            <div class="log-item">
+                <span class="log-time">${new Date(l.created_at).toLocaleString()}</span>
+                <span class="log-event">[${l.event}]</span>
+                <span>${l.details}</span>
+            </div>
+        `).join('');
+    } catch(e) { console.error(e); }
+}
+
+async function loadClosedPositions() {
+    try {
+        const data = await api('/api/trader/positions');
+        const closed = data.closed || [];
+        const el = document.getElementById('traderHistoryArea');
+        if (!closed.length) { el.innerHTML = '<div class="empty-state"><p>No closed positions yet</p></div>'; return; }
+        el.innerHTML = closed.map(p => {
+            const pnlCls = p.pnl >= 0 ? 'profit' : 'loss';
+            const sign = p.pnl >= 0 ? '+' : '';
+            return `
+            <div class="position-card">
+                <div class="position-header">
+                    <div class="position-coin">${p.symbol} <span style="color:var(--text-muted);font-weight:400;font-size:13px">${p.coin_name}</span></div>
+                    <span class="position-badge ${pnlCls}">${sign}₹${Math.abs(p.pnl).toFixed(2)} (${p.pnl_pct >= 0 ? '+' : ''}${p.pnl_pct.toFixed(1)}%)</span>
+                </div>
+                <div class="position-details">
+                    <div><span>Entry</span><strong>₹${p.entry_price.toFixed(2)}</strong></div>
+                    <div><span>Exit</span><strong>₹${p.current_price.toFixed(2)}</strong></div>
+                    <div><span>Invested</span><strong>₹${formatINR(p.invested_amount)}</strong></div>
+                </div>
+                <div style="margin-top:6px;font-size:11px;color:var(--text-muted)">Closed: ${new Date(p.closed_at).toLocaleString()}</div>
+            </div>`;
+        }).join('');
+    } catch(e) { console.error(e); }
 }
 
 // ── Init ──────────────────────────────────────────────────────
