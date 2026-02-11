@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PumpIQ – AI Crypto Intelligence</title>
+    <style>
+        :root {
+            --bg-primary: #0a0e17;
+            --bg-secondary: #111827;
+            --bg-card: #1a1f2e;
+            --bg-card-hover: #212738;
+            --border: #2a3042;
+            --text-primary: #e5e7eb;
+            --text-secondary: #9ca3af;
+            --text-muted: #6b7280;
+            --accent: #3b82f6;
+            --accent-glow: rgba(59, 130, 246, 0.15);
+            --green: #10b981;
+            --green-bg: rgba(16, 185, 129, 0.1);
+            --red: #ef4444;
+            --red-bg: rgba(239, 68, 68, 0.1);
+            --yellow: #f59e0b;
+            --purple: #8b5cf6;
+            --gradient: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            --radius: 12px;
+            --radius-sm: 8px;
+            --shadow: 0 4px 24px rgba(0,0,0,0.3);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* ── Header ──────────────────────────────────────── */
+        .header {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: rgba(10, 14, 23, 0.85);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border);
+            padding: 0 24px;
+        }
+        .header-inner {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 64px;
+        }
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 22px;
+            font-weight: 800;
+            background: var(--gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            cursor: pointer;
+        }
+        .logo-icon {
+            width: 32px;
+            height: 32px;
+            background: var(--gradient);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            -webkit-text-fill-color: white;
+        }
+        .search-bar {
+            flex: 1;
+            max-width: 500px;
+            margin: 0 32px;
+            position: relative;
+        }
+        .search-bar input {
+            width: 100%;
+            padding: 10px 16px 10px 40px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            color: var(--text-primary);
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .search-bar input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+        .search-bar input::placeholder { color: var(--text-muted); }
+        .search-icon {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+            font-size: 16px;
+        }
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .status-pill {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 14px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--green);
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* ── Main Layout ─────────────────────────────────── */
+        .main {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        /* ── Tabs ────────────────────────────────────────── */
+        .tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 24px;
+            background: var(--bg-secondary);
+            padding: 4px;
+            border-radius: 12px;
+            width: fit-content;
+        }
+        .tab {
+            padding: 8px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+            background: none;
+        }
+        .tab:hover { color: var(--text-primary); }
+        .tab.active {
+            background: var(--accent);
+            color: white;
+        }
+
+        /* ── Section ─────────────────────────────────────── */
+        .section-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .section-title .badge {
+            font-size: 11px;
+            padding: 2px 8px;
+            background: var(--accent-glow);
+            color: var(--accent);
+            border-radius: 10px;
+            font-weight: 600;
+        }
+
+        /* ── Token Table ─────────────────────────────────── */
+        .token-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            overflow: hidden;
+        }
+        .token-table th {
+            background: var(--bg-secondary);
+            padding: 12px 16px;
+            text-align: left;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid var(--border);
+        }
+        .token-table td {
+            padding: 14px 16px;
+            font-size: 14px;
+            border-bottom: 1px solid rgba(42, 48, 66, 0.5);
+            vertical-align: middle;
+        }
+        .token-table tr:last-child td { border-bottom: none; }
+        .token-table tr:hover td { background: var(--bg-card-hover); }
+        .token-table tr { cursor: pointer; transition: background 0.15s; }
+
+        .token-name-cell {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .token-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: var(--bg-secondary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 13px;
+            color: var(--accent);
+        }
+        .token-symbol {
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+        .token-fullname {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        .price-positive { color: var(--green); }
+        .price-negative { color: var(--red); }
+
+        .num-right { text-align: right; }
+
+        /* ── Cards Grid ──────────────────────────────────── */
+        .cards-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        .card:hover {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow), var(--shadow);
+            transform: translateY(-2px);
+        }
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 14px;
+        }
+        .card-price { font-size: 22px; font-weight: 700; }
+        .card-change {
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .card-change.up { background: var(--green-bg); color: var(--green); }
+        .card-change.down { background: var(--red-bg); color: var(--red); }
+        .card-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 14px;
+            padding-top: 14px;
+            border-top: 1px solid var(--border);
+        }
+        .card-stat-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+        .card-stat-value {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        /* ── Modal / Detail Panel ────────────────────────── */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.6);
+            backdrop-filter: blur(4px);
+            z-index: 200;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 40px 20px;
+            overflow-y: auto;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            width: 100%;
+            max-width: 720px;
+            padding: 32px;
+            position: relative;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+        }
+        .modal-close {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            width: 36px;
+            height: 36px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg-card);
+            color: var(--text-secondary);
+            font-size: 18px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-close:hover { border-color: var(--accent); color: var(--text-primary); }
+
+        .detail-header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .detail-avatar {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: var(--gradient);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 20px;
+            color: white;
+        }
+        .detail-name { font-size: 24px; font-weight: 800; }
+        .detail-symbol { color: var(--text-muted); font-size: 14px; }
+
+        .detail-price-row {
+            display: flex;
+            align-items: baseline;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .detail-price { font-size: 36px; font-weight: 800; }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+        .metric-box {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 14px;
+        }
+        .metric-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+        .metric-value { font-size: 16px; font-weight: 700; }
+
+        .analysis-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+            margin-bottom: 16px;
+        }
+        .analysis-title {
+            font-size: 14px;
+            font-weight: 700;
+            margin-bottom: 12px;
+            color: var(--accent);
+        }
+        .analysis-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            font-size: 13px;
+        }
+        .analysis-row span:first-child { color: var(--text-secondary); }
+        .analysis-row span:last-child { font-weight: 600; }
+
+        .ai-box {
+            background: linear-gradient(135deg, rgba(59,130,246,0.1), rgba(139,92,246,0.1));
+            border: 1px solid rgba(59,130,246,0.3);
+            border-radius: var(--radius);
+            padding: 20px;
+            margin-top: 16px;
+        }
+        .ai-box-title {
+            font-size: 14px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .ai-badge {
+            background: var(--gradient);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 10px;
+            font-weight: 700;
+        }
+        .ai-text {
+            font-size: 14px;
+            line-height: 1.6;
+            color: var(--text-secondary);
+            white-space: pre-wrap;
+        }
+
+        .score-bar-container {
+            width: 100%;
+            height: 8px;
+            background: var(--bg-primary);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 6px;
+        }
+        .score-bar {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.5s ease;
+        }
+        .score-bar.green { background: var(--green); }
+        .score-bar.yellow { background: var(--yellow); }
+        .score-bar.red { background: var(--red); }
+
+        /* ── Loading ─────────────────────────────────────── */
+        .loader {
+            display: flex;
+            justify-content: center;
+            padding: 60px 0;
+        }
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-muted);
+        }
+        .empty-state h3 { font-size: 18px; margin-bottom: 8px; color: var(--text-secondary); }
+
+        /* ── Trending pills ──────────────────────────────── */
+        .trending-bar {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+        }
+        .trending-pill {
+            padding: 6px 14px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--text-secondary);
+        }
+        .trending-pill:hover {
+            border-color: var(--accent);
+            color: var(--text-primary);
+        }
+        .trending-pill .rank {
+            font-size: 10px;
+            color: var(--yellow);
+            font-weight: 700;
+        }
+
+        /* ── Responsive ──────────────────────────────────── */
+        @media (max-width: 768px) {
+            .search-bar { margin: 0 12px; }
+            .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+            .header-actions .status-pill span.hide-mobile { display: none; }
+        }
+        @media (max-width: 480px) {
+            .cards-grid { grid-template-columns: 1fr; }
+            .token-table { font-size: 13px; }
+            .header-inner { padding: 0 8px; }
+        }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* search results */
+        .search-results-panel {
+            display: none;
+        }
+        .search-results-panel.active { display: block; }
+    </style>
+</head>
+<body>
+
+<!-- ═══ HEADER ═══════════════════════════════════════════════════ -->
+<header class="header">
+    <div class="header-inner">
+        <div class="logo" onclick="goHome()">
+            <div class="logo-icon">⚡</div>
+            PumpIQ
+        </div>
+        <div class="search-bar">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="searchInput" placeholder="Search any token... (e.g. SOL, BONK, bitcoin)"
+                   onkeydown="if(event.key==='Enter') doSearch()">
+        </div>
+        <div class="header-actions">
+            <div class="status-pill">
+                <div class="status-dot"></div>
+                <span class="hide-mobile">Live Data</span>
+            </div>
+            <div class="status-pill" id="aiStatus" style="display:none;">
+                🤖 <span class="hide-mobile">AI Active</span>
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- ═══ MAIN ═════════════════════════════════════════════════════ -->
+<main class="main">
+
+    <!-- Trending bar -->
+    <div id="trendingBar" class="trending-bar"></div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+        <button class="tab active" onclick="switchTab('market')">🏛️ Market</button>
+        <button class="tab" onclick="switchTab('dex')">🔄 DEX Screener</button>
+    </div>
+
+    <!-- Search Results (shown when searching) -->
+    <div id="searchResults" class="search-results-panel">
+        <h2 class="section-title">Search Results</h2>
+        <div id="searchContent"></div>
+    </div>
+
+    <!-- Market Tab -->
+    <div id="tab-market" class="tab-content active">
+        <h2 class="section-title">Top Cryptocurrencies <span class="badge">LIVE</span></h2>
+        <div id="marketTable"></div>
+    </div>
+
+    <!-- DEX Tab -->
+    <div id="tab-dex" class="tab-content">
+        <h2 class="section-title">DexScreener – Solana Tokens <span class="badge">LIVE</span></h2>
+        <p style="color:var(--text-muted);margin-bottom:16px;font-size:14px;">
+            Search for any Solana token above to see DexScreener data
+        </p>
+        <div id="dexContent">
+            <div class="empty-state">
+                <h3>Search for tokens</h3>
+                <p>Enter a token name or symbol in the search bar to discover Solana DEX pairs</p>
+            </div>
+        </div>
+    </div>
+
+</main>
+
+<!-- ═══ DETAIL MODAL ═════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal" onclick="if(event.target===this)closeModal()">
+    <div class="modal">
+        <button class="modal-close" onclick="closeModal()">✕</button>
+        <div id="modalContent">
+            <div class="loader"><div class="spinner"></div></div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ═════════════════════════════════════════════════════════════════
+// PumpIQ Frontend
+// ═════════════════════════════════════════════════════════════════
+
+const API = '';  // same origin
+let currentTab = 'market';
+
+// ── Utilities ──────────────────────────────────────────────────
+function fmt(n, decimals = 2) {
+    if (n === null || n === undefined) return '—';
+    if (n >= 1e12) return '$' + (n / 1e12).toFixed(2) + 'T';
+    if (n >= 1e9) return '$' + (n / 1e9).toFixed(2) + 'B';
+    if (n >= 1e6) return '$' + (n / 1e6).toFixed(2) + 'M';
+    if (n >= 1e3) return '$' + (n / 1e3).toFixed(1) + 'K';
+    if (n >= 1) return '$' + n.toFixed(decimals);
+    if (n >= 0.01) return '$' + n.toFixed(4);
+    return '$' + n.toFixed(8);
+}
+
+function pct(n) {
+    if (n === null || n === undefined) return '—';
+    const cls = n >= 0 ? 'price-positive' : 'price-negative';
+    const arrow = n >= 0 ? '▲' : '▼';
+    return `<span class="${cls}">${arrow} ${Math.abs(n).toFixed(2)}%</span>`;
+}
+
+function scoreColor(s) {
+    if (s >= 7) return 'green';
+    if (s >= 4) return 'yellow';
+    return 'red';
+}
+
+async function api(path) {
+    const resp = await fetch(API + path);
+    if (!resp.ok) throw new Error(`API error: ${resp.status}`);
+    return resp.json();
+}
+
+// ── Navigation ─────────────────────────────────────────────────
+function goHome() {
+    document.getElementById('searchResults').classList.remove('active');
+    document.getElementById('searchInput').value = '';
+    showTabContent();
+    loadMarket();
+}
+
+function switchTab(tab) {
+    currentTab = tab;
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    event.target.classList.add('active');
+    document.getElementById('searchResults').classList.remove('active');
+    showTabContent();
+}
+
+function showTabContent() {
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    const el = document.getElementById('tab-' + currentTab);
+    if (el) el.classList.add('active');
+}
+
+// ── Load Market Data ───────────────────────────────────────────
+async function loadMarket() {
+    const el = document.getElementById('marketTable');
+    el.innerHTML = '<div class="loader"><div class="spinner"></div></div>';
+    try {
+        const coins = await api('/api/market/top?limit=25');
+        if (!coins.length) {
+            el.innerHTML = '<div class="empty-state"><h3>No data</h3></div>';
+            return;
+        }
+        let html = `<table class="token-table">
+            <thead><tr>
+                <th>#</th><th>Token</th><th class="num-right">Price</th>
+                <th class="num-right">24h</th><th class="num-right">Market Cap</th>
+                <th class="num-right">Volume 24h</th>
+            </tr></thead><tbody>`;
+        coins.forEach((c, i) => {
+            html += `<tr onclick="openToken('${c.coin_id || c.symbol.toLowerCase().replace(/[^a-z0-9]/g,'')}', '${c.name}')">
+                <td style="color:var(--text-muted)">${c.rank || i+1}</td>
+                <td><div class="token-name-cell">
+                    <div class="token-avatar">${c.symbol.slice(0,2)}</div>
+                    <div><div class="token-symbol">${c.symbol}</div>
+                    <div class="token-fullname">${c.name}</div></div>
+                </div></td>
+                <td class="num-right" style="font-weight:600">${fmt(c.price)}</td>
+                <td class="num-right">${pct(c.price_change_24h)}</td>
+                <td class="num-right">${fmt(c.market_cap)}</td>
+                <td class="num-right" style="color:var(--text-secondary)">${fmt(c.volume_24h)}</td>
+            </tr>`;
+        });
+        html += '</tbody></table>';
+        el.innerHTML = html;
+    } catch (e) {
+        el.innerHTML = `<div class="empty-state"><h3>Error loading data</h3><p>${e.message}</p></div>`;
+    }
+}
+
+// ── Load Trending ──────────────────────────────────────────────
+async function loadTrending() {
+    try {
+        const trending = await api('/api/market/trending');
+        const bar = document.getElementById('trendingBar');
+        bar.innerHTML = '<span style="font-size:12px;color:var(--text-muted);padding:6px 0;">🔥 Trending:</span>';
+        trending.slice(0, 8).forEach(t => {
+            bar.innerHTML += `<div class="trending-pill" onclick="openToken('${t.coin_id}', '${t.name}')">
+                <span class="rank">#${t.rank + 1}</span> ${t.symbol}
+            </div>`;
+        });
+    } catch (e) {
+        console.warn('Trending load failed:', e);
+    }
+}
+
+// ── Search ─────────────────────────────────────────────────────
+async function doSearch() {
+    const q = document.getElementById('searchInput').value.trim();
+    if (!q) return goHome();
+
+    const panel = document.getElementById('searchResults');
+    const content = document.getElementById('searchContent');
+    panel.classList.add('active');
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    content.innerHTML = '<div class="loader"><div class="spinner"></div></div>';
+
+    try {
+        const data = await api('/api/search?q=' + encodeURIComponent(q));
+
+        let html = '';
+
+        // CoinGecko results
+        if (data.coingecko && data.coingecko.length) {
+            html += '<h3 class="section-title" style="margin-top:16px;">CoinGecko Results</h3>';
+            html += '<div class="cards-grid">';
+            data.coingecko.forEach(c => {
+                const chgCls = c.price_change_24h >= 0 ? 'up' : 'down';
+                html += `<div class="card" onclick="openToken('${c.coin_id || c.symbol.toLowerCase()}', '${c.name}')">
+                    <div class="card-header">
+                        <div>
+                            <div class="token-name-cell">
+                                <div class="token-avatar">${c.symbol.slice(0,2)}</div>
+                                <div><div class="token-symbol">${c.symbol}</div>
+                                <div class="token-fullname">${c.name}</div></div>
+                            </div>
+                        </div>
+                        <div class="card-change ${chgCls}">${c.price_change_24h >= 0 ? '+' : ''}${c.price_change_24h.toFixed(2)}%</div>
+                    </div>
+                    <div class="card-price">${fmt(c.price)}</div>
+                    <div class="card-stats">
+                        <div><div class="card-stat-label">Market Cap</div><div class="card-stat-value">${fmt(c.market_cap)}</div></div>
+                        <div><div class="card-stat-label">Volume</div><div class="card-stat-value">${fmt(c.volume_24h)}</div></div>
+                    </div>
+                </div>`;
+            });
+            html += '</div>';
+        }
+
+        // DexScreener results
+        if (data.dexscreener && data.dexscreener.length) {
+            html += '<h3 class="section-title" style="margin-top:24px;">DexScreener – Solana Pairs</h3>';
+            html += buildDexTable(data.dexscreener);
+        }
+
+        if (!html) html = '<div class="empty-state"><h3>No results found</h3><p>Try a different search term</p></div>';
+        content.innerHTML = html;
+    } catch (e) {
+        content.innerHTML = `<div class="empty-state"><h3>Search failed</h3><p>${e.message}</p></div>`;
+    }
+}
+
+function buildDexTable(tokens) {
+    let html = `<table class="token-table">
+        <thead><tr>
+            <th>Token</th><th class="num-right">Price</th>
+            <th class="num-right">24h</th><th class="num-right">Volume</th>
+            <th class="num-right">Liquidity</th><th class="num-right">Buys/Sells</th>
+            <th>DEX</th>
+        </tr></thead><tbody>`;
+    tokens.forEach(t => {
+        html += `<tr onclick="openDexToken('${t.address}')">
+            <td><div class="token-name-cell">
+                <div class="token-avatar" style="background:var(--purple);color:white">${t.symbol.slice(0,2)}</div>
+                <div><div class="token-symbol">${t.symbol}</div>
+                <div class="token-fullname">${t.name}</div></div>
+            </div></td>
+            <td class="num-right" style="font-weight:600">${fmt(t.price)}</td>
+            <td class="num-right">${pct(t.price_change_24h)}</td>
+            <td class="num-right">${fmt(t.volume_24h)}</td>
+            <td class="num-right">${fmt(t.liquidity)}</td>
+            <td class="num-right"><span class="price-positive">${t.buys_24h}</span> / <span class="price-negative">${t.sells_24h}</span></td>
+            <td style="color:var(--text-muted);font-size:12px">${t.dex}</td>
+        </tr>`;
+    });
+    html += '</tbody></table>';
+    return html;
+}
+
+// ── Open Token Detail ──────────────────────────────────────────
+async function openToken(coinId, name) {
+    const modal = document.getElementById('modal');
+    const content = document.getElementById('modalContent');
+    modal.classList.add('active');
+    content.innerHTML = '<div class="loader"><div class="spinner"></div></div>';
+
+    try {
+        const d = await api('/api/token/' + encodeURIComponent(coinId));
+        const chgCls = d.price_change_24h >= 0 ? 'price-positive' : 'price-negative';
+
+        let html = `
+        <div class="detail-header">
+            <div class="detail-avatar">${d.symbol.slice(0,2)}</div>
+            <div>
+                <div class="detail-name">${d.name}</div>
+                <div class="detail-symbol">${d.symbol}${d.rank ? ' · Rank #' + d.rank : ''}</div>
+            </div>
+        </div>
+
+        <div class="detail-price-row">
+            <span class="detail-price">${fmt(d.price)}</span>
+            <span class="${chgCls}" style="font-size:18px;font-weight:600">
+                ${d.price_change_24h >= 0 ? '▲' : '▼'} ${Math.abs(d.price_change_24h).toFixed(2)}% (24h)
+            </span>
+        </div>
+
+        <div class="metrics-grid">
+            <div class="metric-box">
+                <div class="metric-label">Market Cap</div>
+                <div class="metric-value">${fmt(d.market_cap)}</div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-label">Volume 24h</div>
+                <div class="metric-value">${fmt(d.volume_24h)}</div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-label">All-Time High</div>
+                <div class="metric-value">${fmt(d.ath)}</div>
+            </div>
+        </div>`;
+
+        // Technical Analysis
+        if (d.ta_trend && d.ta_trend !== 'unknown') {
+            const taColor = scoreColor(d.ta_score);
+            html += `
+            <div class="analysis-section">
+                <div class="analysis-title">📊 Technical Analysis</div>
+                <div class="analysis-row"><span>Score</span><span>${d.ta_score.toFixed(1)} / 10</span></div>
+                <div class="score-bar-container"><div class="score-bar ${taColor}" style="width:${d.ta_score*10}%"></div></div>
+                <div class="analysis-row" style="margin-top:10px"><span>Trend</span><span>${d.ta_trend}</span></div>
+                <div class="analysis-row"><span>RSI (14)</span><span>${d.ta_rsi.toFixed(1)} (${d.ta_rsi_label})</span></div>
+                <div class="analysis-row"><span>MACD</span><span>${d.ta_macd}</span></div>
+                <div class="analysis-row"><span>Pattern</span><span>${d.ta_pattern || 'None'}</span></div>
+                <div class="analysis-row"><span>Support</span><span>${fmt(d.ta_support)}</span></div>
+                <div class="analysis-row"><span>Resistance</span><span>${fmt(d.ta_resistance)}</span></div>
+            </div>`;
+        }
+
+        // News & Sentiment
+        const newsColor = scoreColor(d.news_score);
+        html += `
+        <div class="analysis-section">
+            <div class="analysis-title">📰 News & Sentiment</div>
+            <div class="analysis-row"><span>Sentiment Score</span><span>${d.news_score.toFixed(1)} / 10</span></div>
+            <div class="score-bar-container"><div class="score-bar ${newsColor}" style="width:${d.news_score*10}%"></div></div>
+            <div class="analysis-row" style="margin-top:10px"><span>Narrative</span><span>${d.news_narrative || 'Neutral'}</span></div>
+        </div>`;
+
+        if (d.news_headlines && d.news_headlines.length) {
+            html += '<div class="analysis-section"><div class="analysis-title">📌 Headlines</div>';
+            d.news_headlines.forEach(h => {
+                html += `<div style="font-size:13px;color:var(--text-secondary);padding:4px 0;border-bottom:1px solid var(--border)">• ${h}</div>`;
+            });
+            html += '</div>';
+        }
+
+        // AI Recommendation
+        if (d.ai_available && d.ai_recommendation) {
+            html += `
+            <div class="ai-box">
+                <div class="ai-box-title">🤖 AI Recommendation <span class="ai-badge">GEMINI</span></div>
+                <div class="ai-text">${d.ai_recommendation}</div>
+            </div>`;
+        } else {
+            html += `
+            <div class="ai-box" style="opacity:0.6">
+                <div class="ai-box-title">🤖 AI Recommendation <span class="ai-badge" style="background:var(--text-muted)">OFFLINE</span></div>
+                <div class="ai-text">AI analysis is currently unavailable. Set a GEMINI_API_KEY with available quota to enable AI-powered recommendations.</div>
+            </div>`;
+        }
+
+        content.innerHTML = html;
+    } catch (e) {
+        content.innerHTML = `<div class="empty-state"><h3>Error loading token</h3><p>${e.message}</p></div>`;
+    }
+}
+
+async function openDexToken(address) {
+    // Open DexScreener directly for now
+    window.open('https://dexscreener.com/solana/' + address, '_blank');
+}
+
+function closeModal() {
+    document.getElementById('modal').classList.remove('active');
+}
+
+// ── Health check / AI status ───────────────────────────────────
+async function checkHealth() {
+    try {
+        const h = await api('/api/health');
+        if (h.ai_available) {
+            document.getElementById('aiStatus').style.display = 'flex';
+        }
+    } catch (e) {
+        console.warn('Health check failed:', e);
+    }
+}
+
+// ── Init ───────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+    loadMarket();
+    loadTrending();
+    checkHealth();
+
+    // Refresh market data every 60s
+    setInterval(loadMarket, 60000);
+    setInterval(loadTrending, 120000);
+});
+
+// Keyboard shortcut: Escape closes modal, / focuses search
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeModal();
+    if (e.key === '/' && document.activeElement.tagName !== 'INPUT') {
+        e.preventDefault();
+        document.getElementById('searchInput').focus();
+    }
+});
+</script>
+</body>
+</html>

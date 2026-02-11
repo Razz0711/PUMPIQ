@@ -1,0 +1,205 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PumpIQ Configuration Schema",
+  "type": "object",
+  "required": ["system_name", "version", "modes", "user_preferences"],
+  
+  "properties": {
+    "system_name": {
+      "type": "string",
+      "description": "Name of the system"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "Semantic version number"
+    },
+    "environment": {
+      "type": "string",
+      "enum": ["development", "staging", "production"],
+      "description": "Deployment environment"
+    },
+    
+    "modes": {
+      "type": "object",
+      "description": "Data analysis mode configuration",
+      "properties": {
+        "news_only_mode": {
+          "$ref": "#/definitions/single_mode"
+        },
+        "onchain_only_mode": {
+          "$ref": "#/definitions/single_mode"
+        },
+        "technical_only_mode": {
+          "$ref": "#/definitions/single_mode"
+        },
+        "social_only_mode": {
+          "$ref": "#/definitions/single_mode"
+        },
+        "hybrid_mode": {
+          "type": "object",
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "description": {"type": "string"},
+            "weights": {
+              "type": "object",
+              "properties": {
+                "news": {"type": "number", "minimum": 0, "maximum": 100},
+                "onchain": {"type": "number", "minimum": 0, "maximum": 100},
+                "technical": {"type": "number", "minimum": 0, "maximum": 100},
+                "social": {"type": "number", "minimum": 0, "maximum": 100}
+              },
+              "additionalProperties": false
+            }
+          },
+          "required": ["enabled", "weights"]
+        }
+      },
+      "additionalProperties": false
+    },
+    
+    "user_preferences": {
+      "type": "object",
+      "properties": {
+        "risk_tolerance": {
+          "type": "string",
+          "enum": ["conservative", "moderate", "aggressive"],
+          "description": "User's risk appetite"
+        },
+        "investment_timeframe": {
+          "type": "string",
+          "enum": ["scalping", "day_trading", "swing_trading", "long_term"],
+          "description": "Preferred trading timeframe"
+        },
+        "portfolio_size_category": {
+          "type": "string",
+          "enum": ["small", "medium", "large"],
+          "description": "Portfolio size category"
+        },
+        "max_recommendations": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "description": "Maximum number of recommendations to display"
+        },
+        "min_confidence_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Minimum confidence score to show recommendation"
+        },
+        "notification_settings": {
+          "type": "object",
+          "properties": {
+            "email_enabled": {"type": "boolean"},
+            "push_enabled": {"type": "boolean"},
+            "sms_enabled": {"type": "boolean"},
+            "notification_frequency": {
+              "type": "string",
+              "enum": ["realtime", "hourly", "daily", "off"]
+            },
+            "min_confidence_for_notification": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        }
+      },
+      "required": ["risk_tolerance", "investment_timeframe", "portfolio_size_category"]
+    },
+    
+    "data_refresh_intervals": {
+      "type": "object",
+      "description": "Refresh intervals in seconds for each data source",
+      "properties": {
+        "news_collector": {"type": "integer", "minimum": 60},
+        "onchain_collector": {"type": "integer", "minimum": 60},
+        "technical_collector": {"type": "integer", "minimum": 30},
+        "social_collector": {"type": "integer", "minimum": 60},
+        "ai_analysis": {"type": "integer", "minimum": 300}
+      }
+    },
+    
+    "api_settings": {
+      "type": "object",
+      "properties": {
+        "rate_limits": {
+          "type": "object",
+          "properties": {
+            "requests_per_minute": {"type": "integer", "minimum": 1},
+            "requests_per_hour": {"type": "integer", "minimum": 1},
+            "requests_per_day": {"type": "integer", "minimum": 1}
+          }
+        },
+        "timeout_seconds": {"type": "integer", "minimum": 5, "maximum": 120},
+        "max_concurrent_requests": {"type": "integer", "minimum": 1}
+      }
+    },
+    
+    "cache_settings": {
+      "type": "object",
+      "description": "Cache TTL values in seconds",
+      "properties": {
+        "news_cache_ttl": {"type": "integer", "minimum": 60},
+        "onchain_cache_ttl": {"type": "integer", "minimum": 60},
+        "technical_cache_ttl": {"type": "integer", "minimum": 30},
+        "social_cache_ttl": {"type": "integer", "minimum": 60},
+        "api_response_cache_ttl": {"type": "integer", "minimum": 10}
+      }
+    },
+    
+    "ai_engine": {
+      "type": "object",
+      "properties": {
+        "model": {"type": "string"},
+        "temperature": {"type": "number", "minimum": 0, "maximum": 2},
+        "max_tokens": {"type": "integer", "minimum": 100, "maximum": 8000},
+        "top_p": {"type": "number", "minimum": 0, "maximum": 1},
+        "frequency_penalty": {"type": "number", "minimum": -2, "maximum": 2},
+        "presence_penalty": {"type": "number", "minimum": -2, "maximum": 2}
+      }
+    },
+    
+    "trading_parameters": {
+      "type": "object",
+      "properties": {
+        "max_position_size_percent": {"type": "number", "minimum": 0, "maximum": 100},
+        "stop_loss_percent": {"type": "number", "minimum": 0, "maximum": 100},
+        "take_profit_levels": {
+          "type": "array",
+          "items": {"type": "number", "minimum": 0}
+        },
+        "min_market_cap": {"type": "number", "minimum": 0},
+        "max_market_cap": {"type": ["number", "null"]},
+        "min_liquidity": {"type": "number", "minimum": 0}
+      }
+    },
+    
+    "robinpump_specific": {
+      "type": "object",
+      "properties": {
+        "min_bonding_curve_percent": {"type": "number", "minimum": 0, "maximum": 100},
+        "max_bonding_curve_percent": {"type": "number", "minimum": 0, "maximum": 100},
+        "preferred_bonding_range": {
+          "type": "array",
+          "items": {"type": "number", "minimum": 0, "maximum": 100},
+          "minItems": 2,
+          "maxItems": 2
+        }
+      }
+    }
+  },
+  
+  "definitions": {
+    "single_mode": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "weight": {"type": "number", "minimum": 0, "maximum": 100},
+        "description": {"type": "string"}
+      },
+      "required": ["enabled", "weight"]
+    }
+  }
+}

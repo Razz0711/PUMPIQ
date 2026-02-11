@@ -1,0 +1,127 @@
+{
+  "system_name": "PumpIQ",
+  "version": "1.0.0",
+  "environment": "development",
+  
+  "modes": {
+    "news_only_mode": {
+      "enabled": false,
+      "weight": 100,
+      "description": "Uses only news sentiment analysis"
+    },
+    "onchain_only_mode": {
+      "enabled": false,
+      "weight": 100,
+      "description": "Uses only blockchain data and on-chain metrics"
+    },
+    "technical_only_mode": {
+      "enabled": false,
+      "weight": 100,
+      "description": "Uses only technical chart patterns and indicators"
+    },
+    "social_only_mode": {
+      "enabled": false,
+      "weight": 100,
+      "description": "Uses only social media sentiment"
+    },
+    "hybrid_mode": {
+      "enabled": true,
+      "description": "Combines multiple sources with custom weights",
+      "weights": {
+        "news": 25,
+        "onchain": 35,
+        "technical": 25,
+        "social": 15
+      }
+    }
+  },
+  
+  "user_preferences": {
+    "risk_tolerance": "moderate",
+    "investment_timeframe": "swing_trading",
+    "portfolio_size_category": "medium",
+    "max_recommendations": 10,
+    "min_confidence_score": 0.65,
+    "notification_settings": {
+      "email_enabled": true,
+      "push_enabled": false,
+      "sms_enabled": false,
+      "notification_frequency": "realtime",
+      "min_confidence_for_notification": 0.75
+    }
+  },
+  
+  "data_refresh_intervals": {
+    "news_collector": 300,
+    "onchain_collector": 600,
+    "technical_collector": 60,
+    "social_collector": 180,
+    "ai_analysis": 900
+  },
+  
+  "api_settings": {
+    "rate_limits": {
+      "requests_per_minute": 60,
+      "requests_per_hour": 1000,
+      "requests_per_day": 10000
+    },
+    "timeout_seconds": 30,
+    "max_concurrent_requests": 100
+  },
+  
+  "cache_settings": {
+    "news_cache_ttl": 600,
+    "onchain_cache_ttl": 900,
+    "technical_cache_ttl": 300,
+    "social_cache_ttl": 450,
+    "api_response_cache_ttl": 60
+  },
+  
+  "ai_engine": {
+    "provider": "gemini",
+    "gemini_model": "gemini-2.0-flash",
+    "openai_model": "gpt-4o",
+    "temperature": 0.7,
+    "max_tokens": 4096,
+    "top_p": 0.9
+  },
+  
+  "trading_parameters": {
+    "max_position_size_percent": 10,
+    "stop_loss_percent": 5,
+    "take_profit_levels": [10, 20, 35],
+    "min_market_cap": 100000,
+    "max_market_cap": null,
+    "min_liquidity": 50000
+  },
+  
+  "dexscreener_specific": {
+    "min_bonding_curve_percent": 30,
+    "max_bonding_curve_percent": 95,
+    "preferred_bonding_range": [60, 85]
+  },
+  
+  "database": {
+    "postgresql": {
+      "host": "localhost",
+      "port": 5432,
+      "database": "pumpiq",
+      "pool_size": 20,
+      "max_overflow": 10
+    },
+    "redis": {
+      "host": "localhost",
+      "port": 6379,
+      "db": 0,
+      "max_connections": 50
+    }
+  },
+  
+  "logging": {
+    "level": "INFO",
+    "format": "json",
+    "output": "file",
+    "rotation": "daily",
+    "retention_days": 30
+  }
+}

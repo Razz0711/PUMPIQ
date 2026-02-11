@@ -1,0 +1,1031 @@
+# PumpIQ REST API Documentation
+# Version: 1.0.0
+# Base URL: https://api.pumpiq.com/v1
+
+openapi: 3.0.3
+info:
+  title: PumpIQ API
+  description: AI-powered cryptocurrency trading recommendation system API
+  version: 1.0.0
+  contact:
+    name: PumpIQ Support
+    email: support@pumpiq.com
+
+servers:
+  - url: https://api.pumpiq.com/v1
+    description: Production server
+  - url: https://staging-api.pumpiq.com/v1
+    description: Staging server
+  - url: http://localhost:8000/v1
+    description: Local development server
+
+tags:
+  - name: Tokens
+    description: Token data and information
+  - name: Recommendations
+    description: AI-generated trading recommendations
+  - name: Analysis
+    description: Data analysis and insights
+  - name: User
+    description: User preferences and settings
+  - name: Performance
+    description: Recommendation performance tracking
+
+paths:
+  # ============================================================================
+  # TOKENS ENDPOINTS
+  # ============================================================================
+  
+  /tokens:
+    get:
+      tags: [Tokens]
+      summary: Get list of all tokens
+      description: Retrieve paginated list of all tracked tokens with optional filtering
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+        - name: blockchain
+          in: query
+          schema:
+            type: string
+            enum: [solana, ethereum, bsc, polygon]
+        - name: min_market_cap
+          in: query
+          schema:
+            type: number
+        - name: max_market_cap
+          in: query
+          schema:
+            type: number
+        - name: min_bonding_curve
+          in: query
+          schema:
+            type: number
+            minimum: 0
+            maximum: 100
+        - name: max_bonding_curve
+          in: query
+          schema:
+            type: number
+            minimum: 0
+            maximum: 100
+        - name: is_graduated
+          in: query
+          schema:
+            type: boolean
+        - name: sort_by
+          in: query
+          schema:
+            type: string
+            enum: [market_cap, volume, bonding_curve, created_at]
+            default: market_cap
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Token'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+  
+  /tokens/{tokenId}:
+    get:
+      tags: [Tokens]
+      summary: Get token details by ID
+      parameters:
+        - name: tokenId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Token details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Token'
+        '404':
+          description: Token not found
+  
+  /tokens/{tokenId}/historical:
+    get:
+      tags: [Tokens]
+      summary: Get historical data for a token
+      parameters:
+        - name: tokenId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: interval
+          in: query
+          schema:
+            type: string
+            enum: [1m, 5m, 15m, 1h, 4h, 1d]
+            default: 1h
+        - name: start_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: end_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+            maximum: 1000
+      responses:
+        '200':
+          description: Historical data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tokenId:
+                    type: string
+                  interval:
+                    type: string
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/HistoricalData'
+  
+  /tokens/search:
+    get:
+      tags: [Tokens]
+      summary: Search tokens by name or ticker
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Search query
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Token'
+  
+  # ============================================================================
+  # RECOMMENDATIONS ENDPOINTS
+  # ============================================================================
+  
+  /recommendations:
+    get:
+      tags: [Recommendations]
+      summary: Get recommendations for the user
+      description: Get personalized AI-generated trading recommendations based on user preferences
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [ACTIVE, COMPLETED, STOPPED, EXPIRED]
+            default: ACTIVE
+        - name: recommendation_type
+          in: query
+          schema:
+            type: string
+            enum: [BUY, HOLD, SELL, AVOID]
+        - name: min_confidence
+          in: query
+          schema:
+            type: number
+            minimum: 0
+            maximum: 1
+        - name: risk_rating
+          in: query
+          schema:
+            type: string
+            enum: [LOW, MEDIUM, HIGH, VERY_HIGH]
+        - name: timeframe
+          in: query
+          schema:
+            type: string
+            enum: [SCALP, DAY_TRADE, SWING, LONG_TERM]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+            maximum: 50
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of recommendations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  recommendations:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Recommendation'
+    
+    post:
+      tags: [Recommendations]
+      summary: Generate new recommendation
+      description: Request AI to generate a new recommendation for a specific token
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - tokenId
+              properties:
+                tokenId:
+                  type: string
+                  format: uuid
+                forceRefresh:
+                  type: boolean
+                  default: false
+                  description: Force new analysis even if recent recommendation exists
+      responses:
+        '201':
+          description: Recommendation generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Recommendation'
+        '429':
+          description: Rate limit exceeded
+  
+  /recommendations/{recommendationId}:
+    get:
+      tags: [Recommendations]
+      summary: Get recommendation by ID
+      parameters:
+        - name: recommendationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Recommendation details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Recommendation'
+    
+    patch:
+      tags: [Recommendations]
+      summary: Update recommendation status
+      parameters:
+        - name: recommendationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [STOPPED, COMPLETED]
+                currentPrice:
+                  type: number
+      responses:
+        '200':
+          description: Recommendation updated
+  
+  /recommendations/batch-generate:
+    post:
+      tags: [Recommendations]
+      summary: Generate recommendations for multiple tokens
+      description: Generate AI recommendations for top tokens based on user preferences
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tokenIds:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                  description: Specific tokens to analyze (optional, uses smart selection if empty)
+                maxRecommendations:
+                  type: integer
+                  default: 10
+                  maximum: 20
+      responses:
+        '202':
+          description: Batch generation started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobId:
+                    type: string
+                  status:
+                    type: string
+                    enum: [pending, processing, completed]
+                  estimatedCompletionTime:
+                    type: integer
+                    description: Seconds
+  
+  # ============================================================================
+  # ANALYSIS ENDPOINTS
+  # ============================================================================
+  
+  /analysis/token/{tokenId}:
+    get:
+      tags: [Analysis]
+      summary: Get comprehensive analysis for a token
+      description: Get detailed multi-source analysis including news, on-chain, technical, and social data
+      parameters:
+        - name: tokenId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: sources
+          in: query
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [news, onchain, technical, social]
+          description: Specific data sources to include (default all)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Comprehensive analysis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenAnalysis'
+  
+  /analysis/market-overview:
+    get:
+      tags: [Analysis]
+      summary: Get market overview and trends
+      description: Get overall market sentiment and trending tokens
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Market overview
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  marketSentiment:
+                    type: string
+                    enum: [VERY_BEARISH, BEARISH, NEUTRAL, BULLISH, VERY_BULLISH]
+                  trendingTokens:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Token'
+                  topPerformers24h:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Token'
+                  topGainers7d:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Token'
+                  timestamp:
+                    type: string
+                    format: date-time
+  
+  /analysis/sentiment/{tokenId}:
+    get:
+      tags: [Analysis]
+      summary: Get sentiment analysis for a token
+      parameters:
+        - name: tokenId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Sentiment data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tokenId:
+                    type: string
+                  socialSentiment:
+                    type: number
+                    minimum: 0
+                    maximum: 100
+                  newsSentiment:
+                    type: number
+                    minimum: 0
+                    maximum: 100
+                  overallSentiment:
+                    type: number
+                    minimum: 0
+                    maximum: 100
+                  sentimentTrend:
+                    type: string
+                    enum: [IMPROVING, STABLE, DECLINING]
+  
+  # ============================================================================
+  # USER ENDPOINTS
+  # ============================================================================
+  
+  /user/profile:
+    get:
+      tags: [User]
+      summary: Get user profile
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+    
+    patch:
+      tags: [User]
+      summary: Update user profile
+      security:
+        - bearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                notificationSettings:
+                  type: object
+      responses:
+        '200':
+          description: Profile updated
+  
+  /user/preferences:
+    get:
+      tags: [User]
+      summary: Get user preferences and configuration
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User preferences
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  config:
+                    type: object
+                    description: Full configuration object matching config schema
+    
+    put:
+      tags: [User]
+      summary: Update user preferences
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Configuration object (validated against config_schema.json)
+      responses:
+        '200':
+          description: Preferences updated
+        '400':
+          description: Invalid configuration
+  
+  /user/watchlist:
+    get:
+      tags: [User]
+      summary: Get user's watchlist
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Watchlist
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tokens:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Token'
+    
+    post:
+      tags: [User]
+      summary: Add token to watchlist
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - tokenId
+              properties:
+                tokenId:
+                  type: string
+                  format: uuid
+      responses:
+        '201':
+          description: Token added to watchlist
+    
+    delete:
+      tags: [User]
+      summary: Remove token from watchlist
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tokenId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Token removed from watchlist
+  
+  /user/portfolio:
+    get:
+      tags: [User]
+      summary: Get user's portfolio
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Portfolio holdings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalValue:
+                    type: number
+                  totalPnL:
+                    type: number
+                  holdings:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        tokenId:
+                          type: string
+                        token:
+                          $ref: '#/components/schemas/Token'
+                        quantity:
+                          type: number
+                        avgBuyPrice:
+                          type: number
+                        currentPrice:
+                          type: number
+                        currentValue:
+                          type: number
+                        pnl:
+                          type: number
+                        pnlPercent:
+                          type: number
+  
+  # ============================================================================
+  # PERFORMANCE ENDPOINTS
+  # ============================================================================
+  
+  /performance/recommendations:
+    get:
+      tags: [Performance]
+      summary: Get performance metrics for recommendations
+      description: Get aggregated performance statistics for AI recommendations
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: timeframe
+          in: query
+          schema:
+            type: string
+            enum: [7d, 30d, 90d, 1y, all]
+            default: 30d
+        - name: recommendation_type
+          in: query
+          schema:
+            type: string
+            enum: [BUY, HOLD, SELL]
+      responses:
+        '200':
+          description: Performance metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalRecommendations:
+                    type: integer
+                  successfulRecommendations:
+                    type: integer
+                  winRate:
+                    type: number
+                  avgReturn:
+                    type: number
+                  avgWinningReturn:
+                    type: number
+                  avgLosingReturn:
+                    type: number
+                  bestReturn:
+                    type: number
+                  worstReturn:
+                    type: number
+                  avgTimeToOutcome:
+                    type: number
+                    description: Hours
+                  performanceByRisk:
+                    type: object
+                    properties:
+                      LOW:
+                        $ref: '#/components/schemas/RiskPerformance'
+                      MEDIUM:
+                        $ref: '#/components/schemas/RiskPerformance'
+                      HIGH:
+                        $ref: '#/components/schemas/RiskPerformance'
+                      VERY_HIGH:
+                        $ref: '#/components/schemas/RiskPerformance'
+  
+  /performance/recommendations/{recommendationId}:
+    get:
+      tags: [Performance]
+      summary: Get performance for a specific recommendation
+      parameters:
+        - name: recommendationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Recommendation performance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PerformanceTracking'
+  
+  /performance/tokens/{tokenId}:
+    get:
+      tags: [Performance]
+      summary: Get performance summary for a specific token
+      parameters:
+        - name: tokenId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Token performance summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tokenId:
+                    type: string
+                  totalRecommendations:
+                    type: integer
+                  winRate:
+                    type: number
+                  avgReturn:
+                    type: number
+  
+  # ============================================================================
+  # ADMIN / SYSTEM ENDPOINTS
+  # ============================================================================
+  
+  /health:
+    get:
+      tags: [System]
+      summary: Health check endpoint
+      responses:
+        '200':
+          description: System healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [healthy, degraded, unhealthy]
+                  services:
+                    type: object
+                    properties:
+                      database:
+                        type: string
+                      redis:
+                        type: string
+                      ai_engine:
+                        type: string
+                      data_collectors:
+                        type: object
+                  timestamp:
+                    type: string
+                    format: date-time
+
+# ============================================================================
+# COMPONENTS / SCHEMAS
+# ============================================================================
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  
+  schemas:
+    Token:
+      type: object
+      properties:
+        tokenId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        ticker:
+          type: string
+        contractAddress:
+          type: string
+        blockchain:
+          type: string
+        currentPrice:
+          type: number
+        marketCap:
+          type: number
+        liquidity:
+          type: number
+        volume24h:
+          type: number
+        bondingCurvePercent:
+          type: number
+        isGraduated:
+          type: boolean
+        metadata:
+          type: object
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    
+    HistoricalData:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        open:
+          type: number
+        high:
+          type: number
+        low:
+          type: number
+        close:
+          type: number
+        volume:
+          type: number
+        onchain:
+          type: object
+        sentiment:
+          type: object
+        technical:
+          type: object
+    
+    Recommendation:
+      type: object
+      properties:
+        recommendationId:
+          type: string
+          format: uuid
+        tokenId:
+          type: string
+          format: uuid
+        token:
+          $ref: '#/components/schemas/Token'
+        recommendationType:
+          type: string
+          enum: [BUY, HOLD, SELL, AVOID]
+        entryPrice:
+          type: number
+        currentPrice:
+          type: number
+        targets:
+          type: object
+          properties:
+            target1:
+              type: number
+            target2:
+              type: number
+            target3:
+              type: number
+            stopLoss:
+              type: number
+        confidenceScore:
+          type: number
+        riskRating:
+          type: string
+        timeframe:
+          type: string
+        dataContribution:
+          type: object
+          properties:
+            news:
+              type: boolean
+            onchain:
+              type: boolean
+            technical:
+              type: boolean
+            social:
+              type: boolean
+        aiReasoning:
+          type: string
+        keyFactors:
+          type: array
+          items:
+            type: object
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+    
+    TokenAnalysis:
+      type: object
+      properties:
+        tokenId:
+          type: string
+        news:
+          type: object
+        onchain:
+          type: object
+        technical:
+          type: object
+        social:
+          type: object
+        aiSummary:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+    
+    UserProfile:
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+        username:
+          type: string
+        email:
+          type: string
+        subscriptionTier:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    
+    PerformanceTracking:
+      type: object
+      properties:
+        trackingId:
+          type: string
+          format: uuid
+        recommendationId:
+          type: string
+          format: uuid
+        outcome:
+          type: string
+        actualExitPrice:
+          type: number
+        actualReturnPercent:
+          type: number
+        timing:
+          type: object
+        success:
+          type: object
+        priceMovement:
+          type: object
+    
+    RiskPerformance:
+      type: object
+      properties:
+        count:
+          type: integer
+        winRate:
+          type: number
+        avgReturn:
+          type: number
+    
+    Pagination:
+      type: object
+      properties:
+        currentPage:
+          type: integer
+        totalPages:
+          type: integer
+        totalItems:
+          type: integer
+        itemsPerPage:
+          type: integer
+        hasNext:
+          type: boolean
+        hasPrevious:
+          type: boolean
+
+# ============================================================================
+# RATE LIMITS
+# ============================================================================
+# Free Tier: 60 requests/minute, 1,000 requests/hour
+# Basic Tier: 120 requests/minute, 5,000 requests/hour  
+# Premium Tier: 300 requests/minute, 20,000 requests/hour
+# Pro Tier: 600 requests/minute, 50,000 requests/hour
