@@ -71,13 +71,16 @@ Then create an endpoint in `web_app.py`:
 @app.get("/api/cron/auto-trade")
 async def cron_auto_trade(request: Request):
     # Verify the request is from Vercel Cron
+    # Vercel sends the CRON_SECRET in the Authorization header
     auth_header = request.headers.get("Authorization")
-    if auth_header != f"Bearer {os.getenv('CRON_SECRET')}":
+    expected_auth = f"Bearer {os.getenv('CRON_SECRET')}"
+    
+    if not auth_header or auth_header != expected_auth:
         raise HTTPException(401, "Unauthorized")
     
     # Run auto-trade for all enabled users
     _ensure_collectors_initialized()
-    import sqlite3
+    
     conn = trading_engine._get_db()
     enabled_users = conn.execute(
         "SELECT user_id FROM trade_settings WHERE auto_trade_enabled = 1"

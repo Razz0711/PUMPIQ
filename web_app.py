@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -44,6 +45,7 @@ dex: DexScreenerCollector = None  # type: ignore
 news: NewsCollector = None  # type: ignore
 ta: TechnicalAnalyzer = None  # type: ignore
 gemini_client = None
+_collectors_lock = threading.Lock()  # Thread-safe lazy initialization
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -229,27 +231,29 @@ async def startup():
 
 
 def _ensure_collectors_initialized():
-    """Lazy initialization of data collectors (called on first request if needed)."""
+    """Lazy initialization of data collectors (called on first request if needed).
+    Thread-safe using a lock to prevent race conditions in concurrent requests."""
     global cg, dex, news, ta, gemini_client
     
-    if cg is None:
-        cg = CoinGeckoCollector(api_key=os.getenv("COINGECKO_API_KEY", ""))
-    if dex is None:
-        dex = DexScreenerCollector(apify_api_key=os.getenv("APIFY_API_KEY", ""))
-    if news is None:
-        news = NewsCollector(api_key=os.getenv("CRYPTOPANIC_API_KEY", ""))
-    if ta is None:
-        ta = TechnicalAnalyzer()
-    
-    if gemini_client is None:
-        gemini_key = os.getenv("GEMINI_API_KEY", "")
-        if gemini_key:
-            try:
-                from src.ai_engine.gemini_client import GeminiClient
-                gemini_client = GeminiClient(api_key=gemini_key)
-                logger.info("Gemini AI client initialized (lazy)")
-            except Exception as e:
-                logger.warning("Gemini init failed: %s", e)
+    with _collectors_lock:
+        if cg is None:
+            cg = CoinGeckoCollector(api_key=os.getenv("COINGECKO_API_KEY", ""))
+        if dex is None:
+            dex = DexScreenerCollector(apify_api_key=os.getenv("APIFY_API_KEY", ""))
+        if news is None:
+            news = NewsCollector(api_key=os.getenv("CRYPTOPANIC_API_KEY", ""))
+        if ta is None:
+            ta = TechnicalAnalyzer()
+        
+        if gemini_client is None:
+            gemini_key = os.getenv("GEMINI_API_KEY", "")
+            if gemini_key:
+                try:
+                    from src.ai_engine.gemini_client import GeminiClient
+                    gemini_client = GeminiClient(api_key=gemini_key)
+                    logger.info("Gemini AI client initialized (lazy)")
+                except Exception as e:
+                    logger.warning("Gemini init failed: %s", e)
 
 
 # ── Serve frontend ────────────────────────────────────────────────

@@ -9,6 +9,7 @@ tests/
 docs/
 *.md
 !README.md
+!DEPLOYMENT.md
 .vscode/
 .idea/
 *.log
