@@ -76,6 +76,8 @@ To enable periodic auto-trading, add this to `vercel.json`:
 
 Then create an endpoint in `web_app.py`:
 
+**Note**: The example below is pseudo-code for illustration. In production, you should add a public method to `trading_engine` to get enabled users instead of using the private `_get_db()` method.
+
 ```python
 @app.get("/api/cron/auto-trade")
 async def cron_auto_trade(request: Request):
@@ -90,8 +92,8 @@ async def cron_auto_trade(request: Request):
     # Run auto-trade for all enabled users
     _ensure_collectors_initialized()
     
-    # Note: This example uses trading_engine internal method.
-    # Consider adding a public method to trading_engine for production use.
+    # PSEUDO-CODE: Add a public method like trading_engine.get_enabled_users()
+    # instead of using the private _get_db() method shown below
     conn = trading_engine._get_db()
     enabled_users = conn.execute(
         "SELECT user_id FROM trade_settings WHERE auto_trade_enabled = 1"

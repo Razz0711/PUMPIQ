@@ -232,10 +232,15 @@ async def startup():
 
 def _ensure_collectors_initialized():
     """Lazy initialization of data collectors (called on first request if needed).
-    Thread-safe using double-checked locking pattern for optimal performance."""
+    Thread-safe using double-checked locking pattern for optimal performance.
+    
+    Note: gemini_client is optional and not checked in fast path, as it may
+    remain None if GEMINI_API_KEY is not provided.
+    """
     global cg, dex, news, ta, gemini_client
     
     # Fast path: check without lock first (most common case after first init)
+    # Only check required collectors; gemini_client is optional
     if cg is not None and dex is not None and news is not None and ta is not None:
         return
     
