@@ -203,27 +203,53 @@ STATIC_DIR.mkdir(parents=True, exist_ok=True)
 
 @app.on_event("startup")
 async def startup():
+    """
+    Lightweight startup for serverless compatibility.
+    Data collectors are initialized lazily on first request.
+    Database tables are created if they don't exist.
+    
+    Note: Background tasks (auto-trading) are disabled for serverless deployment.
+    Use Vercel Cron Jobs or external schedulers for periodic tasks.
+    """
     global cg, dex, news, ta, gemini_client
-    cg = CoinGeckoCollector(api_key=os.getenv("COINGECKO_API_KEY", ""))
-    dex = DexScreenerCollector(apify_api_key=os.getenv("APIFY_API_KEY", ""))
-    news = NewsCollector(api_key=os.getenv("CRYPTOPANIC_API_KEY", ""))
-    ta = TechnicalAnalyzer()
-
-    gemini_key = os.getenv("GEMINI_API_KEY", "")
-    if gemini_key:
-        try:
-            from src.ai_engine.gemini_client import GeminiClient
-            gemini_client = GeminiClient(api_key=gemini_key)
-            logger.info("Gemini AI client initialized")
-        except Exception as e:
-            logger.warning("Gemini init failed: %s", e)
-
+    
+    # Initialize databases (idempotent)
     auth.init_db()
     trading_engine.init_trading_tables()
+    
+    logger.info("PumpIQ v2 ready for serverless deployment")
+    
+    # Background tasks disabled for serverless compatibility
+    # To enable auto-trading in serverless:
+    # - Use Vercel Cron Jobs (create vercel.json cron configuration)
+    # - Or use external scheduler (GitHub Actions, etc.)
+    # - Call /api/admin/run-auto-trade endpoint periodically
+    
+    # REMOVED for serverless: asyncio.create_task(_auto_trade_loop())
 
-    # Start auto-trade background loop
-    asyncio.create_task(_auto_trade_loop())
-    logger.info("PumpIQ v2 ready at http://localhost:8000 — Auto-trader initialized")
+
+def _ensure_collectors_initialized():
+    """Lazy initialization of data collectors (called on first request if needed)."""
+    global cg, dex, news, ta, gemini_client
+    
+    if cg is None:
+        cg = CoinGeckoCollector(api_key=os.getenv("COINGECKO_API_KEY", ""))
+    if dex is None:
+        dex = DexScreenerCollector(apify_api_key=os.getenv("APIFY_API_KEY", ""))
+    if news is None:
+        news = NewsCollector(api_key=os.getenv("CRYPTOPANIC_API_KEY", ""))
+    if ta is None:
+        ta = TechnicalAnalyzer()
+    
+    if gemini_client is None:
+        gemini_key = os.getenv("GEMINI_API_KEY", "")
+        if gemini_key:
+            try:
+                from src.ai_engine.gemini_client import GeminiClient
+                gemini_client = GeminiClient(api_key=gemini_key)
+                logger.info("Gemini AI client initialized (lazy)")
+            except Exception as e:
+                logger.warning("Gemini init failed: %s", e)
 
 
 # ── Serve frontend ────────────────────────────────────────────────
@@ -535,6 +561,7 @@ async def api_remove_watchlist(coin_id: str, user=Depends(require_user)):
 
 @app.get("/api/portfolio")
 async def api_get_portfolio(user=Depends(require_user)):
+    _ensure_collectors_initialized()
     items = auth.get_portfolio(user.id)
     if items:
         coin_ids = [i["coin_id"] for i in items]
@@ -577,6 +604,7 @@ async def api_update_portfolio(
 
 @app.get("/api/market/top", response_model=List[TokenCard])
 async def get_top_coins(limit: int = Query(50, ge=1, le=250)):
+    _ensure_collectors_initialized()
     coins = await cg.get_top_coins(limit=limit)
     return [
         TokenCard(
@@ -596,6 +624,7 @@ async def get_top_coins(limit: int = Query(50, ge=1, le=250)):
 
 @app.get("/api/market/trending", response_model=List[TrendingToken])
 async def get_trending():
+    _ensure_collectors_initialized()
     trending = await cg.get_trending()
     return [
         TrendingToken(name=t.name, symbol=t.symbol, coin_id=t.coin_id, rank=t.score)
@@ -613,6 +642,7 @@ async def get_token_feed(
     status: str = Query("all"),
     limit: int = Query(50, ge=1, le=100),
 ):
+    _ensure_collectors_initialized()
     search_terms = ["SOL", "BONK", "WIF"]
     tasks = [dex.search_pairs(term) for term in search_terms]
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -685,6 +715,7 @@ async def get_token_feed(
 
 @app.get("/api/token/{coin_id}", response_model=TokenDetail)
 async def get_token_detail(coin_id: str):
+    _ensure_collectors_initialized()
     coin = await cg.get_coin_detail(coin_id.lower())
     if not coin:
         raise HTTPException(404, f"Token '{coin_id}' not found on CoinGecko")
@@ -943,6 +974,7 @@ async def get_leaderboard(limit: int = Query(25, ge=1, le=100)):
 
 @app.get("/api/dex/search", response_model=List[DexToken])
 async def dex_search(q: str = Query(..., min_length=1)):
+    _ensure_collectors_initialized()
     pairs = await dex.search_pairs(q)
     results = []
     seen = set()
@@ -973,6 +1005,7 @@ async def dex_search(q: str = Query(..., min_length=1)):
 
 @app.get("/api/search", response_model=SearchResult)
 async def unified_search(q: str = Query(..., min_length=1)):
+    _ensure_collectors_initialized()
     cg_task = cg.get_coin_detail(q.lower())
     dex_task = dex.search_pairs(q)
     coin, dex_pairs = await asyncio.gather(cg_task, dex_task)
@@ -1183,6 +1216,7 @@ async def update_trader_settings(body: TradeSettingsUpdate, user=Depends(require
 @app.post("/api/trader/toggle")
 async def toggle_auto_trade(user=Depends(require_user)):
     """Toggle auto-trading on/off. When turning ON, immediately checks wallet and runs first cycle."""
+    _ensure_collectors_initialized()
     settings = trading_engine.get_trade_settings(user.id)
     new_state = 0 if settings["auto_trade_enabled"] else 1
     settings["auto_trade_enabled"] = new_state
@@ -1258,6 +1292,7 @@ async def get_trader_positions(user=Depends(require_user)):
 @app.post("/api/trader/sell/{position_id}")
 async def sell_position(position_id: int, user=Depends(require_user)):
     """Manually sell/close a position."""
+    _ensure_collectors_initialized()
     # Get current price
     pos = None
     for p in trading_engine.get_open_positions(user.id):
@@ -1310,6 +1345,7 @@ class ManualBuyRequest(BaseModel):
 @app.post("/api/trader/buy")
 async def manual_buy(body: ManualBuyRequest, user=Depends(require_user)):
     """Manually buy a coin using real wallet balance."""
+    _ensure_collectors_initialized()
     if body.amount <= 0:
         raise HTTPException(400, "Amount must be > 0")
 
@@ -1361,6 +1397,7 @@ async def manual_buy(body: ManualBuyRequest, user=Depends(require_user)):
 @app.get("/api/trader/research")
 async def run_research(user=Depends(require_user)):
     """Manually trigger AI research and return opportunities."""
+    _ensure_collectors_initialized()
     opportunities = await trading_engine.research_opportunities(cg, dex, gemini_client)
     return {"opportunities": opportunities[:15], "total": len(opportunities)}
 
@@ -1370,6 +1407,7 @@ async def run_research(user=Depends(require_user)):
 @app.post("/api/trader/run-cycle")
 async def run_trade_cycle(user=Depends(require_user)):
     """Manually trigger one auto-trade cycle."""
+    _ensure_collectors_initialized()
     result = await trading_engine.auto_trade_cycle(user.id, cg, dex, gemini_client)
     # Send trade emails in background
     if result.get("actions"):
@@ -1410,6 +1448,7 @@ class BotAskRequest(BaseModel):
 
 @app.post("/api/bot/ask")
 async def bot_ask(body: BotAskRequest, user=Depends(require_user)):
+    _ensure_collectors_initialized()
     """
     AI chatbot that answers crypto questions using LIVE web data.
     1. Parses question to detect coins/topics

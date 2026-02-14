@@ -4,7 +4,6 @@
 # Core Framework
 fastapi==0.109.0
 uvicorn==0.27.0
-gunicorn==21.2.0
 pydantic==2.5.3
 
 # HTTP Client
@@ -22,3 +21,6 @@ bcrypt==4.0.1
 # Validation
 email-validator==2.1.0
 python-dotenv==1.0.1
+
+# Note: Removed gunicorn (not needed for Vercel serverless)
+# Note: Removed Celery/Redis (incompatible with serverless - use Vercel Cron Jobs instead)
