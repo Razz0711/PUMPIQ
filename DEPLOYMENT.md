@@ -4,6 +4,15 @@
 - Vercel account connected to your GitHub repository
 - Required API keys (see .env.example)
 
+## Vercel Configuration Overview
+
+The `vercel.json` file configures the serverless deployment:
+
+- **Entry Point**: `api/index.py` exports the FastAPI app
+- **Static Files**: `/static/*` URLs map to `/web/static/` directory in the repository
+- **API Routes**: All other requests route to the FastAPI application
+- **Environment**: Production mode is set by default
+
 ## Required Environment Variables (Vercel Dashboard)
 Configure these in Project Settings → Environment Variables:
 
@@ -81,6 +90,8 @@ async def cron_auto_trade(request: Request):
     # Run auto-trade for all enabled users
     _ensure_collectors_initialized()
     
+    # Note: This example uses trading_engine internal method.
+    # Consider adding a public method to trading_engine for production use.
     conn = trading_engine._get_db()
     enabled_users = conn.execute(
         "SELECT user_id FROM trade_settings WHERE auto_trade_enabled = 1"

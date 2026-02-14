@@ -232,9 +232,14 @@ async def startup():
 
 def _ensure_collectors_initialized():
     """Lazy initialization of data collectors (called on first request if needed).
-    Thread-safe using a lock to prevent race conditions in concurrent requests."""
+    Thread-safe using double-checked locking pattern for optimal performance."""
     global cg, dex, news, ta, gemini_client
     
+    # Fast path: check without lock first (most common case after first init)
+    if cg is not None and dex is not None and news is not None and ta is not None:
+        return
+    
+    # Slow path: acquire lock and initialize if still needed
     with _collectors_lock:
         if cg is None:
             cg = CoinGeckoCollector(api_key=os.getenv("COINGECKO_API_KEY", ""))
