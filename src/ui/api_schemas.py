@@ -82,6 +82,8 @@ class RecommendationResponse(BaseModel):
     entry_exit: EntryExitBlock
     verdict: str = "Watch"
     thesis: str = ""
+    ai_thought_summary: str = ""   # transparent AI reasoning
+    market_regime: str = "unknown"  # trending / ranging / unstable
     key_data_points: List[str] = Field(default_factory=list)
     risks: List[str] = Field(default_factory=list)
     conflicts: List[ConflictBlock] = Field(default_factory=list)
@@ -132,6 +134,7 @@ class RecommendationSetResponse(BaseModel):
     """
     query_timestamp: str = ""
     recommendations: List[RecommendationResponse] = Field(default_factory=list)
+    overall_ai_thought: str = ""   # summary of AI reasoning across all recs
     market_context: MarketContext = Field(default_factory=MarketContext)
     metadata: ResponseMetadata = Field(default_factory=ResponseMetadata)
 

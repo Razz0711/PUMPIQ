@@ -18,13 +18,16 @@ from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
 
 import smtp_service
+from blockchain_service import blockchain
 
 # ── Config ──────────────────────────────────────────────────────
 SECRET_KEY = os.getenv("SECRET_KEY", "pumpiq_dev_secret_key_change_in_production")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "pumpiq.db")
+# On Vercel (serverless), use /tmp for writable SQLite; locally use project dir
+IS_VERCEL = bool(os.getenv("VERCEL"))
+DB_PATH = "/tmp/pumpiq.db" if IS_VERCEL else os.path.join(os.path.dirname(__file__), "pumpiq.db")
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -66,6 +69,28 @@ class DepositRequest(BaseModel):
     amount: float
     bank_id: int
 
+class UserPreferencesUpdate(BaseModel):
+    risk_profile: Optional[str] = None        # conservative, balanced, aggressive
+    ai_sensitivity: Optional[float] = None     # 0.0 – 1.0 (how eagerly AI acts)
+    auto_trade_threshold: Optional[float] = None  # min confidence (0-10) to auto-execute
+    max_daily_trades: Optional[int] = None
+    preferred_chains: Optional[List[str]] = None   # ["ethereum","solana","base"]
+    notification_email: Optional[bool] = None
+    notification_push: Optional[bool] = None
+    dark_mode: Optional[bool] = None
+    language: Optional[str] = None             # e.g. "en", "hi"
+
+class UserPreferencesResponse(BaseModel):
+    risk_profile: str = "balanced"
+    ai_sensitivity: float = 0.5
+    auto_trade_threshold: float = 7.0
+    max_daily_trades: int = 10
+    preferred_chains: List[str] = ["ethereum", "solana"]
+    notification_email: bool = True
+    notification_push: bool = True
+    dark_mode: bool = True
+    language: str = "en"
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -77,7 +102,10 @@ class TokenResponse(BaseModel):
 def get_db() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+    except sqlite3.OperationalError:
+        pass  # WAL may not be supported on some serverless filesystems
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
@@ -180,8 +208,24 @@ def init_db():
             amount REAL NOT NULL,
             bank_id INTEGER,
             description TEXT DEFAULT '',
+            tx_hash TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'completed',
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS user_preferences (
+            user_id INTEGER PRIMARY KEY,
+            risk_profile TEXT NOT NULL DEFAULT 'balanced',
+            ai_sensitivity REAL NOT NULL DEFAULT 0.5,
+            auto_trade_threshold REAL NOT NULL DEFAULT 7.0,
+            max_daily_trades INTEGER NOT NULL DEFAULT 10,
+            preferred_chains TEXT NOT NULL DEFAULT '["ethereum","solana"]',
+            notification_email INTEGER NOT NULL DEFAULT 1,
+            notification_push INTEGER NOT NULL DEFAULT 1,
+            dark_mode INTEGER NOT NULL DEFAULT 1,
+            language TEXT NOT NULL DEFAULT 'en',
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
     """)
@@ -191,8 +235,20 @@ def init_db():
         conn.commit()
     except sqlite3.OperationalError:
         pass  # column already exists
+    # Migration: add tx_hash column to wallet_transactions
+    try:
+        conn.execute("ALTER TABLE wallet_transactions ADD COLUMN tx_hash TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     conn.close()
+
+
+def _generate_wallet_tx_hash(user_id: int, tx_type: str, amount: float, timestamp: str) -> str:
+    """Generate a SHA-256 hash for a wallet transaction."""
+    raw = f"{user_id}|{tx_type}|{amount:.8f}|{timestamp}"
+    return hashlib.sha256(raw.encode('utf-8')).hexdigest()
 
 
 # ── Auth Functions ──────────────────────────────────────────────
@@ -238,11 +294,17 @@ def register_user(email: str, username: str, password: str) -> Optional[UserResp
             "INSERT INTO wallet_balance (user_id, balance, updated_at) VALUES (?, 10000.0, datetime('now'))",
             (user_id,),
         )
+        timestamp = datetime.now(timezone.utc).isoformat()
+        bonus_hash = _generate_wallet_tx_hash(user_id, 'signup_bonus', 10000.0, timestamp)
         conn.execute(
-            "INSERT INTO wallet_transactions (user_id, type, amount, description, status) VALUES (?, 'signup_bonus', 10000.0, 'Welcome bonus - $10,000 starting balance', 'completed')",
-            (user_id,),
+            "INSERT INTO wallet_transactions (user_id, type, amount, description, tx_hash, status, created_at) VALUES (?, 'signup_bonus', 10000.0, 'Welcome bonus - $10,000 starting balance', ?, 'completed', ?)",
+            (user_id, bonus_hash, timestamp),
         )
         conn.commit()
+
+        # Record signup bonus on blockchain
+        blockchain.record_transaction_async(bonus_hash, "signup_bonus", "USD", 10000.0)
+
         return _get_user_response(conn, user_id)
     except sqlite3.IntegrityError:
         return None
@@ -454,14 +516,20 @@ def deposit_to_wallet(user_id: int, amount: float, bank_id: int) -> Dict[str, An
             (user_id, amount, amount),
         )
         # Record transaction
+        timestamp = datetime.now(timezone.utc).isoformat()
+        dep_hash = _generate_wallet_tx_hash(user_id, 'deposit', amount, timestamp)
         conn.execute(
-            "INSERT INTO wallet_transactions (user_id, type, amount, bank_id, description, status) VALUES (?, 'deposit', ?, ?, ?, 'completed')",
-            (user_id, amount, bank_id, f"Deposit from {bank['bank_name']} ****{bank['account_last4']}"),
+            "INSERT INTO wallet_transactions (user_id, type, amount, bank_id, description, tx_hash, status, created_at) VALUES (?, 'deposit', ?, ?, ?, ?, 'completed', ?)",
+            (user_id, amount, bank_id, f"Deposit from {bank['bank_name']} ****{bank['account_last4']}", dep_hash, timestamp),
         )
         conn.commit()
 
         new_balance = conn.execute("SELECT balance FROM wallet_balance WHERE user_id = ?", (user_id,)).fetchone()
-        return {"success": True, "new_balance": new_balance["balance"], "bank_name": bank["bank_name"]}
+
+        # Record deposit on blockchain
+        blockchain.record_transaction_async(dep_hash, "deposit", "USD", amount)
+
+        return {"success": True, "new_balance": new_balance["balance"], "bank_name": bank["bank_name"], "tx_hash": dep_hash}
     except Exception as e:
         return {"success": False, "error": str(e)}
     finally:
@@ -491,14 +559,20 @@ def withdraw_from_wallet(user_id: int, amount: float, bank_id: int) -> Dict[str,
             "UPDATE wallet_balance SET balance = balance - ?, updated_at = datetime('now') WHERE user_id = ?",
             (amount, user_id),
         )
+        timestamp = datetime.now(timezone.utc).isoformat()
+        wd_hash = _generate_wallet_tx_hash(user_id, 'withdraw', amount, timestamp)
         conn.execute(
-            "INSERT INTO wallet_transactions (user_id, type, amount, bank_id, description, status) VALUES (?, 'withdraw', ?, ?, ?, 'completed')",
-            (user_id, amount, bank_id, f"Withdrawal to {bank['bank_name']} ****{bank['account_last4']}"),
+            "INSERT INTO wallet_transactions (user_id, type, amount, bank_id, description, tx_hash, status, created_at) VALUES (?, 'withdraw', ?, ?, ?, ?, 'completed', ?)",
+            (user_id, amount, bank_id, f"Withdrawal to {bank['bank_name']} ****{bank['account_last4']}", wd_hash, timestamp),
         )
         conn.commit()
 
         new_balance = conn.execute("SELECT balance FROM wallet_balance WHERE user_id = ?", (user_id,)).fetchone()
-        return {"success": True, "new_balance": new_balance["balance"]}
+
+        # Record withdrawal on blockchain
+        blockchain.record_transaction_async(wd_hash, "withdraw", "USD", amount)
+
+        return {"success": True, "new_balance": new_balance["balance"], "tx_hash": wd_hash}
     except Exception as e:
         return {"success": False, "error": str(e)}
     finally:
@@ -509,7 +583,7 @@ def get_wallet_transactions(user_id: int, limit: int = 20) -> List[Dict[str, Any
     conn = get_db()
     try:
         rows = conn.execute(
-            "SELECT id, type, amount, description, status, created_at FROM wallet_transactions WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+            "SELECT id, type, amount, description, tx_hash, status, created_at FROM wallet_transactions WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
             (user_id, limit),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -761,5 +835,100 @@ def resend_verification(user_id: int) -> bool:
     return send_verification_email(user_id)
 
 
-# Initialize DB on import
-init_db()
+# ── User Preferences ───────────────────────────────────────────
+
+def get_user_preferences(user_id: int) -> UserPreferencesResponse:
+    """Get user AI/trading preferences. Returns defaults if no row exists."""
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT * FROM user_preferences WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        if not row:
+            return UserPreferencesResponse()
+        import json as _json
+        chains = ["ethereum", "solana"]
+        try:
+            chains = _json.loads(row["preferred_chains"])
+        except Exception:
+            pass
+        return UserPreferencesResponse(
+            risk_profile=row["risk_profile"],
+            ai_sensitivity=row["ai_sensitivity"],
+            auto_trade_threshold=row["auto_trade_threshold"],
+            max_daily_trades=row["max_daily_trades"],
+            preferred_chains=chains,
+            notification_email=bool(row["notification_email"]),
+            notification_push=bool(row["notification_push"]),
+            dark_mode=bool(row["dark_mode"]),
+            language=row["language"],
+        )
+    finally:
+        conn.close()
+
+
+def update_user_preferences(user_id: int, updates: Dict[str, Any]) -> UserPreferencesResponse:
+    """Upsert user preferences. Only supplied fields are updated."""
+    import json as _json
+    current = get_user_preferences(user_id)
+    merged = current.model_dump()
+
+    valid_risk = {"conservative", "balanced", "aggressive"}
+    if "risk_profile" in updates and updates["risk_profile"] in valid_risk:
+        merged["risk_profile"] = updates["risk_profile"]
+    if "ai_sensitivity" in updates and updates["ai_sensitivity"] is not None:
+        merged["ai_sensitivity"] = max(0.0, min(1.0, float(updates["ai_sensitivity"])))
+    if "auto_trade_threshold" in updates and updates["auto_trade_threshold"] is not None:
+        merged["auto_trade_threshold"] = max(0.0, min(10.0, float(updates["auto_trade_threshold"])))
+    if "max_daily_trades" in updates and updates["max_daily_trades"] is not None:
+        merged["max_daily_trades"] = max(1, min(100, int(updates["max_daily_trades"])))
+    if "preferred_chains" in updates and updates["preferred_chains"] is not None:
+        merged["preferred_chains"] = updates["preferred_chains"]
+    if "notification_email" in updates and updates["notification_email"] is not None:
+        merged["notification_email"] = bool(updates["notification_email"])
+    if "notification_push" in updates and updates["notification_push"] is not None:
+        merged["notification_push"] = bool(updates["notification_push"])
+    if "dark_mode" in updates and updates["dark_mode"] is not None:
+        merged["dark_mode"] = bool(updates["dark_mode"])
+    if "language" in updates and updates["language"] is not None:
+        merged["language"] = str(updates["language"])[:5]
+
+    conn = get_db()
+    try:
+        conn.execute("""
+            INSERT INTO user_preferences
+                (user_id, risk_profile, ai_sensitivity, auto_trade_threshold,
+                 max_daily_trades, preferred_chains, notification_email,
+                 notification_push, dark_mode, language, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            ON CONFLICT(user_id) DO UPDATE SET
+                risk_profile = excluded.risk_profile,
+                ai_sensitivity = excluded.ai_sensitivity,
+                auto_trade_threshold = excluded.auto_trade_threshold,
+                max_daily_trades = excluded.max_daily_trades,
+                preferred_chains = excluded.preferred_chains,
+                notification_email = excluded.notification_email,
+                notification_push = excluded.notification_push,
+                dark_mode = excluded.dark_mode,
+                language = excluded.language,
+                updated_at = datetime('now')
+        """, (
+            user_id,
+            merged["risk_profile"],
+            merged["ai_sensitivity"],
+            merged["auto_trade_threshold"],
+            merged["max_daily_trades"],
+            _json.dumps(merged["preferred_chains"]),
+            1 if merged["notification_email"] else 0,
+            1 if merged["notification_push"] else 0,
+            1 if merged["dark_mode"] else 0,
+            merged["language"],
+        ))
+        conn.commit()
+    finally:
+        conn.close()
+
+    return get_user_preferences(user_id)
+
+
+# DB is initialized in web_app.py startup event

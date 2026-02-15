@@ -22,3 +22,7 @@ bcrypt==4.0.1
 # Validation
 email-validator==2.1.0
 python-dotenv==1.0.1
+
+# Blockchain (Base L2 / Ethereum) — optional, lazily imported
+# web3>=6.0.0     # Excluded from Vercel (heavy native deps); install locally
+# py-solc-x>=2.0.0

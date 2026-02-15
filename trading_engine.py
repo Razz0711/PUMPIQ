@@ -21,6 +21,7 @@ Safety Controls:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -30,9 +31,26 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+from blockchain_service import blockchain
+
 logger = logging.getLogger(__name__)
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "pumpiq.db")
+# On Vercel (serverless), use /tmp for writable SQLite; locally use project dir
+IS_VERCEL = bool(os.getenv("VERCEL"))
+DB_PATH = "/tmp/pumpiq.db" if IS_VERCEL else os.path.join(os.path.dirname(__file__), "pumpiq.db")
+
+# Late-import learning loop (avoid circular)
+_learning_loop = None
+
+def _get_learning_loop():
+    global _learning_loop
+    if _learning_loop is None:
+        try:
+            from src.ai_engine.learning_loop import LearningLoop
+            _learning_loop = LearningLoop()
+        except Exception:
+            pass
+    return _learning_loop
 
 
 # -- Database ------------------------------------------------------------------
@@ -40,7 +58,10 @@ DB_PATH = os.path.join(os.path.dirname(__file__), "pumpiq.db")
 def _get_db() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+    except sqlite3.OperationalError:
+        pass  # WAL may not be supported on some serverless filesystems
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
@@ -81,6 +102,7 @@ def init_trading_tables():
             stop_loss REAL NOT NULL DEFAULT 0,
             take_profit REAL NOT NULL DEFAULT 0,
             ai_reasoning TEXT NOT NULL DEFAULT '',
+            tx_hash TEXT NOT NULL DEFAULT '',
             opened_at TEXT NOT NULL DEFAULT (datetime('now')),
             closed_at TEXT,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -98,6 +120,7 @@ def init_trading_tables():
             amount REAL NOT NULL,
             ai_score INTEGER NOT NULL DEFAULT 0,
             ai_reasoning TEXT NOT NULL DEFAULT '',
+            tx_hash TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'executed',
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -125,8 +148,37 @@ def init_trading_tables():
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
     ''')
+    # Migration: add tx_hash column if missing
+    try:
+        conn.execute("ALTER TABLE trade_orders ADD COLUMN tx_hash TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE trade_positions ADD COLUMN tx_hash TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     conn.close()
+
+
+# -- Transaction Hashing -------------------------------------------------------
+
+def generate_tx_hash(user_id: int, action: str, coin_id: str, symbol: str,
+                     price: float, quantity: float, amount: float, timestamp: str) -> str:
+    """Generate a real SHA-256 transaction hash from trade data.
+    This is a deterministic hash — the same inputs always produce the same hash,
+    so any transaction can be independently verified."""
+    raw = f"{user_id}|{action}|{coin_id}|{symbol}|{price:.8f}|{quantity:.8f}|{amount:.8f}|{timestamp}"
+    return hashlib.sha256(raw.encode('utf-8')).hexdigest()
+
+
+def verify_tx_hash(tx_hash: str, user_id: int, action: str, coin_id: str, symbol: str,
+                   price: float, quantity: float, amount: float, timestamp: str) -> bool:
+    """Verify a transaction hash matches its data — returns True if valid."""
+    expected = generate_tx_hash(user_id, action, coin_id, symbol, price, quantity, amount, timestamp)
+    return tx_hash == expected
 
 
 # -- Settings ------------------------------------------------------------------
@@ -306,17 +358,20 @@ def execute_buy(user_id, coin_id, coin_name, symbol, price, amount, ai_score, ai
         stop_loss = price * (1 - stop_loss_pct / 100)
         take_profit = price * (1 + take_profit_pct / 100)
 
+        timestamp = datetime.now(timezone.utc).isoformat()
+        tx_hash = generate_tx_hash(user_id, 'BUY', coin_id, symbol.upper(), price, quantity, amount, timestamp)
+
         cursor = conn.execute('''
             INSERT INTO trade_positions (user_id, coin_id, coin_name, symbol, entry_price, current_price,
-                quantity, invested_amount, current_value, stop_loss, take_profit, ai_reasoning)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (user_id, coin_id, coin_name, symbol.upper(), price, price, quantity, amount, amount, stop_loss, take_profit, ai_reasoning))
+                quantity, invested_amount, current_value, stop_loss, take_profit, ai_reasoning, tx_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (user_id, coin_id, coin_name, symbol.upper(), price, price, quantity, amount, amount, stop_loss, take_profit, ai_reasoning, tx_hash))
         position_id = cursor.lastrowid
 
         conn.execute('''
-            INSERT INTO trade_orders (user_id, position_id, coin_id, symbol, action, price, quantity, amount, ai_score, ai_reasoning)
-            VALUES (?, ?, ?, ?, 'BUY', ?, ?, ?, ?, ?)
-        ''', (user_id, position_id, coin_id, symbol.upper(), price, quantity, amount, ai_score, ai_reasoning))
+            INSERT INTO trade_orders (user_id, position_id, coin_id, symbol, action, price, quantity, amount, ai_score, ai_reasoning, tx_hash, created_at)
+            VALUES (?, ?, ?, ?, 'BUY', ?, ?, ?, ?, ?, ?, ?)
+        ''', (user_id, position_id, coin_id, symbol.upper(), price, quantity, amount, ai_score, ai_reasoning, tx_hash, timestamp))
 
         _deduct_wallet(conn, user_id, amount)
 
@@ -326,9 +381,13 @@ def execute_buy(user_id, coin_id, coin_name, symbol, price, amount, ai_score, ai
             ON CONFLICT(user_id) DO UPDATE SET total_invested = total_invested + ?, total_trades = total_trades + 1, updated_at = datetime('now')
         ''', (user_id, amount, amount))
 
-        _log_event(conn, user_id, "BUY", f"Bought {quantity:.6f} {symbol.upper()} at ${price:,.2f} (${amount:,.0f}) | Score: {ai_score}/100 | {ai_reasoning[:200]}")
+        _log_event(conn, user_id, "BUY", f"Bought {quantity:.6f} {symbol.upper()} at ${price:,.2f} (${amount:,.0f}) | Score: {ai_score}/100 | Hash: {tx_hash[:16]}... | {ai_reasoning[:180]}")
         conn.commit()
-        return {"success": True, "position_id": position_id, "quantity": quantity, "amount": amount}
+
+        # Record on blockchain (async, non-blocking)
+        blockchain.record_transaction_async(tx_hash, "BUY", symbol.upper(), amount)
+
+        return {"success": True, "position_id": position_id, "quantity": quantity, "amount": amount, "tx_hash": tx_hash}
     except Exception as e:
         return {"success": False, "error": str(e)}
     finally:
@@ -346,16 +405,19 @@ def execute_sell(user_id, position_id, current_price, reason="manual"):
         pnl = current_value - pos["invested_amount"]
         pnl_pct = (pnl / pos["invested_amount"]) * 100
 
-        conn.execute('''
-            UPDATE trade_positions SET status = 'closed', current_price = ?, current_value = ?,
-                pnl = ?, pnl_pct = ?, closed_at = datetime('now')
-            WHERE id = ?
-        ''', (current_price, current_value, pnl, pnl_pct, position_id))
+        timestamp = datetime.now(timezone.utc).isoformat()
+        tx_hash = generate_tx_hash(user_id, 'SELL', pos["coin_id"], pos["symbol"], current_price, pos["quantity"], current_value, timestamp)
 
         conn.execute('''
-            INSERT INTO trade_orders (user_id, position_id, coin_id, symbol, action, price, quantity, amount, ai_reasoning)
-            VALUES (?, ?, ?, ?, 'SELL', ?, ?, ?, ?)
-        ''', (user_id, position_id, pos["coin_id"], pos["symbol"], current_price, pos["quantity"], current_value, reason))
+            UPDATE trade_positions SET status = 'closed', current_price = ?, current_value = ?,
+                pnl = ?, pnl_pct = ?, tx_hash = ?, closed_at = datetime('now')
+            WHERE id = ?
+        ''', (current_price, current_value, pnl, pnl_pct, tx_hash, position_id))
+
+        conn.execute('''
+            INSERT INTO trade_orders (user_id, position_id, coin_id, symbol, action, price, quantity, amount, ai_reasoning, tx_hash, created_at)
+            VALUES (?, ?, ?, ?, 'SELL', ?, ?, ?, ?, ?, ?)
+        ''', (user_id, position_id, pos["coin_id"], pos["symbol"], current_price, pos["quantity"], current_value, reason, tx_hash, timestamp))
 
         _credit_wallet(conn, user_id, current_value, f"Sold {pos['symbol']} — P&L: ${pnl:,.2f} ({pnl_pct:+.1f}%)")
 
@@ -369,10 +431,13 @@ def execute_sell(user_id, position_id, current_price, reason="manual"):
             WHERE user_id = ?
         ''', (pnl, win_inc, loss_inc, pnl, pnl, user_id))
 
-        emoji = "gain" if pnl > 0 else "loss"
-        _log_event(conn, user_id, "SELL", f"Sold {pos['quantity']:.6f} {pos['symbol']} at ${current_price:,.2f} | P&L: ${pnl:,.2f} ({pnl_pct:+.1f}%) | Reason: {reason}")
+        _log_event(conn, user_id, "SELL", f"Sold {pos['quantity']:.6f} {pos['symbol']} at ${current_price:,.2f} | P&L: ${pnl:,.2f} ({pnl_pct:+.1f}%) | Hash: {tx_hash[:16]}... | Reason: {reason}")
         conn.commit()
-        return {"success": True, "pnl": round(pnl, 2), "pnl_pct": round(pnl_pct, 2), "amount": round(current_value, 2)}
+
+        # Record on blockchain (async, non-blocking)
+        blockchain.record_transaction_async(tx_hash, "SELL", pos["symbol"], current_value)
+
+        return {"success": True, "pnl": round(pnl, 2), "pnl_pct": round(pnl_pct, 2), "amount": round(current_value, 2), "tx_hash": tx_hash}
     except Exception as e:
         return {"success": False, "error": str(e)}
     finally:
@@ -496,6 +561,26 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
     if not settings.get("auto_trade_enabled"):
         return {"status": "disabled", "message": "Auto-trading is disabled. Turn on the toggle to start."}
 
+    # ── Load user preferences for confidence threshold ──
+    try:
+        import auth as _auth
+        user_prefs = _auth.get_user_preferences(user_id)
+        confidence_threshold = user_prefs.auto_trade_threshold  # 0-10
+        max_daily = user_prefs.max_daily_trades
+        risk_profile = user_prefs.risk_profile
+    except Exception:
+        confidence_threshold = 7.0
+        max_daily = 10
+        risk_profile = "balanced"
+
+    # Risk profile modifiers
+    risk_modifiers = {
+        "conservative": {"max_trade_pct_mult": 0.5, "min_score": 70, "stop_loss_add": 2},
+        "balanced":     {"max_trade_pct_mult": 1.0, "min_score": 50, "stop_loss_add": 0},
+        "aggressive":   {"max_trade_pct_mult": 1.5, "min_score": 30, "stop_loss_add": -2},
+    }
+    mods = risk_modifiers.get(risk_profile, risk_modifiers["balanced"])
+
     balance = _get_wallet_balance(user_id)
     stats = _get_trade_stats(user_id)
     total_pnl = stats.get("total_pnl", 0)
@@ -512,8 +597,10 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
         last_trade = conn.execute("SELECT created_at FROM trade_orders WHERE user_id = ? ORDER BY created_at DESC LIMIT 1", (user_id,)).fetchone()
         if last_trade:
             last_time = datetime.fromisoformat(last_trade["created_at"])
+            if last_time.tzinfo is None:
+                last_time = last_time.replace(tzinfo=timezone.utc)
             cooldown = timedelta(minutes=settings["cooldown_minutes"])
-            if datetime.utcnow() - last_time < cooldown:
+            if datetime.now(timezone.utc) - last_time < cooldown:
                 return {"status": "cooldown", "message": f"Cooldown active ({settings['cooldown_minutes']}min)"}
     finally:
         conn.close()
@@ -540,14 +627,14 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
                                f"Loss of ${abs(pnl):.2f} on ${pos['invested_amount']:.2f} invested. Selling to prevent further losses.")
                 sell_result = execute_sell(user_id, pos["id"], current_price, sell_reason)
                 if sell_result["success"]:
-                    results["actions"].append(f"Stop-loss: Sold {pos['symbol']} at ${current_price:,.2f} (P&L: {pnl_pct:+.1f}%) — Price fell below safety threshold")
+                    results["actions"].append(f"Stop-loss: Sold {pos['symbol']} at ${current_price:,.2f} (P&L: {pnl_pct:+.1f}%) \u2014 TX: {sell_result['tx_hash'][:16]}...")
                 continue
             if pnl_pct >= settings["take_profit_pct"]:
                 sell_reason = (f"TAKE-PROFIT TRIGGERED: {pos['symbol']} gained {pnl_pct:.1f}% from entry ${pos['entry_price']:.2f} to ${current_price:.2f}. "
                                f"Profit of ${pnl:.2f} on ${pos['invested_amount']:.2f} invested. Locking in profits at target.")
                 sell_result = execute_sell(user_id, pos["id"], current_price, sell_reason)
                 if sell_result["success"]:
-                    results["actions"].append(f"Take-profit: Sold {pos['symbol']} at ${current_price:,.2f} (P&L: {pnl_pct:+.1f}%) — Target profit reached, securing gains")
+                    results["actions"].append(f"Take-profit: Sold {pos['symbol']} at ${current_price:,.2f} (P&L: {pnl_pct:+.1f}%) \u2014 TX: {sell_result['tx_hash'][:16]}...")
                 continue
         except Exception as e:
             logger.warning("Position update failed for %s: %s", pos["coin_id"], e)
@@ -555,29 +642,55 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
     balance = _get_wallet_balance(user_id)
     open_count = len([p for p in get_open_positions(user_id) if p["status"] == "open"])
 
-    if open_count < settings["max_open_positions"] and balance > 100:
+    # Check daily trade count limit
+    conn_check = _get_db()
+    try:
+        today_trades = conn_check.execute(
+            "SELECT COUNT(*) as cnt FROM trade_orders WHERE user_id = ? AND action = 'BUY' AND created_at >= date('now')",
+            (user_id,),
+        ).fetchone()
+        trades_today = today_trades["cnt"] if today_trades else 0
+    finally:
+        conn_check.close()
+
+    if open_count < settings["max_open_positions"] and balance > 100 and trades_today < max_daily:
         opportunities = await research_opportunities(cg_collector, dex_collector, gemini_client)
         held_coins = {p["coin_id"] for p in get_open_positions(user_id)}
         opportunities = [o for o in opportunities if o["coin_id"] not in held_coins]
         opportunities = [o for o in opportunities if o["market_cap"] >= settings["min_market_cap"]]
 
-        for opp in opportunities[:3]:  # Up to 3 buys per cycle
+        # Apply confidence threshold — convert score (0-100) to confidence (0-10)
+        min_score = mods["min_score"]
+        confidence_min_score = int(confidence_threshold * 10)  # e.g. 7.0 → 70
+        effective_min_score = max(min_score, confidence_min_score)
+        opportunities = [o for o in opportunities if o["score"] >= effective_min_score]
+        results["confidence_threshold"] = confidence_threshold
+        results["effective_min_score"] = effective_min_score
+        results["risk_profile"] = risk_profile
+
+        max_buys = min(3, max_daily - trades_today)
+        for opp in opportunities[:max_buys]:
             if open_count >= settings["max_open_positions"]:
                 break
-            max_trade = balance * (settings["max_trade_pct"] / 100)
+            # Apply risk-profile trade size modifier
+            effective_max_pct = settings["max_trade_pct"] * mods["max_trade_pct_mult"]
+            max_trade = balance * (effective_max_pct / 100)
             trade_amount = min(max_trade, balance * 0.15)
             if trade_amount < 50:
                 break
+
+            effective_sl = max(1.0, settings["stop_loss_pct"] + mods["stop_loss_add"])
 
             # Build detailed AI reasoning for the buy
             detailed_reasoning = (
                 f"BUY SIGNAL for {opp['name']} ({opp['symbol']}): "
                 f"Price ${opp['price']:,.6f} | 24h: {opp['change_24h']:+.1f}% | "
                 f"Market Cap: ${opp['market_cap']:,.0f} | Volume: ${opp['volume_24h']:,.0f} | "
-                f"Score: {opp['score']}/100. "
+                f"Score: {opp['score']}/100 (threshold: {effective_min_score}). "
+                f"Risk profile: {risk_profile} | Confidence gate: {confidence_threshold}/10. "
                 f"Analysis: {opp['reasoning']}. "
                 f"Investing ${trade_amount:,.2f} ({trade_amount/balance*100:.1f}% of wallet) with "
-                f"stop-loss at -{settings['stop_loss_pct']}% and take-profit at +{settings['take_profit_pct']}%."
+                f"stop-loss at -{effective_sl}% and take-profit at +{settings['take_profit_pct']}%."
             )
             if opp.get("ai_analysis"):
                 detailed_reasoning += f" AI Insight: {opp['ai_analysis'][:200]}"
@@ -586,13 +699,33 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
                 user_id=user_id, coin_id=opp["coin_id"], coin_name=opp["name"],
                 symbol=opp["symbol"], price=opp["price"], amount=trade_amount,
                 ai_score=opp["score"], ai_reasoning=detailed_reasoning,
-                stop_loss_pct=settings["stop_loss_pct"], take_profit_pct=settings["take_profit_pct"],
+                stop_loss_pct=effective_sl, take_profit_pct=settings["take_profit_pct"],
             )
             if buy_result["success"]:
                 results["new_trades"] += 1
                 open_count += 1
                 balance -= trade_amount
-                results["actions"].append(f"Bought {opp['symbol']} at ${opp['price']:,.2f} (${trade_amount:,.0f}) | Score: {opp['score']}/100 | {opp['reasoning'][:100]}")
+                results["actions"].append(
+                    f"Bought {opp['symbol']} at ${opp['price']:,.2f} (${trade_amount:,.0f}) "
+                    f"| Score: {opp['score']}/100 | Profile: {risk_profile} "
+                    f"| TX: {buy_result['tx_hash'][:16]}..."
+                )
+
+                # Record in learning loop
+                ll = _get_learning_loop()
+                if ll:
+                    try:
+                        ll.record_prediction(
+                            token_id=opp["coin_id"],
+                            token_name=opp["name"],
+                            predicted_direction="bullish",
+                            confidence=opp["score"] / 10.0,
+                            price_at_prediction=opp["price"],
+                            reasoning=detailed_reasoning[:500],
+                            market_regime="unknown",
+                        )
+                    except Exception:
+                        pass
 
     return results
 

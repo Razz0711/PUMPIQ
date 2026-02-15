@@ -178,10 +178,12 @@ class DataPipeline:
 
         history, news_result = await asyncio.gather(history_task, news_task)
 
-        # Technical analysis
+        # Technical analysis (with volume data for advanced features)
         ta_result = TechnicalResult()
         if history and history.prices and len(history.prices) >= 30:
-            ta_result = self.ta.analyze(history.prices, coin.current_price)
+            # Extract volumes if available from the history object
+            vol_data = getattr(history, "total_volumes", None)
+            ta_result = self.ta.analyze(history.prices, coin.current_price, volumes=vol_data)
 
         # Build payloads based on enabled modes
         news_payload = None
@@ -370,4 +372,14 @@ class DataPipeline:
             resistance=ta.resistance,
             pattern=ta.pattern,
             risk_level=risk,
+            # Advanced market analysis fields
+            market_regime=getattr(ta, "market_regime", "unknown"),
+            volatility_state=getattr(ta, "volatility_state", "normal"),
+            breakout_quality=getattr(ta, "breakout_quality", "none"),
+            abnormal_volume=getattr(ta, "abnormal_volume", False),
+            volume_anomaly_score=getattr(ta, "volume_anomaly_score", 0.0),
+            short_term_trend=getattr(ta, "short_term_trend", "sideways"),
+            long_term_trend=getattr(ta, "long_term_trend", "sideways"),
+            trend_consistency=getattr(ta, "trend_consistency", 0.0),
+            liquidity_pressure=getattr(ta, "liquidity_pressure", "neutral"),
         )

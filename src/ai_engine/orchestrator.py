@@ -70,6 +70,7 @@ from .gpt_client import GPTClient, GPTResponse
 from .gemini_client import GeminiClient, GeminiResponse
 from .nlg_engine import NLGEngine
 from .prompt_templates import PromptBuilder
+from .learning_loop import LearningLoop
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +114,7 @@ class Orchestrator:
         self._prompt = PromptBuilder()
         self._nlg = NLGEngine()
         self._entry_exit = EntryExitCalculator()
+        self._learning = LearningLoop()
 
     # ── Main entry point ──────────────────────────────────────────
 
@@ -159,6 +161,9 @@ class Orchestrator:
 
         # ── Step 6: AI synthesis (Gemini or GPT) ─────────────────
         rec_set = await self._synthesize(query, config, ranked)
+
+        # ── Step 7: Record predictions for learning loop ─────────
+        self._record_predictions(rec_set)
 
         return rec_set
 
@@ -248,6 +253,9 @@ class Orchestrator:
           3. Confidence scoring
           4. Risk assessment
         """
+        # Get historical accuracy for confidence adjustment
+        historical_accuracy = self._learning.get_historical_accuracy()
+
         for token in tokens:
             # Composite
             token.composite_score = self._compute_composite(token, config, weights)
@@ -255,9 +263,10 @@ class Orchestrator:
             # Conflicts
             token.conflicts = self._detector.detect(token)
 
-            # Confidence
+            # Confidence (with historical accuracy feedback)
             breakdown = self._scorer.compute(
                 token, config.enabled_modes, token.conflicts,
+                historical_accuracy=historical_accuracy,
             )
             token.confidence = breakdown.final_score
 
@@ -420,10 +429,12 @@ class Orchestrator:
         config: UserConfig,
         query: UserQuery,
     ) -> TokenRecommendation:
-        """Construct a fully populated TokenRecommendation."""
+        """Construct a fully populated TokenRecommendation with AI Thought Summary."""
         # Confidence
+        historical_accuracy = self._learning.get_historical_accuracy()
         breakdown = self._scorer.compute(
             token, config.enabled_modes, token.conflicts,
+            historical_accuracy=historical_accuracy,
         )
         # Risk
         assessment = self._rater.assess(token, config.enabled_modes)
@@ -446,6 +457,18 @@ class Orchestrator:
         bullets = self._nlg.build_evidence_bullets(token, config.enabled_modes)
         risks = self._nlg.build_risk_disclosure(token, assessment)
 
+        # ── AI Thought Summary (unique feature) ───────────────────
+        ai_thought = self._build_ai_thought_summary(
+            token, verdict, breakdown, assessment, config,
+        )
+
+        # Determine market regime from technical data
+        market_regime = ""
+        if token.technical:
+            market_regime = getattr(token.technical, "market_regime", "") or ""
+            if not market_regime and hasattr(token.technical, "trend"):
+                market_regime = "trending" if token.technical.trend != "sideways" else "ranging"
+
         return TokenRecommendation(
             rank=rank,
             token_name=token.token_name,
@@ -462,11 +485,123 @@ class Orchestrator:
             key_data_points=bullets,
             risks_and_concerns=risks,
             conflicts=token.conflicts,
+            ai_thought_summary=ai_thought,
             news_analysis=token.news.summary if token.news else "",
             onchain_analysis=token.onchain.summary if token.onchain else "",
             technical_analysis=token.technical.summary if token.technical else "",
             social_analysis=token.social.summary if token.social else "",
+            market_regime=market_regime,
             generated_at=datetime.utcnow(),
+        )
+
+    # ── AI Thought Summary Generator ─────────────────────────────
+
+    def _build_ai_thought_summary(
+        self,
+        token: TokenData,
+        verdict: RecommendationVerdict,
+        breakdown: ConfidenceBreakdown,
+        assessment: RiskAssessment,
+        config: UserConfig,
+    ) -> str:
+        """
+        Generate a short AI Thought Summary explaining WHY the decision was made.
+
+        This is the unique differentiator — each recommendation includes a
+        transparent explanation of the AI's internal reasoning process.
+        """
+        thoughts: List[str] = []
+
+        # 1. Trend consistency evaluation
+        if token.technical:
+            trend = token.technical.trend
+            consistency = getattr(token.technical, "trend_consistency", 0)
+            if consistency > 0.7:
+                thoughts.append(
+                    f"The {trend} trend is highly consistent ({consistency:.0%} of candles align)"
+                )
+            elif consistency > 0.5:
+                thoughts.append(
+                    f"I see a {trend} trend but with moderate consistency ({consistency:.0%})"
+                )
+            else:
+                thoughts.append(
+                    f"The trend direction is unclear — only {consistency:.0%} alignment"
+                )
+
+        # 2. Volatility assessment
+        if token.technical:
+            vol_state = getattr(token.technical, "volatility_state", "normal")
+            if vol_state == "expanding":
+                thoughts.append(
+                    "Volatility is expanding — large moves likely, which increases both opportunity and risk"
+                )
+            elif vol_state == "contracting":
+                thoughts.append(
+                    "Volatility is contracting — a breakout in either direction is forming"
+                )
+
+        # 3. Liquidity pressure
+        if token.technical:
+            pressure = getattr(token.technical, "liquidity_pressure", "neutral")
+            if pressure == "buying":
+                thoughts.append("I detect buying pressure — volume confirms price moves up")
+            elif pressure == "selling":
+                thoughts.append("There's selling pressure — volume is rising as price falls")
+
+        # 4. Volume anomaly (whale activity)
+        if token.technical:
+            abnormal = getattr(token.technical, "abnormal_volume", False)
+            if abnormal:
+                vol_score = getattr(token.technical, "volume_anomaly_score", 0)
+                thoughts.append(
+                    f"ALERT: Abnormal volume detected (anomaly score {vol_score:.1f}/10) — possible whale activity"
+                )
+
+        # 5. Historical pattern similarity
+        if token.technical and token.technical.pattern != "None":
+            thoughts.append(
+                f"I recognize a {token.technical.pattern} pattern — historically this has follow-through"
+            )
+
+        # 6. Data confidence note
+        modes_count = len(config.enabled_modes)
+        if modes_count >= 4:
+            thoughts.append("All 4 data modes are active, giving me a comprehensive view")
+        elif modes_count == 1:
+            thoughts.append(
+                "Only 1 data mode is enabled — my confidence is capped due to limited perspective"
+            )
+
+        # 7. Conflict summary
+        if token.conflicts:
+            major = sum(1 for c in token.conflicts if c.severity.value == "major")
+            if major > 0:
+                thoughts.append(
+                    f"I found {major} major signal conflict(s) between modules, which lowered my confidence"
+                )
+
+        # 8. Final verdict reasoning
+        if verdict in (RecommendationVerdict.STRONG_BUY, RecommendationVerdict.MODERATE_BUY):
+            thoughts.append(
+                f"DECISION: {verdict.value} — the data aligns positively across key dimensions"
+            )
+        elif verdict == RecommendationVerdict.AVOID:
+            thoughts.append(
+                "DECISION: Avoid — insufficient evidence or too many red flags to recommend"
+            )
+        elif verdict == RecommendationVerdict.WATCH:
+            thoughts.append(
+                "DECISION: Watch — promising signals but needs more confirmation before acting"
+            )
+        elif verdict == RecommendationVerdict.SELL:
+            thoughts.append(
+                "DECISION: Sell — negative indicators outweigh positives"
+            )
+
+        return " | ".join(thoughts) if thoughts else (
+            f"{verdict.value} with {breakdown.final_score:.1f}/10 confidence "
+            f"based on composite analysis."
         )
 
     # ══════════════════════════════════════════════════════════════
@@ -522,3 +657,32 @@ class Orchestrator:
             enabled_modes=config.enabled_modes,
             generated_at=datetime.now(),
         )
+
+    # ══════════════════════════════════════════════════════════════
+    # Step 7 – Record Predictions for Learning Loop
+    # ══════════════════════════════════════════════════════════════
+
+    def _record_predictions(self, rec_set: RecommendationSet):
+        """Record each recommendation as a trackable prediction for the learning loop."""
+        for rec in rec_set.recommendations:
+            try:
+                target_price = rec.entry_exit.target_1 if rec.entry_exit else 0
+                stop_loss = rec.entry_exit.stop_loss if rec.entry_exit else 0
+
+                self._learning.record_prediction(
+                    token_ticker=rec.token_ticker,
+                    token_name=rec.token_name,
+                    verdict=rec.verdict.value if hasattr(rec.verdict, "value") else str(rec.verdict),
+                    confidence=rec.confidence,
+                    composite_score=rec.composite_score,
+                    price_at_prediction=rec.current_price,
+                    target_price=target_price,
+                    stop_loss_price=stop_loss,
+                    market_condition=rec_set.market_condition.value if hasattr(rec_set.market_condition, "value") else str(rec_set.market_condition),
+                    market_regime=rec.market_regime,
+                    risk_level=rec.risk_level.value if hasattr(rec.risk_level, "value") else str(rec.risk_level),
+                    enabled_modes=[m.value for m in rec_set.enabled_modes],
+                    ai_thought_summary=rec.ai_thought_summary,
+                )
+            except Exception as exc:
+                logger.debug("Failed to record prediction for %s: %s", rec.token_ticker, exc)

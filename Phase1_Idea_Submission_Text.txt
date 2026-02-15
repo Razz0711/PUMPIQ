@@ -1,0 +1,101 @@
+# ============================================================
+#  PumpIQ - ET Gen AI Hackathon 2026 | Phase 1 Idea Submission
+#  Copy-paste the sections below into the submission form
+# ============================================================
+
+
+# ── PROJECT NAME ──
+PumpIQ
+
+
+# ── TAGLINE / ONE-LINER ──
+AI-Powered Cryptocurrency Intelligence & Autonomous Trading Platform powered by Google Gemini
+
+
+# ── PROBLEM STATEMENT ──
+The cryptocurrency market has 15,000+ active tokens with new ones launching every hour. Retail investors face:
+1. Information Overload: Data is scattered across 10+ platforms (CoinGecko, Twitter/X, Telegram, DEXs, news sites) with no unified view.
+2. Fraud & Manipulation: Pump-and-dump schemes cause average retail losses of 60-80% on manipulated tokens.
+3. Emotional Trading: Fear and greed drive impulsive decisions — the #1 cause of retail crypto losses.
+4. No Affordable AI Tools: Institutional-grade analysis tools cost $500-$5,000/month, locking out everyday investors.
+
+The core problem: Retail crypto investors have no affordable, AI-powered tool to cut through noise, detect manipulation, and make intelligent automated trading decisions.
+
+
+# ── PROPOSED SOLUTION ──
+PumpIQ is an end-to-end AI-powered cryptocurrency intelligence platform that uses Google Gemini (Generative AI) to aggregate real-time data from 7+ sources, analyze tokens with context-aware reasoning, and execute autonomous trades with built-in risk management.
+
+Key Features:
+- Multi-Source AI Analysis: Aggregates CoinGecko, DexScreener, crypto news, and social media (Twitter, Reddit, Telegram, Farcaster) into a single Gemini-powered intelligence layer.
+- PumpIQ Score (0-100): AI-generated confidence score for every token, with natural language justification explaining WHY a token is bullish, bearish, or risky.
+- Autonomous Trading Bot: AI decides BUY/SELL/HOLD with risk-adjusted position sizing, stop-loss (-8%), take-profit (+20%), and daily loss limits (10%).
+- Blockchain Transparency: Every trade is recorded on Base L2 (Ethereum) smart contract for verifiable, tamper-proof audit trail.
+- Conversational AI Bot: Users can ask any crypto question and get instant, context-aware responses from Gemini.
+- Free & Accessible: Deployed on Vercel — zero cost for users, democratizing institutional-grade analysis.
+
+
+# ── HOW GENERATIVE AI IS USED (CORE) ──
+Generative AI (Google Gemini) is the CORE of PumpIQ, not an add-on. It powers:
+
+1. Token Analysis Engine: Gemini analyzes token fundamentals + technical indicators using multi-source data fusion with structured prompt engineering.
+2. Confidence Scoring: AI assigns a 0-100 confidence score with probabilistic reasoning and explains its rationale in natural language.
+3. Conflict Detection: Gemini identifies contradictions between bullish and bearish signals across different data sources.
+4. Natural Language Generation: AI generates human-readable verdicts, trade rationales, and market summaries.
+5. Conversational Q&A: Users interact with Gemini-powered chatbot for real-time crypto questions.
+6. Autonomous Trading Decisions: AI evaluates market conditions and makes BUY/SELL/HOLD decisions with risk-adjusted parameters.
+7. Orchestration Layer: Multi-source data from 7 collectors is synthesized into optimized AI prompts for Gemini's context window.
+
+Model: Google Gemini 3 Flash (gemini-3-flash-preview)
+AI Modules: 8 dedicated modules (Gemini Client, GPT Fallback, Orchestrator, Confidence Scorer, Conflict Detector, NLG Engine, Conversational Bot, Trade Decision AI)
+
+
+# ── TECH STACK ──
+- Backend: Python 3.13, FastAPI (53 REST API endpoints)
+- AI/ML: Google Gemini 3 Flash (primary), OpenAI GPT-4o (fallback)
+- Frontend: HTML/CSS/JavaScript Single Page Application
+- Database: SQLite with JWT authentication (bcrypt)
+- Blockchain: Base L2 / Ethereum, Solidity Smart Contract (TransactionRegistry.sol)
+- Data Sources: CoinGecko, DexScreener, CryptoPanic News, Twitter/X, Reddit, Telegram, Farcaster
+- Deployment: Vercel (Serverless Python Functions)
+- Email: Gmail SMTP for verification
+
+
+# ── UNIQUE VALUE PROPOSITION ──
+1. Only platform combining Gen AI analysis + autonomous trading + blockchain verification in one free tool
+2. Gemini AI provides reasoning-based analysis (not just pattern matching) with natural language explanations
+3. Multi-source data fusion (7 feeds) gives broader context than any single-source tool
+4. On-chain audit trail via smart contracts ensures complete trade transparency
+5. Zero cost — democratizes AI trading intelligence for retail investors globally
+
+
+# ── TARGET AUDIENCE ──
+- Retail cryptocurrency traders and investors
+- New crypto investors overwhelmed by market complexity
+- Day traders seeking AI-powered edge with automated execution
+- Crypto communities wanting transparent, verifiable trade records
+
+
+# ── IMPACT ──
+- Saves 4-6 hours/day of manual research per trader
+- AI-powered pump detection protects investors from scam tokens
+- Autonomous trading removes emotional bias from trading decisions
+- Free access puts institutional-grade AI analysis in everyone's hands
+
+
+# ── LIVE DEMO ──
+https://pumpiq.vercel.app
+(Fully deployed and functional — register, explore AI recommendations, test auto trader)
+
+
+# ── TEAM ──
+Raj Kumar (Solo Developer)
+
+
+# ── PROJECT SCALE ──
+- 8,000+ lines of code
+- 53 API endpoints
+- 15 data collector modules
+- 8 AI engine modules
+- 12 UI/UX modules
+- 5 test suites
+- 1 Solidity smart contract

@@ -52,6 +52,19 @@ class TechnicalResult:
     pattern: str = "None"
     summary: str = ""
 
+    # ── Advanced Market Analysis Fields ──
+    market_regime: str = "unknown"        # "trending" | "ranging" | "unstable"
+    volatility_state: str = "normal"      # "expanding" | "contracting" | "normal"
+    breakout_quality: str = "none"        # "confirmed" | "weak" | "none"
+    abnormal_volume: bool = False         # possible whale activity
+    volume_anomaly_score: float = 0.0     # 0-10 how anomalous the volume is
+    short_term_trend: str = "sideways"    # EMA-10 vs EMA-20
+    long_term_trend: str = "sideways"     # EMA-50 vs EMA-200 (or best available)
+    trend_consistency: float = 0.0        # 0-1, fraction of candles aligned with trend
+    liquidity_pressure: str = "neutral"   # "buying" | "selling" | "neutral"
+    bollinger_width: float = 0.0          # normalized Bollinger Band width
+    atr_ratio: float = 0.0               # ATR / price ratio (volatility measure)
+
 
 # ───────────────────────── Analyzer ────────────────────────────
 
@@ -85,6 +98,7 @@ class TechnicalAnalyzer:
         self,
         prices: List[List[float]],
         current_price: float = 0.0,
+        volumes: Optional[List[List[float]]] = None,
     ) -> TechnicalResult:
         """
         Run full TA suite on a price series.
@@ -95,6 +109,8 @@ class TechnicalAnalyzer:
             As returned by CoinGecko ``/coins/{id}/market_chart``.
         current_price : float
             Latest price (for support/resistance context).
+        volumes : list of [timestamp_ms, volume], optional
+            Volume data for whale/anomaly detection.
         """
         if len(prices) < 30:
             logger.warning("Too few data points (%d) for reliable TA", len(prices))
@@ -103,6 +119,9 @@ class TechnicalAnalyzer:
         closes = [p[1] for p in prices]
         if current_price <= 0:
             current_price = closes[-1]
+
+        # Extract volume data if available
+        vol_data = [v[1] for v in volumes] if volumes and len(volumes) >= 30 else None
 
         # --- Individual indicators ---
         rsi = self._compute_rsi(closes)
@@ -117,6 +136,19 @@ class TechnicalAnalyzer:
 
         support, resistance = self._support_resistance(closes)
         pattern = self._detect_pattern(closes, rsi, macd_cross, trend)
+
+        # --- Advanced Analysis ---
+        short_term_trend = self._detect_short_term_trend(closes)
+        long_term_trend = self._detect_long_term_trend(closes)
+        trend_consistency = self._compute_trend_consistency(closes, trend)
+        market_regime = self._classify_market_regime(closes, rsi, trend, trend_consistency)
+        volatility_state, bollinger_width = self._classify_volatility(closes)
+        atr_ratio = self._compute_atr_ratio(closes)
+        breakout_quality = self._detect_breakout_quality(
+            closes, current_price, support, resistance, vol_data
+        )
+        abnormal_volume, volume_anomaly_score = self._detect_volume_anomaly(vol_data)
+        liquidity_pressure = self._detect_liquidity_pressure(closes, vol_data)
 
         # --- Composite score (0-10) ---
         score = self._composite_score(rsi, macd_cross, trend, current_price, support, resistance)
@@ -140,6 +172,18 @@ class TechnicalAnalyzer:
             ema_50=round(ema50, 6),
             pattern=pattern,
             summary=summary,
+            # Advanced fields
+            market_regime=market_regime,
+            volatility_state=volatility_state,
+            breakout_quality=breakout_quality,
+            abnormal_volume=abnormal_volume,
+            volume_anomaly_score=round(volume_anomaly_score, 1),
+            short_term_trend=short_term_trend,
+            long_term_trend=long_term_trend,
+            trend_consistency=round(trend_consistency, 2),
+            liquidity_pressure=liquidity_pressure,
+            bollinger_width=round(bollinger_width, 4),
+            atr_ratio=round(atr_ratio, 4),
         )
 
     # ── RSI ────────────────────────────────────────────────────────
@@ -415,3 +459,244 @@ class TechnicalAnalyzer:
             parts.append(f"Pattern: {pattern}.")
 
         return " ".join(parts)
+
+    # ══════════════════════════════════════════════════════════════
+    # Advanced Market Analysis Methods
+    # ══════════════════════════════════════════════════════════════
+
+    def _detect_short_term_trend(self, closes: List[float]) -> str:
+        """Short-term trend using EMA-10 vs EMA-20."""
+        if len(closes) < 20:
+            return "sideways"
+        ema10 = self._ema(closes, 10)
+        ema20 = self._ema(closes, 20)
+        last = closes[-1]
+        if ema10 > ema20 and last > ema10:
+            return "uptrend"
+        if ema10 < ema20 and last < ema10:
+            return "downtrend"
+        return "sideways"
+
+    def _detect_long_term_trend(self, closes: List[float]) -> str:
+        """Long-term trend using EMA-50 vs EMA-100 (or best available)."""
+        if len(closes) < 50:
+            return "sideways"
+        ema50 = self._ema(closes, 50)
+        period_long = min(100, len(closes))
+        ema_long = self._ema(closes, period_long)
+        last = closes[-1]
+        if ema50 > ema_long and last > ema50:
+            return "uptrend"
+        if ema50 < ema_long and last < ema50:
+            return "downtrend"
+        return "sideways"
+
+    @staticmethod
+    def _compute_trend_consistency(closes: List[float], trend: str) -> float:
+        """
+        Measure how consistently candles align with the detected trend.
+        Returns 0-1 (fraction of recent candles moving in trend direction).
+        """
+        if len(closes) < 10:
+            return 0.5
+        recent = closes[-20:] if len(closes) >= 20 else closes
+        total_moves = len(recent) - 1
+        if total_moves == 0:
+            return 0.5
+        aligned = 0
+        for i in range(1, len(recent)):
+            diff = recent[i] - recent[i - 1]
+            if trend == "uptrend" and diff > 0:
+                aligned += 1
+            elif trend == "downtrend" and diff < 0:
+                aligned += 1
+            elif trend == "sideways" and abs(diff / max(recent[i - 1], 1e-9)) < 0.005:
+                aligned += 1
+        return aligned / total_moves
+
+    @staticmethod
+    def _classify_market_regime(
+        closes: List[float], rsi: float, trend: str, consistency: float
+    ) -> str:
+        """
+        Classify market as trending / ranging / unstable.
+
+        - Trending: clear direction + high consistency (>0.6)
+        - Ranging: sideways trend + moderate RSI (40-60)
+        - Unstable: wild swings, low consistency, extreme RSI
+        """
+        if consistency < 0.35:
+            return "unstable"
+        if trend in ("uptrend", "downtrend") and consistency > 0.55:
+            return "trending"
+        if trend == "sideways" and 35 < rsi < 65:
+            return "ranging"
+        # Check recent price range vs average
+        if len(closes) >= 20:
+            recent = closes[-20:]
+            pct_range = (max(recent) - min(recent)) / max(max(recent), 1e-9) * 100
+            if pct_range < 8:
+                return "ranging"
+            if pct_range > 25:
+                return "unstable"
+        return "trending" if consistency > 0.5 else "ranging"
+
+    def _classify_volatility(self, closes: List[float]) -> Tuple[str, float]:
+        """
+        Classify volatility as expanding / contracting / normal
+        using Bollinger Band width (20-period, 2 std dev).
+
+        Returns (state, normalized_width).
+        """
+        if len(closes) < 20:
+            return "normal", 0.0
+
+        period = 20
+        sma = sum(closes[-period:]) / period
+        variance = sum((c - sma) ** 2 for c in closes[-period:]) / period
+        std = math.sqrt(variance)
+        upper = sma + 2 * std
+        lower = sma - 2 * std
+        width = (upper - lower) / max(sma, 1e-9)
+
+        # Compare current width to historical width (last 50 candles)
+        if len(closes) >= 50:
+            hist_widths = []
+            for i in range(max(20, len(closes) - 50), len(closes) - period + 1):
+                segment = closes[i - period:i]
+                if len(segment) < period:
+                    continue
+                s = sum(segment) / period
+                v = sum((c - s) ** 2 for c in segment) / period
+                sd = math.sqrt(v)
+                hist_widths.append((s + 2 * sd - (s - 2 * sd)) / max(s, 1e-9))
+            if hist_widths:
+                avg_width = sum(hist_widths) / len(hist_widths)
+                if width > avg_width * 1.3:
+                    return "expanding", width
+                if width < avg_width * 0.7:
+                    return "contracting", width
+
+        return "normal", width
+
+    @staticmethod
+    def _compute_atr_ratio(closes: List[float], period: int = 14) -> float:
+        """Average True Range as ratio of current price (volatility measure)."""
+        if len(closes) < period + 1:
+            return 0.0
+        trs = []
+        for i in range(1, len(closes)):
+            high_low = abs(closes[i] - closes[i - 1])  # simplified TR
+            trs.append(high_low)
+        recent_trs = trs[-period:]
+        atr = sum(recent_trs) / len(recent_trs)
+        return atr / max(closes[-1], 1e-9)
+
+    def _detect_breakout_quality(
+        self,
+        closes: List[float],
+        current_price: float,
+        support: float,
+        resistance: float,
+        vol_data: Optional[List[float]] = None,
+    ) -> str:
+        """
+        Classify breakout as confirmed / weak / none.
+
+        Confirmed: price closes above resistance with >1.5x avg volume
+        Weak: price near resistance but volume is normal or below average
+        """
+        if resistance <= 0 or support <= 0:
+            return "none"
+
+        pct_above_resistance = (current_price - resistance) / max(resistance, 1e-9) * 100
+
+        # Check if price is near or above resistance
+        if pct_above_resistance > 1.0:
+            # Price above resistance — check volume confirmation
+            if vol_data and len(vol_data) >= 20:
+                avg_vol = sum(vol_data[-20:]) / 20
+                recent_vol = sum(vol_data[-3:]) / 3 if len(vol_data) >= 3 else vol_data[-1]
+                if recent_vol > avg_vol * 1.5:
+                    return "confirmed"
+                return "weak"
+            return "weak"  # No volume data → can't fully confirm
+
+        pct_below_support = (support - current_price) / max(support, 1e-9) * 100
+        if pct_below_support > 1.0:
+            # Breakdown below support
+            if vol_data and len(vol_data) >= 20:
+                avg_vol = sum(vol_data[-20:]) / 20
+                recent_vol = sum(vol_data[-3:]) / 3 if len(vol_data) >= 3 else vol_data[-1]
+                if recent_vol > avg_vol * 1.5:
+                    return "confirmed"
+                return "weak"
+            return "weak"
+
+        return "none"
+
+    @staticmethod
+    def _detect_volume_anomaly(
+        vol_data: Optional[List[float]],
+    ) -> Tuple[bool, float]:
+        """
+        Detect abnormal volume (possible whale activity).
+
+        Returns (is_abnormal, anomaly_score 0-10).
+        Uses z-score of recent volume vs historical average.
+        """
+        if not vol_data or len(vol_data) < 20:
+            return False, 0.0
+
+        avg_vol = sum(vol_data[-20:]) / 20
+        std_vol = math.sqrt(
+            sum((v - avg_vol) ** 2 for v in vol_data[-20:]) / 20
+        )
+        if std_vol == 0:
+            return False, 0.0
+
+        # Check last 3 candles for spikes
+        recent_avg = sum(vol_data[-3:]) / 3
+        z_score = (recent_avg - avg_vol) / std_vol
+
+        # Map z-score to 0-10 anomaly score
+        anomaly_score = min(10.0, max(0.0, z_score * 2.5))
+        is_abnormal = z_score > 2.0  # >2 sigma = abnormal
+
+        return is_abnormal, anomaly_score
+
+    @staticmethod
+    def _detect_liquidity_pressure(
+        closes: List[float],
+        vol_data: Optional[List[float]] = None,
+    ) -> str:
+        """
+        Infer buying vs selling pressure from price action and volume.
+
+        If price rising + volume rising → buying pressure
+        If price falling + volume rising → selling pressure
+        Otherwise → neutral
+        """
+        if len(closes) < 5:
+            return "neutral"
+
+        recent_close = closes[-5:]
+        price_trend = recent_close[-1] - recent_close[0]
+        price_pct = price_trend / max(abs(recent_close[0]), 1e-9) * 100
+
+        if vol_data and len(vol_data) >= 10:
+            vol_recent = sum(vol_data[-5:]) / 5
+            vol_earlier = sum(vol_data[-10:-5]) / 5 if len(vol_data) >= 10 else vol_recent
+            vol_rising = vol_recent > vol_earlier * 1.2
+
+            if price_pct > 1 and vol_rising:
+                return "buying"
+            if price_pct < -1 and vol_rising:
+                return "selling"
+
+        # Fallback: just price action
+        if price_pct > 2:
+            return "buying"
+        if price_pct < -2:
+            return "selling"
+        return "neutral"

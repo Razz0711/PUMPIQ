@@ -97,6 +97,7 @@ a:hover { text-decoration: underline; }
 .btn-green:hover { opacity:0.9; }
 .btn-sm { padding:6px 12px; font-size:12px; }
 .btn-danger { background:var(--red); color:#fff; }
+.btn:disabled { cursor:not-allowed; opacity:0.6; }
 
 .user-badge {
     display:flex; align-items:center; gap:8px;
@@ -727,6 +728,297 @@ a:hover { text-decoration: underline; }
     background:var(--bg-card); border:1px solid var(--border); color:var(--text-secondary);
     transition:all 0.2s;
 }
+
+/* ══════════════════════════════════════════════════════════════ */
+/* MODULE SHOWCASE & ENHANCED FEATURES                          */
+/* ══════════════════════════════════════════════════════════════ */
+
+/* ── Live Stats Banner ────────────────────────────────────── */
+.live-stats-banner {
+    display:grid; grid-template-columns:repeat(4,1fr); gap:16px;
+    margin-bottom:32px;
+}
+@media(max-width:768px) { .live-stats-banner { grid-template-columns:repeat(2,1fr); } }
+.live-stat-card {
+    background: var(--bg-card); border:1px solid var(--border);
+    border-radius:var(--radius); padding:18px 20px;
+    position:relative; overflow:hidden;
+    transition:border-color 0.3s, transform 0.2s;
+}
+.live-stat-card:hover { border-color:var(--accent); transform:translateY(-2px); }
+.live-stat-card::before {
+    content:''; position:absolute; top:0; left:0; right:0; height:3px;
+    background:var(--gradient); opacity:0.8;
+}
+.live-stat-icon {
+    font-size:28px; margin-bottom:8px; display:block;
+}
+.live-stat-value {
+    font-size:24px; font-weight:800; color:var(--text-primary);
+    font-variant-numeric:tabular-nums;
+}
+.live-stat-label {
+    font-size:11px; color:var(--text-muted); text-transform:uppercase;
+    letter-spacing:1px; margin-top:4px;
+}
+.live-stat-change {
+    font-size:11px; font-weight:600; margin-top:4px;
+}
+
+/* ── Module Showcase Grid ─────────────────────────────────── */
+.module-showcase {
+    display:grid; grid-template-columns:repeat(3,1fr); gap:16px;
+    margin-bottom:32px;
+}
+@media(max-width:900px) { .module-showcase { grid-template-columns:repeat(2,1fr); } }
+@media(max-width:600px) { .module-showcase { grid-template-columns:1fr; } }
+.module-card {
+    background: var(--bg-card); border:1px solid var(--border);
+    border-radius:16px; padding:24px; cursor:pointer;
+    position:relative; overflow:hidden;
+    transition:all 0.3s ease;
+}
+.module-card:hover {
+    border-color:var(--accent); transform:translateY(-4px);
+    box-shadow:0 12px 40px rgba(59,130,246,0.15);
+}
+.module-card.glow-green { border-left:3px solid var(--green); }
+.module-card.glow-blue { border-left:3px solid var(--accent); }
+.module-card.glow-purple { border-left:3px solid var(--purple); }
+.module-card.glow-cyan { border-left:3px solid var(--cyan); }
+.module-card.glow-yellow { border-left:3px solid var(--yellow); }
+.module-card.glow-red { border-left:3px solid var(--red); }
+.module-icon { font-size:32px; margin-bottom:12px; }
+.module-title { font-size:16px; font-weight:700; margin-bottom:6px; }
+.module-desc { font-size:12px; color:var(--text-secondary); line-height:1.5; margin-bottom:12px; }
+.module-tags { display:flex; flex-wrap:wrap; gap:4px; }
+.module-tag {
+    padding:3px 8px; border-radius:4px; font-size:10px; font-weight:600;
+    background:rgba(59,130,246,0.1); color:var(--accent);
+    text-transform:uppercase; letter-spacing:0.5px;
+}
+.module-status-dot {
+    position:absolute; top:16px; right:16px;
+    width:8px; height:8px; border-radius:50%; background:var(--green);
+    box-shadow:0 0 8px rgba(16,185,129,0.6);
+    animation:pulse 2s infinite;
+}
+@keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
+
+/* ── Market Regime Banner ─────────────────────────────────── */
+.regime-banner {
+    background:var(--bg-card); border:1px solid var(--border);
+    border-radius:var(--radius); padding:20px 24px;
+    margin-bottom:24px;
+    display:flex; align-items:center; gap:20px; flex-wrap:wrap;
+}
+.regime-indicator {
+    width:64px; height:64px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    font-size:28px; flex-shrink:0;
+    border:3px solid transparent;
+    animation:regimeGlow 3s infinite;
+}
+.regime-indicator.bullish { background:rgba(16,185,129,0.15); border-color:var(--green); }
+.regime-indicator.bearish { background:rgba(239,68,68,0.15); border-color:var(--red); }
+.regime-indicator.sideways { background:rgba(245,158,11,0.15); border-color:var(--yellow); }
+.regime-indicator.volatile { background:rgba(139,92,246,0.15); border-color:var(--purple); }
+.regime-indicator.accumulation { background:rgba(6,182,212,0.15); border-color:var(--cyan); }
+@keyframes regimeGlow {
+    0%,100% { box-shadow:0 0 15px rgba(59,130,246,0.2); }
+    50% { box-shadow:0 0 25px rgba(59,130,246,0.4); }
+}
+.regime-info { flex:1; }
+.regime-title { font-size:20px; font-weight:800; text-transform:capitalize; }
+.regime-sub { font-size:13px; color:var(--text-secondary); margin-top:4px; }
+.regime-coins { display:flex; gap:12px; flex-wrap:wrap; }
+.regime-coin-chip {
+    background:var(--bg-secondary); border:1px solid var(--border);
+    border-radius:var(--radius-sm); padding:8px 14px;
+    font-size:12px; display:flex; flex-direction:column; gap:2px;
+}
+.regime-coin-name { font-weight:600; color:var(--text-primary); }
+.regime-coin-regime { font-size:10px; text-transform:uppercase; letter-spacing:0.5px; }
+
+/* ── AI Thought Summary ──────────────────────────────────── */
+.thought-summary-box {
+    background:linear-gradient(135deg, rgba(124,92,255,0.06) 0%, rgba(6,182,212,0.04) 100%);
+    border:1px solid rgba(124,92,255,0.2);
+    border-radius:var(--radius); padding:24px; margin-bottom:20px;
+}
+.thought-header {
+    display:flex; align-items:center; gap:10px; margin-bottom:16px;
+}
+.thought-header h3 { font-size:16px; font-weight:700; }
+.thought-badge {
+    padding:3px 10px; border-radius:12px; font-size:10px; font-weight:700;
+    background:rgba(124,92,255,0.15); color:var(--purple); letter-spacing:0.5px;
+}
+.thought-content { color:var(--text-secondary); font-size:13px; line-height:1.7; white-space:pre-wrap; }
+.thought-steps {
+    display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr));
+    gap:12px; margin-top:16px;
+}
+.thought-step {
+    background:var(--bg-card); border:1px solid var(--border);
+    border-radius:var(--radius-sm); padding:14px;
+}
+.thought-step-num {
+    font-size:10px; font-weight:700; color:var(--cyan); margin-bottom:4px;
+    text-transform:uppercase; letter-spacing:1px;
+}
+.thought-step-text { font-size:12px; color:var(--text-secondary); line-height:1.5; }
+
+/* ── Enhanced AI Recommendation Cards ─────────────────────── */
+.enhanced-rec-card {
+    background:var(--bg-card); border:1px solid var(--border);
+    border-radius:16px; padding:24px; margin-bottom:16px;
+    transition:border-color 0.3s;
+}
+.enhanced-rec-card:hover { border-color:var(--accent); }
+.rec-card-header {
+    display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px;
+}
+.rec-card-info { flex:1; }
+.rec-card-token { font-size:18px; font-weight:700; }
+.rec-card-ticker { color:var(--text-muted); font-size:13px; margin-left:6px; }
+.rec-card-price { font-size:14px; color:var(--text-secondary); margin-top:2px; }
+.rec-confidence {
+    text-align:center; min-width:72px;
+}
+.rec-confidence-ring {
+    width:56px; height:56px; border-radius:50%; position:relative;
+    display:flex; align-items:center; justify-content:center;
+    margin:0 auto 4px;
+}
+.rec-confidence-value { font-size:16px; font-weight:800; }
+.rec-confidence-label { font-size:10px; color:var(--text-muted); }
+.rec-thesis {
+    background:var(--bg-secondary); border-radius:var(--radius-sm);
+    padding:12px 16px; font-size:13px; color:var(--text-secondary);
+    line-height:1.6; margin-bottom:12px; border-left:3px solid var(--accent);
+}
+.rec-data-points {
+    display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px;
+}
+.rec-data-pill {
+    padding:4px 10px; border-radius:12px; font-size:11px;
+    background:rgba(6,182,212,0.1); color:var(--cyan); border:1px solid rgba(6,182,212,0.2);
+}
+.rec-risk-pill {
+    padding:4px 10px; border-radius:12px; font-size:11px;
+    background:rgba(239,68,68,0.1); color:var(--red); border:1px solid rgba(239,68,68,0.2);
+}
+.rec-entry-exit {
+    display:grid; grid-template-columns:repeat(5,1fr); gap:8px;
+    background:var(--bg-secondary); border-radius:var(--radius-sm); padding:12px;
+}
+@media(max-width:768px) { .rec-entry-exit { grid-template-columns:repeat(3,1fr); } }
+.rec-entry-item { text-align:center; }
+.rec-entry-label { font-size:10px; color:var(--text-muted); text-transform:uppercase; }
+.rec-entry-value { font-size:13px; font-weight:700; margin-top:2px; }
+.rec-verdict-bar {
+    display:flex; align-items:center; justify-content:space-between;
+    margin-top:12px; padding-top:12px; border-top:1px solid var(--border);
+}
+
+/* ── Learning Loop Dashboard ──────────────────────────────── */
+.learning-grid {
+    display:grid; grid-template-columns:repeat(4,1fr); gap:16px;
+    margin-bottom:24px;
+}
+@media(max-width:768px) { .learning-grid { grid-template-columns:repeat(2,1fr); } }
+.learning-stat {
+    background:var(--bg-card); border:1px solid var(--border);
+    border-radius:var(--radius); padding:20px; text-align:center;
+}
+.learning-stat-icon { font-size:28px; margin-bottom:8px; }
+.learning-stat-value { font-size:28px; font-weight:800; }
+.learning-stat-label { font-size:12px; color:var(--text-muted); margin-top:4px; }
+.accuracy-ring {
+    width:120px; height:120px; border-radius:50%; margin:0 auto 12px;
+    background:conic-gradient(var(--green) var(--pct), var(--border) var(--pct));
+    display:flex; align-items:center; justify-content:center;
+    position:relative;
+}
+.accuracy-ring::after {
+    content:''; width:96px; height:96px; border-radius:50%;
+    background:var(--bg-card); position:absolute;
+}
+.accuracy-ring-text {
+    position:relative; z-index:1;
+    font-size:24px; font-weight:800; color:var(--text-primary);
+}
+.adjustment-card {
+    background:var(--bg-card); border:1px solid var(--border);
+    border-radius:var(--radius); padding:16px; margin-bottom:10px;
+}
+.adjustment-header { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+.adjustment-type {
+    padding:3px 8px; border-radius:4px; font-size:10px; font-weight:700;
+    text-transform:uppercase; letter-spacing:0.5px;
+}
+.adjustment-type.increase { background:var(--green-bg); color:var(--green); }
+.adjustment-type.decrease { background:var(--red-bg); color:var(--red); }
+.adjustment-type.hold { background:rgba(245,158,11,0.1); color:var(--yellow); }
+.adjustment-detail { font-size:13px; color:var(--text-secondary); line-height:1.5; }
+
+/* ── Personalization / Settings Page ──────────────────────── */
+.settings-section {
+    background:var(--bg-card); border:1px solid var(--border);
+    border-radius:var(--radius); padding:24px; margin-bottom:20px;
+}
+.settings-section-title {
+    font-size:16px; font-weight:700; margin-bottom:16px;
+    display:flex; align-items:center; gap:8px;
+}
+.pref-slider-row {
+    display:flex; align-items:center; gap:16px; margin-bottom:16px;
+}
+.pref-slider-label { width:140px; font-size:13px; color:var(--text-secondary); flex-shrink:0; }
+.pref-slider {
+    flex:1; -webkit-appearance:none; appearance:none;
+    height:6px; border-radius:3px; background:var(--border); outline:none;
+}
+.pref-slider::-webkit-slider-thumb {
+    -webkit-appearance:none; appearance:none;
+    width:18px; height:18px; border-radius:50%;
+    background:var(--accent); cursor:pointer; border:2px solid var(--bg-primary);
+}
+.pref-slider-value {
+    width:40px; text-align:center; font-weight:700; font-size:14px;
+    color:var(--accent);
+}
+.pref-chip-group { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+.pref-chip {
+    padding:8px 16px; border-radius:var(--radius-sm);
+    background:var(--bg-secondary); border:2px solid var(--border);
+    color:var(--text-secondary); font-size:13px; cursor:pointer;
+    transition:all 0.2s; font-weight:500;
+}
+.pref-chip:hover { border-color:var(--text-muted); }
+.pref-chip.selected {
+    border-color:var(--accent); color:var(--accent);
+    background:var(--accent-glow);
+}
+
+/* ── Section Divider ──────────────────────────────────────── */
+.section-divider {
+    display:flex; align-items:center; gap:16px;
+    margin:32px 0 20px; color:var(--text-muted); font-size:13px;
+    font-weight:600; text-transform:uppercase; letter-spacing:1px;
+}
+.section-divider::after {
+    content:''; flex:1; height:1px; background:var(--border);
+}
+
+/* ── Floating Gradient Orbs (decoration) ──────────────────── */
+.orb {
+    position:absolute; border-radius:50%; filter:blur(80px); pointer-events:none; opacity:0.07;
+}
+.orb-1 { width:300px; height:300px; background:#3b82f6; top:-100px; left:-100px; }
+.orb-2 { width:250px; height:250px; background:#8b5cf6; top:200px; right:-50px; }
+.orb-3 { width:200px; height:200px; background:#06b6d4; bottom:-50px; left:30%; }
 .bot-chip:hover { border-color:var(--accent); color:var(--accent); }
 </style>
 </head>
@@ -741,9 +1033,12 @@ a:hover { text-decoration: underline; }
         <button class="nav-tab active" data-page="home">Home</button>
         <button class="nav-tab" data-page="feed">Token Feed</button>
         <button class="nav-tab" data-page="ai">AI Recs</button>
+        <button class="nav-tab" data-page="insights">🧠 Insights</button>
+        <button class="nav-tab" data-page="learning">📊 Learning</button>
         <button class="nav-tab" data-page="leaderboard">Leaderboard</button>
         <button class="nav-tab" data-page="market">Market</button>
         <button class="nav-tab" data-page="trader">🤖 Auto Trader</button>
+        <button class="nav-tab" data-page="settings">⚙️</button>
     </div>
     <div class="header-right">
         <input class="search-box" id="globalSearch" placeholder="Search tokens..." onkeydown="if(event.key==='Enter')doSearch()">
@@ -757,28 +1052,126 @@ a:hover { text-decoration: underline; }
 <!-- HOME PAGE                                                  -->
 <!-- ═══════════════════════════════════════════════════════════ -->
 <div class="page active" id="page-home">
-    <div class="hero">
-        <div class="hero-tag">AI-POWERED ANALYTICS</div>
+    <div class="hero" style="position:relative;overflow:hidden">
+        <div class="orb orb-1"></div>
+        <div class="orb orb-2"></div>
+        <div class="orb orb-3"></div>
+        <div class="hero-tag">AI-POWERED CRYPTO INTELLIGENCE</div>
         <h1 class="hero-title">See through the noise.</h1>
         <p class="hero-desc">
-            PumpIQ scores every token across idea quality, on-chain health, and technical signals
-            — so you can trade with signal, not hype.
+            PumpIQ fuses real-time data, multi-model AI reasoning, and transparent analytics to give you an unfair edge in crypto markets.
         </p>
         <div class="hero-steps">
             <div class="step-card">
-                <div class="step-num">01</div>
-                <div class="step-title">Browse</div>
-                <div class="step-desc">Live feed of all tokens on DexScreener with real-time data from Solana, Base, and more.</div>
+                <div class="step-num">STEP 01</div>
+                <div class="step-title">🔍 Browse</div>
+                <div class="step-desc">Scan 1000+ tokens from CoinGecko + DexScreener with live price feeds and market cap data.</div>
             </div>
             <div class="step-card">
-                <div class="step-num">02</div>
-                <div class="step-title">Analyze</div>
-                <div class="step-desc">AI evaluates on-chain health, holder behavior, technical indicators, and bonding curve math.</div>
+                <div class="step-num">STEP 02</div>
+                <div class="step-title">🧠 Analyze</div>
+                <div class="step-desc">AI scores every token using 15+ indicators — RSI, MACD, volume anomalies, news sentiment & more.</div>
             </div>
             <div class="step-card">
-                <div class="step-num">03</div>
-                <div class="step-title">Decide</div>
-                <div class="step-desc">Get a PumpIQ Score (0-100), risk flags, and a one-line verdict for every token.</div>
+                <div class="step-num">STEP 03</div>
+                <div class="step-title">⚡ Act</div>
+                <div class="step-desc">Auto-trade with AI-managed positions, stop-loss, take-profit, and full blockchain audit trail.</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Live Platform Stats ─────────────────────────────── -->
+    <div class="section-divider">📊 Live Platform Metrics</div>
+    <div class="live-stats-banner">
+        <div class="live-stat-card">
+            <span class="live-stat-icon">🪙</span>
+            <div class="live-stat-value" id="homeStatTokens">--</div>
+            <div class="live-stat-label">Tokens Tracked</div>
+        </div>
+        <div class="live-stat-card">
+            <span class="live-stat-icon">🧠</span>
+            <div class="live-stat-value" id="homeStatAIScans">--</div>
+            <div class="live-stat-label">AI Analyses Run</div>
+        </div>
+        <div class="live-stat-card">
+            <span class="live-stat-icon">📈</span>
+            <div class="live-stat-value" id="homeStatRegime">--</div>
+            <div class="live-stat-label">Market Regime</div>
+        </div>
+        <div class="live-stat-card">
+            <span class="live-stat-icon">🤖</span>
+            <div class="live-stat-value" id="homeStatAutoTrades">--</div>
+            <div class="live-stat-label">Auto Trades Today</div>
+        </div>
+    </div>
+
+    <!-- ── Module Showcase ─────────────────────────────────── -->
+    <div class="section-divider">🔌 Platform Modules — All Active</div>
+    <div class="module-showcase">
+        <div class="module-card glow-purple" onclick="navigate('ai')">
+            <div class="module-status-dot"></div>
+            <div class="module-icon">🧠</div>
+            <div class="module-title">AI Recommendation Engine</div>
+            <div class="module-desc">Multi-model AI pipeline with GPT + Gemini reasoning, confidence scoring, and transparent thought summaries.</div>
+            <div class="module-tags">
+                <span class="module-tag">Orchestrator</span>
+                <span class="module-tag">Confidence</span>
+                <span class="module-tag">NLG</span>
+            </div>
+        </div>
+        <div class="module-card glow-cyan" onclick="navigate('market')">
+            <div class="module-status-dot"></div>
+            <div class="module-icon">📡</div>
+            <div class="module-title">Real-Time Crypto Data Layer</div>
+            <div class="module-desc">Live feeds from CoinGecko, DexScreener, and news aggregators powering every analysis in real-time.</div>
+            <div class="module-tags">
+                <span class="module-tag">CoinGecko</span>
+                <span class="module-tag">DexScreener</span>
+                <span class="module-tag">News</span>
+            </div>
+        </div>
+        <div class="module-card glow-green" onclick="navigate('insights')">
+            <div class="module-status-dot"></div>
+            <div class="module-icon">📊</div>
+            <div class="module-title">Intelligent Market Analysis</div>
+            <div class="module-desc">15+ technical indicators including RSI, MACD, Bollinger Bands, market regime detection, and breakout quality scoring.</div>
+            <div class="module-tags">
+                <span class="module-tag">TA Suite</span>
+                <span class="module-tag">Regime</span>
+                <span class="module-tag">Breakout</span>
+            </div>
+        </div>
+        <div class="module-card glow-blue" onclick="navigate('settings')">
+            <div class="module-status-dot"></div>
+            <div class="module-icon">👤</div>
+            <div class="module-title">Auth & Personalization</div>
+            <div class="module-desc">JWT authentication, user preferences, risk profiles, watchlists, and AI sensitivity controls.</div>
+            <div class="module-tags">
+                <span class="module-tag">JWT Auth</span>
+                <span class="module-tag">Risk Profile</span>
+                <span class="module-tag">Watchlist</span>
+            </div>
+        </div>
+        <div class="module-card glow-yellow" onclick="navigate('trader')">
+            <div class="module-status-dot"></div>
+            <div class="module-icon">🤖</div>
+            <div class="module-title">AI-Assisted Auto-Trading</div>
+            <div class="module-desc">Autonomous trading with position management, stop-loss/take-profit, risk controls, and blockchain-verified transactions.</div>
+            <div class="module-tags">
+                <span class="module-tag">Auto Trade</span>
+                <span class="module-tag">Risk Mgmt</span>
+                <span class="module-tag">Blockchain</span>
+            </div>
+        </div>
+        <div class="module-card glow-red" onclick="navigate('learning')">
+            <div class="module-status-dot"></div>
+            <div class="module-icon">🔄</div>
+            <div class="module-title">Continuous Learning Loop</div>
+            <div class="module-desc">AI tracks its own predictions, evaluates accuracy over time, and auto-adjusts strategies based on performance.</div>
+            <div class="module-tags">
+                <span class="module-tag">Accuracy</span>
+                <span class="module-tag">Feedback</span>
+                <span class="module-tag">Self-Improve</span>
             </div>
         </div>
     </div>
@@ -859,9 +1252,23 @@ a:hover { text-decoration: underline; }
         </div>
     </div>
 
-    <button class="btn btn-green" onclick="loadAIRecs()" style="margin-bottom:20px">Analyze</button>
+    <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap">
+        <button class="btn btn-green" onclick="loadAIRecs()">🔍 Quick Analyze</button>
+        <button class="btn btn-primary" onclick="loadEnhancedAIRecs()">🧠 Enhanced AI (with Thought Summary)</button>
+    </div>
 
     <div id="aiTimestamp" style="color:var(--text-muted);font-size:12px;margin-bottom:12px"></div>
+
+    <!-- AI Thought Summary (from Enhanced endpoint) -->
+    <div class="thought-summary-box" id="aiThoughtBox" style="display:none">
+        <div class="thought-header">
+            <span style="font-size:22px">🧠</span>
+            <h3>AI Thought Summary</h3>
+            <span class="thought-badge">TRANSPARENT REASONING</span>
+        </div>
+        <div class="thought-content" id="aiThoughtContent"></div>
+        <div class="thought-steps" id="aiThoughtSteps"></div>
+    </div>
 
     <!-- Market Summary -->
     <div class="market-summary-box" id="aiSummaryBox" style="display:none">
@@ -869,7 +1276,10 @@ a:hover { text-decoration: underline; }
         <p id="aiSummaryText"></p>
     </div>
 
-    <!-- Scored Tokens -->
+    <!-- Enhanced Scored Tokens (for enhanced mode) -->
+    <div id="aiEnhancedCards" style="display:none"></div>
+
+    <!-- Scored Tokens (quick mode) -->
     <div class="cards-grid" id="aiCards"></div>
 </div>
 
@@ -913,6 +1323,7 @@ a:hover { text-decoration: underline; }
         <div>
             <div class="trader-title">🤖 Auto Trader <span>Live Trading</span></div>
             <div style="color:var(--text-secondary);font-size:13px;margin-top:4px">AI-powered autonomous trading using your real wallet balance</div>
+            <div id="blockchainStatusBadge" style="margin-top:4px"></div>
         </div>
         <div style="display:flex;align-items:center;gap:16px">
             <div id="traderStatusBadge" class="trader-status inactive">● Inactive</div>
@@ -1055,9 +1466,9 @@ a:hover { text-decoration: underline; }
         </div>
         <div class="form-group">
             <label>Password</label>
-            <input class="form-input" id="authPassword" type="password" placeholder="Min 6 characters">
+            <input class="form-input" id="authPassword" type="password" placeholder="Min 6 characters" onkeydown="if(event.key==='Enter')submitAuth()">
         </div>
-        <button class="btn btn-primary" style="width:100%;margin-top:8px" id="authSubmitBtn" onclick="submitAuth()">Login</button>
+        <button class="btn btn-primary" style="width:100%;margin-top:8px;transition:opacity 0.2s" id="authSubmitBtn" onclick="submitAuth()">Login</button>
 
         <p id="forgotPassLink" style="text-align:right;margin-top:8px;font-size:13px;">
             <a href="#" style="color:#7c5cff" onclick="showForgotPassword(event)">Forgot password?</a>
@@ -1285,12 +1696,28 @@ const API = '';
 async function api(path, opts = {}) {
     const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
     if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
-    const resp = await fetch(API + path, { ...opts, headers });
-    if (!resp.ok) {
-        const err = await resp.json().catch(() => ({}));
-        throw new Error(err.detail || resp.statusText);
+
+    // Retry once on 500 (handles Vercel cold-start / init race)
+    for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+            const resp = await fetch(API + path, { ...opts, headers });
+            if (resp.status === 500 && attempt === 0) {
+                await new Promise(r => setTimeout(r, 1500));
+                continue;  // retry once
+            }
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({}));
+                throw new Error(err.detail || resp.statusText || 'Server error');
+            }
+            return resp.json();
+        } catch (e) {
+            if (attempt === 0 && (e.message === 'Failed to fetch' || e.message === 'Load failed')) {
+                await new Promise(r => setTimeout(r, 2000));
+                continue;  // retry once on network error (cold start)
+            }
+            throw e;
+        }
     }
-    return resp.json();
 }
 
 function fmt(n) {
@@ -1354,6 +1781,11 @@ function showAuthModal(mode) {
     document.getElementById('authToggleLink').textContent = mode === 'login' ? 'Register' : 'Login';
     document.getElementById('authError').style.display = 'none';
     document.getElementById('authModal').classList.add('active');
+    // Focus first visible input
+    setTimeout(() => {
+        if (mode === 'register') document.getElementById('regUsername').focus();
+        else document.getElementById('authEmail').focus();
+    }, 100);
 }
 
 function toggleAuthMode(e) {
@@ -1362,9 +1794,25 @@ function toggleAuthMode(e) {
 }
 
 async function submitAuth() {
-    const email = document.getElementById('authEmail').value;
+    const email = document.getElementById('authEmail').value.trim();
     const password = document.getElementById('authPassword').value;
     const errEl = document.getElementById('authError');
+    const btn = document.getElementById('authSubmitBtn');
+
+    // Validation
+    if (!email) { errEl.textContent = 'Please enter your email'; errEl.style.display = 'block'; return; }
+    if (!password || password.length < 6) { errEl.textContent = 'Password must be at least 6 characters'; errEl.style.display = 'block'; return; }
+    if (authMode === 'register') {
+        const username = document.getElementById('regUsername').value.trim();
+        if (!username) { errEl.textContent = 'Please enter a username'; errEl.style.display = 'block'; return; }
+    }
+
+    // Show loading state
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = authMode === 'login' ? 'Logging in...' : 'Creating account...';
+    btn.style.opacity = '0.7';
+    errEl.style.display = 'none';
 
     try {
         let data;
@@ -1374,7 +1822,7 @@ async function submitAuth() {
                 body: JSON.stringify({ email, password }),
             });
         } else {
-            const username = document.getElementById('regUsername').value;
+            const username = document.getElementById('regUsername').value.trim();
             data = await api('/api/auth/register', {
                 method: 'POST',
                 body: JSON.stringify({ email, password, username }),
@@ -1388,8 +1836,12 @@ async function submitAuth() {
         closeModal('authModal');
     } catch (e) {
         errEl.style.color = '#ff4d4d';
-        errEl.textContent = e.message;
+        errEl.textContent = e.message || 'Something went wrong. Please try again.';
         errEl.style.display = 'block';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+        btn.style.opacity = '1';
     }
 }
 
@@ -1672,13 +2124,14 @@ async function submitDeposit() {
             method: 'POST',
             body: JSON.stringify({ amount, bank_id }),
         });
-        successEl.innerHTML = `✅ $${formatUSD(amount)} deposited successfully! New balance: <strong>$${formatUSD(res.new_balance)}</strong>`;
+        const hashInfo = res.tx_hash ? `<br><span style="font-family:monospace;font-size:11px;color:var(--primary);cursor:pointer" title="${res.tx_hash}" onclick="copyHash('${res.tx_hash}')">🔗 TX: ${res.tx_hash.slice(0,10)}…${res.tx_hash.slice(-8)} 📋</span>` : '';
+        successEl.innerHTML = `✅ $${formatUSD(amount)} deposited successfully! New balance: <strong>$${formatUSD(res.new_balance)}</strong>${hashInfo}`;
         successEl.style.display = 'block';
         document.getElementById('depositFields').style.display = 'none';
         // Update local state
         if (currentUser) currentUser.wallet_balance = res.new_balance;
         document.getElementById('walletBalanceDisplay').textContent = formatUSD(res.new_balance);
-        setTimeout(() => { closeModal('depositModal'); document.getElementById('depositFields').style.display = 'block'; }, 2500);
+        setTimeout(() => { closeModal('depositModal'); document.getElementById('depositFields').style.display = 'block'; }, 4000);
     } catch (e) {
         errEl.textContent = e.message; errEl.style.display = 'block';
     }
@@ -1698,12 +2151,13 @@ async function submitWithdraw() {
             method: 'POST',
             body: JSON.stringify({ amount, bank_id }),
         });
-        successEl.innerHTML = `✅ $${formatUSD(amount)} withdrawal initiated. New balance: <strong>$${formatUSD(res.new_balance)}</strong>`;
+        const wdHashInfo = res.tx_hash ? `<br><span style="font-family:monospace;font-size:11px;color:var(--primary);cursor:pointer" title="${res.tx_hash}" onclick="copyHash('${res.tx_hash}')">🔗 TX: ${res.tx_hash.slice(0,10)}…${res.tx_hash.slice(-8)} 📋</span>` : '';
+        successEl.innerHTML = `✅ $${formatUSD(amount)} withdrawal initiated. New balance: <strong>$${formatUSD(res.new_balance)}</strong>${wdHashInfo}`;
         successEl.style.display = 'block';
         document.getElementById('withdrawFields').style.display = 'none';
         if (currentUser) currentUser.wallet_balance = res.new_balance;
         document.getElementById('walletBalanceDisplay').textContent = formatUSD(res.new_balance);
-        setTimeout(() => { closeModal('withdrawModal'); document.getElementById('withdrawFields').style.display = 'block'; }, 2500);
+        setTimeout(() => { closeModal('withdrawModal'); document.getElementById('withdrawFields').style.display = 'block'; }, 4000);
     } catch (e) {
         errEl.textContent = e.message; errEl.style.display = 'block';
     }
@@ -1719,20 +2173,27 @@ async function showTransactionsModal() {
             list.innerHTML = '<div class="empty-state"><p>No transactions yet</p></div>';
             return;
         }
-        list.innerHTML = txns.map(t => `
+        list.innerHTML = txns.map(t => {
+            const hash = t.tx_hash || '';
+            const shortHash = hash ? hash.slice(0,8) + '…' + hash.slice(-6) : '';
+            const typeLabel = t.type === 'deposit' ? '⬆ Deposit' : t.type === 'signup_bonus' ? '🎁 Bonus' : '⬇ Withdraw';
+            const typeCls = t.type === 'deposit' || t.type === 'signup_bonus' ? 'txn-deposit' : 'txn-withdraw';
+            return `
             <div class="txn-item">
                 <div>
-                    <span class="txn-type ${t.type === 'deposit' ? 'txn-deposit' : 'txn-withdraw'}">
-                        ${t.type === 'deposit' ? '⬆ Deposit' : '⬇ Withdraw'}
-                    </span>
+                    <span class="txn-type ${typeCls}">${typeLabel}</span>
                     <div style="font-size:12px;color:var(--text-muted);margin-top:4px">${t.description}</div>
                     <div style="font-size:11px;color:var(--text-muted)">${new Date(t.created_at).toLocaleString()}</div>
+                    ${hash ? `<div style="font-size:11px;font-family:monospace;margin-top:3px">
+                        🔗 <span title="${hash}" style="cursor:pointer;color:var(--primary)" onclick="verifyHash('${hash}')">${shortHash}</span>
+                        <span data-hash="${hash}" style="cursor:pointer;margin-left:4px" onclick="copyHash('${hash}')">📋</span>
+                    </div>` : ''}
                 </div>
-                <div class="txn-amount" style="color:${t.type === 'deposit' ? '#00d4aa' : '#ff6b6b'}">
-                    ${t.type === 'deposit' ? '+' : '-'}$${formatUSD(t.amount)}
+                <div class="txn-amount" style="color:${t.type === 'deposit' || t.type === 'signup_bonus' ? '#00d4aa' : '#ff6b6b'}">
+                    ${t.type === 'withdraw' ? '-' : '+'}$${formatUSD(t.amount)}
                 </div>
-            </div>
-        `).join('');
+            </div>`;
+        }).join('');
     } catch (e) {
         list.innerHTML = `<div class="empty-state"><p>Error loading transactions</p></div>`;
     }
@@ -2212,6 +2673,7 @@ function showToast(message, type = 'info') {
 
 async function loadTraderDashboard() {
     if (!currentUser) { showAuthModal('login'); return; }
+    loadBlockchainStatus();
     try {
         const [perf, positions] = await Promise.all([
             api('/api/trader/performance'),
@@ -2263,6 +2725,8 @@ function renderTraderPositions(positions) {
     el.innerHTML = positions.map(p => {
         const pnlCls = p.pnl >= 0 ? 'profit' : 'loss';
         const pnlSign = p.pnl >= 0 ? '+' : '';
+        const posHash = p.tx_hash || '';
+        const posShortHash = posHash ? posHash.slice(0,8) + '…' + posHash.slice(-6) : '';
         return `
         <div class="position-card">
             <div class="position-header">
@@ -2280,6 +2744,10 @@ function renderTraderPositions(positions) {
                 <div><span>Stop Loss</span><strong>$${p.stop_loss.toFixed(2)}</strong></div>
                 <div><span>Take Profit</span><strong>$${p.take_profit.toFixed(2)}</strong></div>
             </div>
+            ${posHash ? `<div style="margin-top:6px;font-family:monospace;font-size:11px;color:var(--text-muted)">
+                🔗 <span title="${posHash}" style="cursor:pointer;color:var(--primary)" onclick="verifyHash('${posHash}')">${posShortHash}</span>
+                <span data-hash="${posHash}" style="cursor:pointer;margin-left:4px" onclick="copyHash('${posHash}')">📋</span>
+            </div>` : ''}
             <div style="margin-top:8px;padding:8px;background:var(--bg-primary);border-radius:6px;font-size:12px;color:var(--text-secondary);line-height:1.5">
                 <strong style="color:var(--accent)">🤖 AI Analysis:</strong> ${p.ai_reasoning}
             </div>
@@ -2399,7 +2867,8 @@ async function sellPosition(posId) {
     if (!confirm('Sell this position?')) return;
     try {
         const result = await api(`/api/trader/sell/${posId}`, { method: 'POST' });
-        alert(`Sold! P&L: $${result.pnl.toFixed(2)} (${result.pnl_pct >= 0 ? '+' : ''}${result.pnl_pct.toFixed(1)}%)`);
+        const hashLine = result.tx_hash ? `\n\n🔗 TX Hash:\n${result.tx_hash}` : '';
+        alert(`Sold! P&L: $${result.pnl.toFixed(2)} (${result.pnl_pct >= 0 ? '+' : ''}${result.pnl_pct.toFixed(1)}%)${hashLine}`);
         loadTraderDashboard();
     } catch(e) { alert(e.message); }
 }
@@ -2429,12 +2898,13 @@ async function submitManualBuy() {
     const amount = parseFloat(document.getElementById('manualBuyAmount').value);
     if (!coin_id || !amount || amount <= 0) return alert('Enter coin and amount');
     try {
-        await api('/api/trader/buy', {
+        const result = await api('/api/trader/buy', {
             method: 'POST',
             body: JSON.stringify({ coin_id, amount }),
         });
         closeDynamicModal();
-        alert(`Buy order placed for $${amount.toLocaleString()}`);
+        const hashLine = result.tx_hash ? `\n\n🔗 TX Hash:\n${result.tx_hash}` : '';
+        alert(`✅ Buy order placed for $${amount.toLocaleString()}${hashLine}`);
         loadTraderDashboard();
     } catch(e) { alert(e.message); }
 }
@@ -2534,14 +3004,60 @@ async function resetTrading() {
     } catch(e) { alert(e.message); }
 }
 
+function copyHash(hash) {
+    navigator.clipboard.writeText(hash).then(() => {
+        const btn = document.querySelector(`[data-hash="${hash}"]`);
+        if (btn) { btn.textContent = '✓'; setTimeout(() => btn.textContent = '📋', 1200); }
+    });
+}
+
+async function verifyHash(hash) {
+    try {
+        const res = await api(`/api/verify-tx/${hash}`);
+        let msg = '';
+        if (res.found && res.verified) {
+            msg = `✅ VERIFIED (Local)\n\nSource: ${res.source}\nHash: ${hash}\n\nThis transaction is authentic and has not been tampered with.`;
+        } else if (res.found) {
+            msg = `⚠️ INTEGRITY WARNING\n\nHash: ${hash}\nThe hash does not match the transaction data.`;
+        } else {
+            msg = `❌ NOT FOUND\n\nHash: ${hash}\nNo transaction found with this hash.`;
+        }
+        // Show on-chain status
+        if (res.on_chain && res.on_chain.exists) {
+            msg += `\n\n⛓ ON-CHAIN VERIFIED (${res.on_chain.network})\nRecorder: ${res.on_chain.recorder}\nType: ${res.on_chain.tx_type}\nSymbol: ${res.on_chain.symbol}\nAmount: $${res.on_chain.amount_usd.toFixed(2)}`;
+            if (res.on_chain.explorer_url) msg += `\nExplorer: ${res.on_chain.explorer_url}`;
+        } else if (res.on_chain && !res.on_chain.exists) {
+            msg += `\n\n⏳ Not yet recorded on-chain (${res.on_chain.network})`;
+        } else {
+            msg += `\n\n🔗 Blockchain: Not configured (local hash only)`;
+        }
+        alert(msg);
+    } catch(e) { alert('Error verifying: ' + e.message); }
+}
+
+async function loadBlockchainStatus() {
+    try {
+        const status = await api('/api/blockchain/status');
+        const el = document.getElementById('blockchainStatusBadge');
+        if (!el) return;
+        if (status.enabled) {
+            el.innerHTML = `<span style="color:var(--green);font-size:12px">⛓ ${status.network} · ${status.on_chain_tx_count || 0} on-chain</span>`;
+        } else {
+            el.innerHTML = `<span style="color:var(--text-muted);font-size:12px">⛓ Local hashes only</span>`;
+        }
+    } catch(e) {}
+}
+
 async function loadTraderHistory() {
     try {
         const trades = await api('/api/trader/history?limit=25');
         const el = document.getElementById('traderHistoryArea');
         if (!trades.length) { el.innerHTML = '<div class="empty-state"><p>No trades yet</p></div>'; return; }
-        el.innerHTML = `<table class="feed-table"><thead><tr><th>Time</th><th>Action</th><th>Coin</th><th>Price</th><th>Amount</th><th>Score</th></tr></thead><tbody>` +
+        el.innerHTML = `<table class="feed-table"><thead><tr><th>Time</th><th>Action</th><th>Coin</th><th>Price</th><th>Amount</th><th>Score</th><th>TX Hash</th></tr></thead><tbody>` +
             trades.map(t => {
                 const actionCls = t.action === 'BUY' ? 'color:var(--green)' : 'color:var(--red)';
+                const hash = t.tx_hash || '';
+                const shortHash = hash ? hash.slice(0,8) + '…' + hash.slice(-6) : 'N/A';
                 return `<tr>
                     <td style="font-size:12px">${new Date(t.created_at).toLocaleString()}</td>
                     <td style="${actionCls};font-weight:600">${t.action}</td>
@@ -2549,6 +3065,10 @@ async function loadTraderHistory() {
                     <td>$${t.price.toFixed(2)}</td>
                     <td>$${formatUSD(t.amount)}</td>
                     <td>${t.ai_score}/100</td>
+                    <td style="font-family:monospace;font-size:11px">
+                        ${hash ? `<span title="${hash}" style="cursor:pointer;color:var(--primary)" onclick="verifyHash('${hash}')">${shortHash}</span>
+                        <span data-hash="${hash}" style="cursor:pointer;margin-left:4px" onclick="copyHash('${hash}')">📋</span>` : 'N/A'}
+                    </td>
                 </tr>`;
             }).join('') + '</tbody></table>';
     } catch(e) { console.error(e); }
@@ -2578,6 +3098,8 @@ async function loadClosedPositions() {
         el.innerHTML = closed.map(p => {
             const pnlCls = p.pnl >= 0 ? 'profit' : 'loss';
             const sign = p.pnl >= 0 ? '+' : '';
+            const clHash = p.tx_hash || '';
+            const clShortHash = clHash ? clHash.slice(0,8) + '…' + clHash.slice(-6) : '';
             return `
             <div class="position-card">
                 <div class="position-header">
@@ -2590,6 +3112,10 @@ async function loadClosedPositions() {
                     <div><span>Invested</span><strong>$${formatUSD(p.invested_amount)}</strong></div>
                 </div>
                 <div style="margin-top:6px;font-size:11px;color:var(--text-muted)">Closed: ${new Date(p.closed_at).toLocaleString()}</div>
+                ${clHash ? `<div style="font-family:monospace;font-size:11px;margin-top:3px;color:var(--text-muted)">
+                    🔗 <span title="${clHash}" style="cursor:pointer;color:var(--primary)" onclick="verifyHash('${clHash}')">${clShortHash}</span>
+                    <span data-hash="${clHash}" style="cursor:pointer;margin-left:4px" onclick="copyHash('${clHash}')">📋</span>
+                </div>` : ''}
             </div>`;
         }).join('');
     } catch(e) { console.error(e); }

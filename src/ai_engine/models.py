@@ -163,6 +163,17 @@ class TechnicalScorePayload(BaseModel):
     pattern: str = "None"
     risk_level: RiskLevel = RiskLevel.MEDIUM
 
+    # Advanced market analysis fields
+    market_regime: str = "unknown"  # trending / ranging / unstable
+    volatility_state: str = "normal"  # expanding / contracting / normal
+    breakout_quality: str = "none"  # confirmed / weak / none
+    abnormal_volume: bool = False  # possible whale activity
+    volume_anomaly_score: float = 0.0  # 0-10 how anomalous the volume is
+    short_term_trend: str = "sideways"  # uptrend / downtrend / sideways
+    long_term_trend: str = "sideways"  # uptrend / downtrend / sideways
+    trend_consistency: float = 0.0  # 0-1, how consistent the trend is
+    liquidity_pressure: str = "neutral"  # buying / selling / neutral
+
 
 class SocialScorePayload(BaseModel):
     """Output of the social sentiment module."""
@@ -300,13 +311,50 @@ class TokenRecommendation(BaseModel):
     risks_and_concerns: List[str] = Field(default_factory=list)
     conflicts: List[ConflictFlag] = Field(default_factory=list)
 
+    # AI Thought Summary — explains WHY the AI made this decision
+    ai_thought_summary: str = ""
+
     # Per-module summaries
     news_analysis: str = ""
     onchain_analysis: str = ""
     technical_analysis: str = ""
     social_analysis: str = ""
 
+    # Market regime classification
+    market_regime: str = ""  # trending / ranging / unstable
+
     generated_at: Optional[datetime] = None
+
+
+class PredictionRecord(BaseModel):
+    """Tracks a prediction for the learning/feedback loop."""
+    prediction_id: str = ""
+    token_ticker: str
+    verdict: RecommendationVerdict = RecommendationVerdict.WATCH
+    confidence: float = 0
+    predicted_direction: str = ""  # up / down / flat
+    predicted_target: float = 0  # predicted price target
+    price_at_prediction: float = 0
+    timestamp: Optional[datetime] = None
+    # Outcome fields (filled later)
+    actual_price_24h: float = 0
+    actual_price_7d: float = 0
+    outcome_correct: Optional[bool] = None
+    outcome_pnl_pct: float = 0
+    evaluated_at: Optional[datetime] = None
+
+
+class StrategyPerformance(BaseModel):
+    """Aggregate performance metrics for the learning loop."""
+    total_predictions: int = 0
+    correct_predictions: int = 0
+    accuracy_pct: float = 0
+    avg_confidence_correct: float = 0
+    avg_confidence_incorrect: float = 0
+    market_regime_accuracy: Dict[str, float] = Field(default_factory=dict)
+    best_performing_mode: str = ""
+    worst_performing_mode: str = ""
+    strategy_adjustments: List[str] = Field(default_factory=list)
 
 
 class RecommendationSet(BaseModel):
@@ -319,6 +367,13 @@ class RecommendationSet(BaseModel):
     tokens_filtered_out: int = 0
     enabled_modes: List[DataMode] = Field(default_factory=list)
     generated_at: Optional[datetime] = None
+
+    # AI Thought Summary for overall analysis
+    overall_ai_thought: str = ""
+
+    # Learning loop metadata
+    prediction_records: List[PredictionRecord] = Field(default_factory=list)
+    strategy_performance: Optional[StrategyPerformance] = None
 
     # Raw GPT output (for debugging / logging)
     raw_gpt_response: str = ""

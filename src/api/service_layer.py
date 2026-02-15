@@ -38,6 +38,7 @@ from src.ai_engine.models import (
 from src.ai_engine.orchestrator import Orchestrator
 from src.ai_engine.gemini_client import GeminiClient
 from src.ai_engine.gpt_client import GPTClient
+from src.data_collectors.data_pipeline import DataPipeline
 from src.ui.personalization_engine import PersonalizationEngine
 from src.ui.user_config import UserPreferences, default_preferences
 from src.ui.api_schemas import (
@@ -261,8 +262,16 @@ class PumpIQService:
         if self.gpt_client is None:
             logger.warning("No GPT client – running in template-only mode")
 
+        # Build a DataPipeline so the orchestrator has a real data_fetcher
+        try:
+            data_pipeline = DataPipeline()
+        except Exception as exc:
+            logger.warning("DataPipeline init failed, continuing without: %s", exc)
+            data_pipeline = None
+
         orch = Orchestrator(
             gpt_client=self.gpt_client,
+            data_fetcher=data_pipeline,
             market_condition=MarketCondition.SIDEWAYS,
         )
 
@@ -291,6 +300,7 @@ class PumpIQService:
             recommendations=[
                 self._rec_to_response(r) for r in rec_set.recommendations
             ],
+            overall_ai_thought=getattr(rec_set, "overall_ai_thought", ""),
             market_context=MarketContext(
                 condition=rec_set.market_condition.value,
             ),
@@ -357,6 +367,8 @@ class PumpIQService:
             ),
             verdict=rec.verdict.value if hasattr(rec.verdict, "value") else str(rec.verdict),
             thesis=rec.core_thesis,
+            ai_thought_summary=getattr(rec, "ai_thought_summary", ""),
+            market_regime=getattr(rec, "market_regime", "unknown"),
             key_data_points=rec.key_data_points,
             risks=rec.risks_and_concerns,
             conflicts=[
