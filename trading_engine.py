@@ -345,14 +345,23 @@ def _log_event(conn, user_id: int, event: str, details: str):
 def execute_buy(user_id, coin_id, coin_name, symbol, price, amount, ai_score, ai_reasoning, stop_loss_pct=8.0, take_profit_pct=20.0):
     conn = _get_db()
     try:
+        # BEGIN IMMEDIATE for atomic balance check + debit
+        conn.execute("BEGIN IMMEDIATE")
+
         bal = conn.execute("SELECT balance FROM wallet_balance WHERE user_id = ?", (user_id,)).fetchone()
         balance = bal["balance"] if bal else 0.0
         if balance <= 0:
+            conn.execute("ROLLBACK")
             return {"success": False, "error": "No funds in wallet. Add money from your bank account first."}
         if amount > balance:
+            conn.execute("ROLLBACK")
             return {"success": False, "error": f"Insufficient balance. You have {balance:,.2f} but tried to invest {amount:,.2f}"}
         if amount <= 0:
+            conn.execute("ROLLBACK")
             return {"success": False, "error": "Invalid amount"}
+        if price <= 0:
+            conn.execute("ROLLBACK")
+            return {"success": False, "error": "Invalid price"}
 
         quantity = amount / price
         stop_loss = price * (1 - stop_loss_pct / 100)
@@ -397,8 +406,12 @@ def execute_buy(user_id, coin_id, coin_name, symbol, price, amount, ai_score, ai
 def execute_sell(user_id, position_id, current_price, reason="manual"):
     conn = _get_db()
     try:
+        # BEGIN IMMEDIATE for atomic position close + wallet credit
+        conn.execute("BEGIN IMMEDIATE")
+
         pos = conn.execute("SELECT * FROM trade_positions WHERE id = ? AND user_id = ? AND status = 'open'", (position_id, user_id)).fetchone()
         if not pos:
+            conn.execute("ROLLBACK")
             return {"success": False, "error": "Position not found or already closed"}
 
         current_value = pos["quantity"] * current_price
@@ -454,31 +467,67 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
         trending_ids = {t.coin_id for t in trending} if trending else set()
 
         for coin in top_coins:
-            score = 0
+            score = 10  # Base score for being in top 30
             reasons = []
             change_24h = coin.price_change_pct_24h
-            if 3 < change_24h < 15:
+
+            # Momentum scoring (improved with more granularity)
+            if 5 < change_24h < 15:
                 score += 25; reasons.append(f"Strong 24h momentum: {change_24h:+.1f}%")
-            elif 1 < change_24h <= 3:
-                score += 15; reasons.append(f"Positive momentum: {change_24h:+.1f}%")
-            elif change_24h < -10:
+            elif 15 <= change_24h < 30:
+                score += 18; reasons.append(f"Very strong momentum (watch for overbought): {change_24h:+.1f}%")
+            elif change_24h >= 30:
+                score += 5; reasons.append(f"Extreme pump — high reversal risk: {change_24h:+.1f}%")
+            elif 1 < change_24h <= 5:
+                score += 18; reasons.append(f"Positive momentum: {change_24h:+.1f}%")
+            elif 0 < change_24h <= 1:
+                score += 8; reasons.append(f"Slight uptick: {change_24h:+.1f}%")
+            elif -5 < change_24h <= 0:
+                score += 5; reasons.append(f"Stable/dip buy opportunity: {change_24h:+.1f}%")
+            elif -10 < change_24h <= -5:
+                score += 2; reasons.append(f"Moderate decline: {change_24h:+.1f}%")
+            elif change_24h <= -10:
                 score -= 10; reasons.append(f"Heavy decline: {change_24h:+.1f}%")
+
+            # Volume/market-cap ratio (improved thresholds)
             if coin.market_cap > 0:
                 vol_ratio = coin.total_volume_24h / coin.market_cap
-                if vol_ratio > 0.3:
+                if vol_ratio > 0.5:
+                    score += 15; reasons.append(f"Extremely high volume/mcap: {vol_ratio:.2f} (possible manipulation)")
+                elif vol_ratio > 0.3:
                     score += 20; reasons.append(f"High volume/mcap ratio: {vol_ratio:.2f}")
-                elif vol_ratio > 0.1:
-                    score += 10; reasons.append(f"Healthy volume: {vol_ratio:.2f}")
+                elif vol_ratio > 0.15:
+                    score += 14; reasons.append(f"Strong volume: {vol_ratio:.2f}")
+                elif vol_ratio > 0.05:
+                    score += 8; reasons.append(f"Healthy volume: {vol_ratio:.2f}")
+                elif vol_ratio < 0.01:
+                    score -= 5; reasons.append(f"Very low volume: {vol_ratio:.3f}")
+
+            # Trending bonus
             if coin.coin_id in trending_ids:
                 score += 15; reasons.append("Trending on CoinGecko")
-            if coin.market_cap > 10_000_000_000:
-                score += 10; reasons.append("Large cap - lower risk")
+
+            # Market cap tiers (more nuanced)
+            if coin.market_cap > 50_000_000_000:
+                score += 10; reasons.append("Mega cap - very stable")
+            elif coin.market_cap > 10_000_000_000:
+                score += 12; reasons.append("Large cap - lower risk")
             elif coin.market_cap > 1_000_000_000:
-                score += 5; reasons.append("Mid cap")
+                score += 8; reasons.append("Mid cap")
+            elif coin.market_cap > 100_000_000:
+                score += 5; reasons.append("Small cap - higher risk")
+            elif coin.market_cap < 10_000_000:
+                score -= 5; reasons.append("Micro cap - very high risk")
+
+            # ATH distance (improved)
             if hasattr(coin, 'ath') and coin.ath > 0:
                 ath_ratio = coin.current_price / coin.ath
                 if 0.3 < ath_ratio < 0.7:
                     score += 10; reasons.append(f"Room to grow - {(1-ath_ratio)*100:.0f}% below ATH")
+                elif ath_ratio < 0.3:
+                    score += 5; reasons.append(f"Deep discount - {(1-ath_ratio)*100:.0f}% below ATH")
+                elif ath_ratio > 0.95:
+                    score -= 3; reasons.append(f"Near ATH - limited upside: {(1-ath_ratio)*100:.1f}% below")
             score = max(0, min(100, score))
             if score >= 25:
                 opportunities.append({
@@ -551,6 +600,36 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
             logger.warning("AI analysis failed: %s", e)
 
     opportunities.sort(key=lambda x: x["score"], reverse=True)
+
+    # Record top opportunities as predictions in the learning loop
+    ll = _get_learning_loop()
+    if ll:
+        for opp in opportunities[:15]:
+            try:
+                verdict = (
+                    "Strong Buy" if opp["score"] >= 70
+                    else "Moderate Buy" if opp["score"] >= 50
+                    else "Cautious Buy" if opp["score"] >= 35
+                    else "Hold"
+                )
+                ll.record_prediction(
+                    token_ticker=opp["symbol"],
+                    token_name=opp["name"],
+                    verdict=verdict,
+                    confidence=opp["score"] / 10.0,
+                    composite_score=opp["score"],
+                    price_at_prediction=opp["price"],
+                    target_price=opp["price"] * 1.10,
+                    stop_loss_price=opp["price"] * 0.95,
+                    market_condition="sideways",
+                    market_regime=opp.get("market_regime", "unknown"),
+                    risk_level="MEDIUM",
+                    ai_thought_summary=opp.get("reasoning", "")[:500],
+                )
+            except Exception:
+                pass
+        logger.info("📊 Recorded %d research predictions to learning loop", min(len(opportunities), 15))
+
     return opportunities
 
 
@@ -569,15 +648,15 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
         max_daily = user_prefs.max_daily_trades
         risk_profile = user_prefs.risk_profile
     except Exception:
-        confidence_threshold = 7.0
+        confidence_threshold = 4.0
         max_daily = 10
         risk_profile = "balanced"
 
     # Risk profile modifiers
     risk_modifiers = {
-        "conservative": {"max_trade_pct_mult": 0.5, "min_score": 70, "stop_loss_add": 2},
-        "balanced":     {"max_trade_pct_mult": 1.0, "min_score": 50, "stop_loss_add": 0},
-        "aggressive":   {"max_trade_pct_mult": 1.5, "min_score": 30, "stop_loss_add": -2},
+        "conservative": {"max_trade_pct_mult": 0.5, "min_score": 45, "stop_loss_add": 2},
+        "balanced":     {"max_trade_pct_mult": 1.0, "min_score": 30, "stop_loss_add": 0},
+        "aggressive":   {"max_trade_pct_mult": 1.5, "min_score": 20, "stop_loss_add": -2},
     }
     mods = risk_modifiers.get(risk_profile, risk_modifiers["balanced"])
 
@@ -653,17 +732,22 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
     finally:
         conn_check.close()
 
-    if open_count < settings["max_open_positions"] and balance > 100 and trades_today < max_daily:
+    # Calculate effective min score up front for logging and filtering
+    min_score = mods["min_score"]
+    confidence_min_score = int(confidence_threshold * 10)  # e.g. 4.0 → 40
+    effective_min_score = max(min_score, confidence_min_score)
+
+    logger.info("Auto-trade user %d: balance=$%.2f, open=%d/%d, trades_today=%d/%d, min_score=%d",
+                user_id, balance, open_count, settings["max_open_positions"], trades_today, max_daily, effective_min_score)
+    if open_count < settings["max_open_positions"] and balance > 10 and trades_today < max_daily:
         opportunities = await research_opportunities(cg_collector, dex_collector, gemini_client)
         held_coins = {p["coin_id"] for p in get_open_positions(user_id)}
         opportunities = [o for o in opportunities if o["coin_id"] not in held_coins]
         opportunities = [o for o in opportunities if o["market_cap"] >= settings["min_market_cap"]]
 
-        # Apply confidence threshold — convert score (0-100) to confidence (0-10)
-        min_score = mods["min_score"]
-        confidence_min_score = int(confidence_threshold * 10)  # e.g. 7.0 → 70
-        effective_min_score = max(min_score, confidence_min_score)
+        # Apply confidence threshold filter
         opportunities = [o for o in opportunities if o["score"] >= effective_min_score]
+        logger.info("Auto-trade user %d: %d opportunities after filtering (min_score=%d)", user_id, len(opportunities), effective_min_score)
         results["confidence_threshold"] = confidence_threshold
         results["effective_min_score"] = effective_min_score
         results["risk_profile"] = risk_profile
@@ -676,7 +760,7 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
             effective_max_pct = settings["max_trade_pct"] * mods["max_trade_pct_mult"]
             max_trade = balance * (effective_max_pct / 100)
             trade_amount = min(max_trade, balance * 0.15)
-            if trade_amount < 50:
+            if trade_amount < 10:
                 break
 
             effective_sl = max(1.0, settings["stop_loss_pct"] + mods["stop_loss_add"])
@@ -715,17 +799,25 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
                 ll = _get_learning_loop()
                 if ll:
                     try:
+                        verdict = "Strong Buy" if opp["score"] >= 70 else "Moderate Buy" if opp["score"] >= 50 else "Cautious Buy"
                         ll.record_prediction(
-                            token_id=opp["coin_id"],
+                            token_ticker=opp["symbol"],
                             token_name=opp["name"],
-                            predicted_direction="bullish",
+                            verdict=verdict,
                             confidence=opp["score"] / 10.0,
+                            composite_score=opp["score"],
                             price_at_prediction=opp["price"],
-                            reasoning=detailed_reasoning[:500],
-                            market_regime="unknown",
+                            target_price=opp["price"] * 1.10,
+                            stop_loss_price=opp["price"] * 0.95,
+                            market_condition="sideways",
+                            market_regime=opp.get("market_regime", "unknown"),
+                            risk_level=risk_profile.upper() if risk_profile else "MEDIUM",
+                            ai_thought_summary=detailed_reasoning[:500] if detailed_reasoning else "",
+                            user_id=user_id,
                         )
-                    except Exception:
-                        pass
+                        logger.info("✅ Recorded prediction for %s (score=%s)", opp["symbol"], opp["score"])
+                    except Exception as e:
+                        logger.warning("Failed to record prediction for %s: %s", opp["symbol"], e)
 
     return results
 

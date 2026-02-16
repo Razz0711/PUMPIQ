@@ -18,10 +18,24 @@ from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
 
 import smtp_service
+import sms_service
 from blockchain_service import blockchain
 
+import logging
+logger = logging.getLogger(__name__)
+
 # ── Config ──────────────────────────────────────────────────────
-SECRET_KEY = os.getenv("SECRET_KEY", "pumpiq_dev_secret_key_change_in_production")
+_env_secret = os.getenv("SECRET_KEY", "").strip()
+if _env_secret:
+    SECRET_KEY = _env_secret
+else:
+    # Generate a random secret key at startup — secure by default
+    SECRET_KEY = secrets.token_hex(32)
+    logger.warning(
+        "SECRET_KEY not set in environment — generated a random key. "
+        "JWTs will be invalidated on server restart. "
+        "Set SECRET_KEY in .env for persistent sessions."
+    )
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
 
@@ -38,6 +52,17 @@ class UserRegister(BaseModel):
     email: EmailStr
     password: str
     username: str
+
+    def validate_password_strength(self) -> list:
+        """Return a list of password weakness messages (empty = strong)."""
+        issues = []
+        if len(self.password) < 8:
+            issues.append("Password must be at least 8 characters")
+        if not any(c.isupper() for c in self.password):
+            issues.append("Password should contain at least one uppercase letter")
+        if not any(c.isdigit() for c in self.password):
+            issues.append("Password should contain at least one digit")
+        return issues
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -64,10 +89,26 @@ class BankAccountAdd(BaseModel):
     account_number: str
     ifsc_code: str
     bank_name: str
+    phone_number: str = ""
+    otp_code: str = ""  # required for final add
 
 class DepositRequest(BaseModel):
     amount: float
     bank_id: int
+    otp_code: str = ""
+
+class PhoneOTPRequest(BaseModel):
+    phone_number: str
+    action: str = "bank_verify"  # bank_verify
+
+class OTPRequest(BaseModel):
+    bank_id: int
+    action: str = "deposit"  # deposit or withdraw
+
+class OTPVerifyRequest(BaseModel):
+    bank_id: int
+    otp_code: str
+    action: str = "deposit"
 
 class UserPreferencesUpdate(BaseModel):
     risk_profile: Optional[str] = None        # conservative, balanced, aggressive
@@ -83,7 +124,7 @@ class UserPreferencesUpdate(BaseModel):
 class UserPreferencesResponse(BaseModel):
     risk_profile: str = "balanced"
     ai_sensitivity: float = 0.5
-    auto_trade_threshold: float = 7.0
+    auto_trade_threshold: float = 4.0
     max_daily_trades: int = 10
     preferred_chains: List[str] = ["ethereum", "solana"]
     notification_email: bool = True
@@ -188,9 +229,23 @@ def init_db():
             account_last4 TEXT NOT NULL,
             ifsc_code TEXT NOT NULL,
             bank_name TEXT NOT NULL,
+            phone_number TEXT NOT NULL DEFAULT '',
+            phone_last4 TEXT NOT NULL DEFAULT '',
             verified INTEGER NOT NULL DEFAULT 0,
             status TEXT NOT NULL DEFAULT 'pending',
             added_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS otp_codes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            bank_id INTEGER NOT NULL DEFAULT 0,
+            otp_code TEXT NOT NULL,
+            action TEXT NOT NULL DEFAULT 'deposit',
+            expires_at TEXT NOT NULL,
+            used INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
 
@@ -218,7 +273,7 @@ def init_db():
             user_id INTEGER PRIMARY KEY,
             risk_profile TEXT NOT NULL DEFAULT 'balanced',
             ai_sensitivity REAL NOT NULL DEFAULT 0.5,
-            auto_trade_threshold REAL NOT NULL DEFAULT 7.0,
+            auto_trade_threshold REAL NOT NULL DEFAULT 4.0,
             max_daily_trades INTEGER NOT NULL DEFAULT 10,
             preferred_chains TEXT NOT NULL DEFAULT '["ethereum","solana"]',
             notification_email INTEGER NOT NULL DEFAULT 1,
@@ -241,6 +296,32 @@ def init_db():
         conn.commit()
     except sqlite3.OperationalError:
         pass
+    # Migration: add phone_number & phone_last4 to bank_accounts
+    for col, default in [("phone_number", "''"), ("phone_last4", "''")]:
+        try:
+            conn.execute(f"ALTER TABLE bank_accounts ADD COLUMN {col} TEXT NOT NULL DEFAULT {default}")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+    # Migration: recreate otp_codes table without FK on bank_id (allows bank_id=0 for phone verification)
+    # Check if existing table has the problematic FK constraint by trying to drop and recreate
+    try:
+        conn.execute("DROP TABLE IF EXISTS otp_codes")
+    except Exception:
+        pass
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS otp_codes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            bank_id INTEGER NOT NULL DEFAULT 0,
+            otp_code TEXT NOT NULL,
+            action TEXT NOT NULL DEFAULT 'deposit',
+            expires_at TEXT NOT NULL,
+            used INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    ''')
     conn.commit()
     conn.close()
 
@@ -349,7 +430,7 @@ def _get_user_response(conn: sqlite3.Connection, user_id: int) -> Optional[UserR
         "SELECT coin_id FROM watchlist WHERE user_id = ?", (user_id,)
     ).fetchall()
     bank_accounts = conn.execute(
-        "SELECT id, account_holder, account_last4, ifsc_code, bank_name, verified, status, added_at FROM bank_accounts WHERE user_id = ?",
+        "SELECT id, account_holder, account_last4, ifsc_code, bank_name, phone_last4, verified, status, added_at FROM bank_accounts WHERE user_id = ?",
         (user_id,),
     ).fetchall()
     bal_row = conn.execute(
@@ -419,17 +500,46 @@ def verify_bank_details(account_number: str, ifsc_code: str, account_holder: str
     }
 
 
-def add_bank_account(user_id: int, account_holder: str, account_number: str, ifsc_code: str, bank_name: str) -> Dict[str, Any]:
-    """Add a verified bank account for the user."""
-    # Step 1: validate
+def _validate_phone(phone: str) -> bool:
+    """Validate Indian phone number (10 digits, optionally with +91 prefix)."""
+    import re
+    cleaned = re.sub(r'[\s\-\(\)]+', '', phone)
+    return bool(re.match(r'^(\+91|91)?[6-9]\d{9}$', cleaned))
+
+
+def _clean_phone(phone: str) -> str:
+    """Normalize phone to +91XXXXXXXXXX format."""
+    import re
+    cleaned = re.sub(r'[\s\-\(\)]+', '', phone)
+    cleaned = re.sub(r'^(\+91|91)', '', cleaned)
+    return '+91' + cleaned
+
+
+def add_bank_account(user_id: int, account_holder: str, account_number: str, ifsc_code: str, bank_name: str, phone_number: str = "", otp_code: str = "") -> Dict[str, Any]:
+    """Add a verified bank account for the user. Requires OTP verification of the phone number."""
+    # Step 1: validate bank details
     result = verify_bank_details(account_number, ifsc_code, account_holder, bank_name)
     if not result["verified"]:
         return {"success": False, "errors": result["errors"]}
 
-    # Step 2: hash account number for security, store last 4
+    # Validate phone number
+    if not phone_number or not _validate_phone(phone_number):
+        return {"success": False, "errors": ["A valid phone number linked to this bank account is required (10-digit Indian mobile)"]}
+
+    # Step 2: Verify OTP — mandatory
+    if not otp_code:
+        return {"success": False, "errors": ["OTP verification is required to link a bank account"]}
+
+    otp_result = verify_phone_otp(user_id, otp_code, action="bank_verify", phone_number=phone_number)
+    if not otp_result["success"]:
+        return {"success": False, "errors": [otp_result["error"]]}
+
+    # Step 3: hash account number for security, store last 4
     acc_hash = hashlib.sha256(account_number.encode()).hexdigest()
     last4 = account_number[-4:]
     detected_bank = result.get("bank_detected", bank_name)
+    clean_phone = _clean_phone(phone_number)
+    phone_last4 = clean_phone[-4:]
 
     conn = get_db()
     try:
@@ -442,12 +552,12 @@ def add_bank_account(user_id: int, account_holder: str, account_number: str, ifs
             return {"success": False, "errors": ["This bank account is already linked"]}
 
         conn.execute(
-            """INSERT INTO bank_accounts (user_id, account_holder, account_number_hash, account_last4, ifsc_code, bank_name, verified, status)
-               VALUES (?, ?, ?, ?, ?, ?, 1, 'verified')""",
-            (user_id, account_holder.strip(), acc_hash, last4, ifsc_code.upper(), detected_bank),
+            """INSERT INTO bank_accounts (user_id, account_holder, account_number_hash, account_last4, ifsc_code, bank_name, phone_number, phone_last4, verified, status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 'verified')""",
+            (user_id, account_holder.strip(), acc_hash, last4, ifsc_code.upper(), detected_bank, clean_phone, phone_last4),
         )
         conn.commit()
-        return {"success": True, "bank_name": detected_bank, "last4": last4}
+        return {"success": True, "bank_name": detected_bank, "last4": last4, "phone_last4": phone_last4}
     except Exception as e:
         return {"success": False, "errors": [str(e)]}
     finally:
@@ -470,12 +580,247 @@ def get_bank_accounts(user_id: int) -> List[Dict[str, Any]]:
     conn = get_db()
     try:
         rows = conn.execute(
-            "SELECT id, account_holder, account_last4, ifsc_code, bank_name, verified, status, added_at FROM bank_accounts WHERE user_id = ?",
+            "SELECT id, account_holder, account_last4, ifsc_code, bank_name, phone_last4, verified, status, added_at FROM bank_accounts WHERE user_id = ?",
             (user_id,),
         ).fetchall()
         return [dict(r) for r in rows]
     finally:
         conn.close()
+
+
+# ── OTP Management ─────────────────────────────────────────────
+
+import random
+
+def generate_phone_otp(user_id: int, phone_number: str, action: str = "bank_verify") -> Dict[str, Any]:
+    """Send OTP to a phone number for verification (e.g. before bank linking).
+       Uses Twilio Verify when configured, falls back to DB-based debug OTP."""
+    if not phone_number or not _validate_phone(phone_number):
+        return {"success": False, "error": "A valid 10-digit phone number is required"}
+
+    clean_phone = _clean_phone(phone_number)
+    phone_last4 = clean_phone[-4:]
+
+    conn = get_db()
+    try:
+        # Rate limit: max 5 OTPs per hour per user
+        recent = conn.execute(
+            "SELECT COUNT(*) as cnt FROM otp_codes WHERE user_id = ? AND created_at > datetime('now', '-1 hour')",
+            (user_id,),
+        ).fetchone()["cnt"]
+        if recent >= 5:
+            return {"success": False, "error": "Too many OTP requests. Please try again later."}
+
+        # Record the OTP request (for rate limiting + audit)
+        expires_at = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
+
+        if sms_service.is_configured():
+            # ── Twilio Verify: sends OTP automatically ──
+            sms_result = sms_service.send_otp(clean_phone)
+            if not sms_result["success"]:
+                return {"success": False, "error": sms_result.get("error", "Failed to send OTP")}
+
+            # Log for rate limiting (no actual code stored — Twilio manages it)
+            conn.execute(
+                "INSERT INTO otp_codes (user_id, bank_id, otp_code, action, expires_at) VALUES (?, ?, ?, ?, ?)",
+                (user_id, 0, "TWILIO", action, expires_at),
+            )
+            conn.commit()
+            logger.info("Twilio OTP sent for user %d, phone ****%s, action %s", user_id, phone_last4, action)
+
+            return {
+                "success": True,
+                "message": f"OTP sent to ••••••{phone_last4}",
+                "phone_last4": phone_last4,
+                "expires_in": 600,
+                "sms_sent": True,
+            }
+        else:
+            # ── Fallback: DB-based debug OTP ──
+            conn.execute(
+                "UPDATE otp_codes SET used = 1 WHERE user_id = ? AND action = ? AND used = 0",
+                (user_id, action),
+            )
+            otp_code = f"{random.randint(100000, 999999)}"
+            conn.execute(
+                "INSERT INTO otp_codes (user_id, bank_id, otp_code, action, expires_at) VALUES (?, ?, ?, ?, ?)",
+                (user_id, 0, otp_code, action, expires_at),
+            )
+            conn.commit()
+            logger.warning("Twilio not configured — debug OTP for user %d, phone ****%s", user_id, phone_last4)
+
+            return {
+                "success": True,
+                "message": f"OTP generated for ••••••{phone_last4} (debug mode — configure Twilio for real SMS)",
+                "phone_last4": phone_last4,
+                "otp_code_debug": otp_code,
+                "expires_in": 600,
+            }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+    finally:
+        conn.close()
+
+
+def verify_phone_otp(user_id: int, otp_code: str, action: str = "bank_verify", phone_number: str = "") -> Dict[str, Any]:
+    """Verify OTP for phone verification (bank linking).
+       Uses Twilio Verify when configured, falls back to DB check."""
+    if sms_service.is_configured() and phone_number:
+        # ── Twilio Verify: check via API ──
+        result = sms_service.verify_otp(phone_number, otp_code)
+        if result["success"]:
+            logger.info("Twilio OTP verified for user %d, phone ****%s", user_id, phone_number[-4:])
+        return result
+    else:
+        # ── Fallback: DB-based verification ──
+        conn = get_db()
+        try:
+            row = conn.execute(
+                """SELECT * FROM otp_codes
+                   WHERE user_id = ? AND otp_code = ? AND action = ? AND used = 0
+                   ORDER BY created_at DESC LIMIT 1""",
+                (user_id, otp_code, action),
+            ).fetchone()
+
+            if not row:
+                return {"success": False, "error": "Invalid OTP code"}
+
+            expires_at = datetime.fromisoformat(row["expires_at"].replace('Z', '+00:00'))
+            if datetime.now(timezone.utc) > expires_at:
+                conn.execute("UPDATE otp_codes SET used = 1 WHERE id = ?", (row["id"],))
+                conn.commit()
+                return {"success": False, "error": "OTP has expired. Please request a new one."}
+
+            conn.execute("UPDATE otp_codes SET used = 1 WHERE id = ?", (row["id"],))
+            conn.commit()
+            return {"success": True, "message": "OTP verified successfully"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+        finally:
+            conn.close()
+
+
+def generate_otp(user_id: int, bank_id: int, action: str = "deposit") -> Dict[str, Any]:
+    """Send OTP for deposit/withdraw via the bank account's linked phone.
+       Uses Twilio Verify when configured, falls back to DB-based debug OTP."""
+    conn = get_db()
+    try:
+        # Verify bank account belongs to user
+        bank = conn.execute(
+            "SELECT * FROM bank_accounts WHERE id = ? AND user_id = ? AND verified = 1",
+            (bank_id, user_id),
+        ).fetchone()
+        if not bank:
+            return {"success": False, "error": "Bank account not found or not verified"}
+
+        phone = bank["phone_number"]
+        phone_last4 = bank["phone_last4"]
+        if not phone:
+            return {"success": False, "error": "No phone number linked to this bank account"}
+
+        # Rate limit: max 5 OTPs per hour per user
+        recent = conn.execute(
+            "SELECT COUNT(*) as cnt FROM otp_codes WHERE user_id = ? AND created_at > datetime('now', '-1 hour')",
+            (user_id,),
+        ).fetchone()["cnt"]
+        if recent >= 5:
+            return {"success": False, "error": "Too many OTP requests. Please try again later."}
+
+        expires_at = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
+
+        if sms_service.is_configured():
+            # ── Twilio Verify ──
+            sms_result = sms_service.send_otp(phone)
+            if not sms_result["success"]:
+                return {"success": False, "error": sms_result.get("error", "Failed to send OTP")}
+
+            conn.execute(
+                "INSERT INTO otp_codes (user_id, bank_id, otp_code, action, expires_at) VALUES (?, ?, ?, ?, ?)",
+                (user_id, bank_id, "TWILIO", action, expires_at),
+            )
+            conn.commit()
+            logger.info("Twilio OTP sent for user %d, bank %d, action %s, phone ****%s", user_id, bank_id, action, phone_last4)
+
+            return {
+                "success": True,
+                "message": f"OTP sent to ••••••{phone_last4}",
+                "phone_last4": phone_last4,
+                "expires_in": 600,
+                "sms_sent": True,
+            }
+        else:
+            # ── Fallback: DB-based debug OTP ──
+            conn.execute(
+                "UPDATE otp_codes SET used = 1 WHERE user_id = ? AND bank_id = ? AND action = ? AND used = 0",
+                (user_id, bank_id, action),
+            )
+            otp_code = f"{random.randint(100000, 999999)}"
+            conn.execute(
+                "INSERT INTO otp_codes (user_id, bank_id, otp_code, action, expires_at) VALUES (?, ?, ?, ?, ?)",
+                (user_id, bank_id, otp_code, action, expires_at),
+            )
+            conn.commit()
+            logger.warning("Twilio not configured — debug OTP for user %d, bank %d", user_id, bank_id)
+
+            return {
+                "success": True,
+                "message": f"OTP generated for ••••••{phone_last4} (debug mode — configure Twilio for real SMS)",
+                "phone_last4": phone_last4,
+                "otp_code_debug": otp_code,
+                "expires_in": 600,
+            }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+    finally:
+        conn.close()
+
+
+def verify_otp(user_id: int, bank_id: int, otp_code: str, action: str = "deposit") -> Dict[str, Any]:
+    """Verify OTP for deposit/withdraw.
+       Uses Twilio Verify when configured, falls back to DB check."""
+    if sms_service.is_configured():
+        # ── Twilio Verify: look up the phone from bank account and check ──
+        conn = get_db()
+        try:
+            bank = conn.execute(
+                "SELECT phone_number FROM bank_accounts WHERE id = ? AND user_id = ?",
+                (bank_id, user_id),
+            ).fetchone()
+            if not bank or not bank["phone_number"]:
+                return {"success": False, "error": "Bank account phone not found"}
+            result = sms_service.verify_otp(bank["phone_number"], otp_code)
+            if result["success"]:
+                logger.info("Twilio OTP verified for user %d, bank %d, action %s", user_id, bank_id, action)
+            return result
+        finally:
+            conn.close()
+    else:
+        # ── Fallback: DB-based verification ──
+        conn = get_db()
+        try:
+            row = conn.execute(
+                """SELECT * FROM otp_codes
+                   WHERE user_id = ? AND bank_id = ? AND otp_code = ? AND action = ? AND used = 0
+                   ORDER BY created_at DESC LIMIT 1""",
+                (user_id, bank_id, otp_code, action),
+            ).fetchone()
+
+            if not row:
+                return {"success": False, "error": "Invalid OTP code"}
+
+            expires_at = datetime.fromisoformat(row["expires_at"].replace('Z', '+00:00'))
+            if datetime.now(timezone.utc) > expires_at:
+                conn.execute("UPDATE otp_codes SET used = 1 WHERE id = ?", (row["id"],))
+                conn.commit()
+                return {"success": False, "error": "OTP has expired. Please request a new one."}
+
+            conn.execute("UPDATE otp_codes SET used = 1 WHERE id = ?", (row["id"],))
+            conn.commit()
+            return {"success": True, "message": "OTP verified successfully"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+        finally:
+            conn.close()
 
 
 # ── Wallet Balance Management ──────────────────────────────────
@@ -489,12 +834,19 @@ def get_wallet_balance(user_id: int) -> float:
         conn.close()
 
 
-def deposit_to_wallet(user_id: int, amount: float, bank_id: int) -> Dict[str, Any]:
-    """Deposit money from a verified bank account into wallet."""
+def deposit_to_wallet(user_id: int, amount: float, bank_id: int, otp_code: str = "") -> Dict[str, Any]:
+    """Deposit money from a verified bank account into wallet. Requires OTP."""
     if amount <= 0:
         return {"success": False, "error": "Amount must be greater than 0"}
     if amount > 1000000:
         return {"success": False, "error": "Maximum deposit limit is $1,000,000"}
+    if not otp_code:
+        return {"success": False, "error": "OTP verification is required for deposits"}
+
+    # Verify OTP
+    otp_result = verify_otp(user_id, bank_id, otp_code, "deposit")
+    if not otp_result["success"]:
+        return {"success": False, "error": otp_result["error"]}
 
     conn = get_db()
     try:
@@ -536,10 +888,17 @@ def deposit_to_wallet(user_id: int, amount: float, bank_id: int) -> Dict[str, An
         conn.close()
 
 
-def withdraw_from_wallet(user_id: int, amount: float, bank_id: int) -> Dict[str, Any]:
-    """Withdraw money from wallet to a verified bank account."""
+def withdraw_from_wallet(user_id: int, amount: float, bank_id: int, otp_code: str = "") -> Dict[str, Any]:
+    """Withdraw money from wallet to a verified bank account. Requires OTP."""
     if amount <= 0:
         return {"success": False, "error": "Amount must be greater than 0"}
+    if not otp_code:
+        return {"success": False, "error": "OTP verification is required for withdrawals"}
+
+    # Verify OTP
+    otp_result = verify_otp(user_id, bank_id, otp_code, "withdraw")
+    if not otp_result["success"]:
+        return {"success": False, "error": otp_result["error"]}
 
     conn = get_db()
     try:

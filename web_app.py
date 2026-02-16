@@ -36,6 +36,14 @@ import auth
 import smtp_service
 import trading_engine
 from blockchain_service import blockchain
+from cache import cache
+from middleware import (
+    SecurityHeadersMiddleware,
+    RateLimitMiddleware,
+    RequestLoggingMiddleware,
+    login_tracker,
+    rate_limiter,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -189,15 +197,34 @@ async def require_user(authorization: Optional[str] = Header(None)):
 # APP SETUP
 # ══════════════════════════════════════════════════════════════════
 
-app = FastAPI(title="PumpIQ", version="2.0.0")
+app = FastAPI(
+    title="PumpIQ",
+    version="3.0.0",
+    description="AI-Powered Crypto Intelligence Platform",
+    docs_url="/docs" if not os.getenv("VERCEL") else None,
+    redoc_url=None,
+)
 
+# ── Security Middleware Stack (order matters: last added = first executed) ──
+
+# CORS: restrict to known origins in production
+_allowed_origins = os.getenv("CORS_ORIGINS", "*").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_allowed_origins,
+    allow_credentials=True if "*" not in _allowed_origins else False,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
 )
+
+# Security headers (CSP, X-Frame-Options, etc.)
+app.add_middleware(SecurityHeadersMiddleware)
+
+# Rate limiting (per-IP, per-route)
+app.add_middleware(RateLimitMiddleware, rate_limiter=rate_limiter)
+
+# Request logging with timing
+app.add_middleware(RequestLoggingMiddleware)
 
 STATIC_DIR = Path(__file__).parent / "web" / "static"
 try:
@@ -283,8 +310,10 @@ async def static_files(filepath: str):
 
 @app.post("/api/auth/register")
 async def api_register(body: auth.UserRegister):
-    if len(body.password) < 6:
-        raise HTTPException(400, "Password must be at least 6 characters")
+    # Password strength validation
+    password_issues = body.validate_password_strength()
+    if password_issues:
+        raise HTTPException(400, "; ".join(password_issues))
     user = auth.register_user(body.email, body.username, body.password)
     if not user:
         raise HTTPException(409, "Email or username already taken")
@@ -299,9 +328,32 @@ async def api_register(body: auth.UserRegister):
 
 @app.post("/api/auth/login")
 async def api_login(body: auth.UserLogin, request: Request):
+    client_ip = request.headers.get("x-forwarded-for", request.client.host if request.client else "unknown")
+    login_key = f"{body.email.lower()}|{client_ip}"
+
+    # Check lockout
+    is_locked, remaining = login_tracker.is_locked(login_key)
+    if is_locked:
+        raise HTTPException(
+            429,
+            f"Account temporarily locked due to too many failed attempts. Try again in {remaining} seconds."
+        )
+
     user = auth.authenticate_user(body.email, body.password)
     if not user:
-        raise HTTPException(401, "Invalid email or password")
+        now_locked, attempts_left = login_tracker.record_failure(login_key)
+        if now_locked:
+            raise HTTPException(
+                429,
+                "Account temporarily locked due to too many failed attempts. Try again in 15 minutes."
+            )
+        raise HTTPException(
+            401,
+            f"Invalid email or password. {attempts_left} attempt(s) remaining."
+        )
+
+    # Successful login—clear failure tracking
+    login_tracker.record_success(login_key)
     token = auth.create_access_token(user.id, user.email)
     # Send login alert email in background (non-blocking)
     try:
@@ -498,12 +550,12 @@ async def api_verify_bank(body: auth.BankAccountAdd, user=Depends(require_user))
 
 @app.post("/api/bank/add")
 async def api_add_bank(body: auth.BankAccountAdd, user=Depends(require_user)):
-    """Add a bank account after verification."""
-    result = auth.add_bank_account(user.id, body.account_holder, body.account_number, body.ifsc_code, body.bank_name)
+    """Add a bank account after OTP verification of the phone number."""
+    result = auth.add_bank_account(user.id, body.account_holder, body.account_number, body.ifsc_code, body.bank_name, body.phone_number, body.otp_code)
     if not result["success"]:
         raise HTTPException(400, detail=result["errors"][0])
     updated = auth.get_user_by_id(user.id)
-    return {"success": True, "bank_name": result["bank_name"], "last4": result["last4"], "bank_accounts": updated.bank_accounts}
+    return {"success": True, "bank_name": result["bank_name"], "last4": result["last4"], "phone_last4": result.get("phone_last4", ""), "bank_accounts": updated.bank_accounts}
 
 
 @app.delete("/api/bank/{bank_id}")
@@ -529,7 +581,7 @@ async def api_wallet_balance(user=Depends(require_user)):
 
 @app.post("/api/wallet/deposit")
 async def api_wallet_deposit(body: auth.DepositRequest, user=Depends(require_user)):
-    result = auth.deposit_to_wallet(user.id, body.amount, body.bank_id)
+    result = auth.deposit_to_wallet(user.id, body.amount, body.bank_id, body.otp_code)
     if not result["success"]:
         raise HTTPException(400, detail=result["error"])
     return result
@@ -537,7 +589,7 @@ async def api_wallet_deposit(body: auth.DepositRequest, user=Depends(require_use
 
 @app.post("/api/wallet/withdraw")
 async def api_wallet_withdraw(body: auth.DepositRequest, user=Depends(require_user)):
-    result = auth.withdraw_from_wallet(user.id, body.amount, body.bank_id)
+    result = auth.withdraw_from_wallet(user.id, body.amount, body.bank_id, body.otp_code)
     if not result["success"]:
         raise HTTPException(400, detail=result["error"])
     return result
@@ -546,6 +598,37 @@ async def api_wallet_withdraw(body: auth.DepositRequest, user=Depends(require_us
 @app.get("/api/wallet/transactions")
 async def api_wallet_transactions(limit: int = Query(20), user=Depends(require_user)):
     return auth.get_wallet_transactions(user.id, limit)
+
+
+# ══════════════════════════════════════════════════════════════════
+# OTP ENDPOINTS
+# ══════════════════════════════════════════════════════════════════
+
+@app.post("/api/otp/send")
+async def api_send_otp(body: auth.OTPRequest, user=Depends(require_user)):
+    """Generate and send an OTP to the phone number linked to the bank account."""
+    result = auth.generate_otp(user.id, body.bank_id, body.action)
+    if not result["success"]:
+        raise HTTPException(400, detail=result["error"])
+    return result
+
+
+@app.post("/api/bank/send-otp")
+async def api_bank_send_otp(body: auth.PhoneOTPRequest, user=Depends(require_user)):
+    """Generate and send an OTP to a phone number for bank account verification."""
+    result = auth.generate_phone_otp(user.id, body.phone_number, body.action)
+    if not result["success"]:
+        raise HTTPException(400, detail=result["error"])
+    return result
+
+
+@app.post("/api/otp/verify")
+async def api_verify_otp(body: auth.OTPVerifyRequest, user=Depends(require_user)):
+    """Verify an OTP code."""
+    result = auth.verify_otp(user.id, body.bank_id, body.otp_code, body.action)
+    if not result["success"]:
+        raise HTTPException(400, detail=result["error"])
+    return result
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -612,8 +695,14 @@ async def api_update_portfolio(
 
 @app.get("/api/market/top", response_model=List[TokenCard])
 async def get_top_coins(limit: int = Query(50, ge=1, le=250)):
+    # Check cache first (5 minute TTL for market data)
+    cache_key = f"market_top:{limit}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     coins = await cg.get_top_coins(limit=limit)
-    return [
+    result = [
         TokenCard(
             name=c.name,
             symbol=c.symbol.upper(),
@@ -627,15 +716,25 @@ async def get_top_coins(limit: int = Query(50, ge=1, le=250)):
         )
         for c in coins
     ]
+    cache.set(cache_key, result, ttl=300)  # 5 min cache
+    return result
 
 
 @app.get("/api/market/trending", response_model=List[TrendingToken])
 async def get_trending():
+    # Check cache (3 minute TTL for trending)
+    cache_key = "market_trending"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     trending = await cg.get_trending()
-    return [
+    result = [
         TrendingToken(name=t.name, symbol=t.symbol, coin_id=t.coin_id, rank=t.score)
         for t in trending
     ]
+    cache.set(cache_key, result, ttl=180)  # 3 min cache
+    return result
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -648,6 +747,12 @@ async def get_token_feed(
     status: str = Query("all"),
     limit: int = Query(50, ge=1, le=100),
 ):
+    # Check cache (2 minute TTL for DEX feed)
+    cache_key = f"dex_feed:{sort}:{status}:{limit}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     search_terms = ["SOL", "BONK", "WIF"]
     tasks = [dex.search_pairs(term) for term in search_terms]
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -711,7 +816,9 @@ async def get_token_feed(
     elif status == "graduated":
         all_pairs = [p for p in all_pairs if p.market_cap > 100000]
 
-    return all_pairs[:limit]
+    result = all_pairs[:limit]
+    cache.set(cache_key, result, ttl=120)  # 2 min cache
+    return result
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -720,6 +827,12 @@ async def get_token_feed(
 
 @app.get("/api/token/{coin_id}", response_model=TokenDetail)
 async def get_token_detail(coin_id: str):
+    # Check cache (3 minute TTL for token details)
+    cache_key = f"token_detail:{coin_id.lower()}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     coin = await cg.get_coin_detail(coin_id.lower())
     if not coin:
         raise HTTPException(404, f"Token '{coin_id}' not found on CoinGecko")
@@ -769,7 +882,7 @@ async def get_token_detail(coin_id: str):
         except Exception as e:
             logger.warning("Gemini AI failed: %s", e)
 
-    return TokenDetail(
+    detail = TokenDetail(
         name=coin.name,
         symbol=coin.symbol.upper(),
         price=coin.current_price,
@@ -797,6 +910,8 @@ async def get_token_detail(coin_id: str):
         ai_recommendation=ai_text,
         ai_available=ai_avail,
     )
+    cache.set(cache_key, detail, ttl=180)  # 3 min cache
+    return detail
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -808,6 +923,12 @@ async def get_ai_recommendations(
     enable_onchain: bool = Query(True),
     enable_technical: bool = Query(True),
 ):
+    # Check cache (5 minute TTL for AI recs)
+    cache_key = f"ai_recs:{enable_onchain}:{enable_technical}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     pairs = await dex.search_pairs("SOL")
     tokens_scored: List[AITokenScore] = []
     seen = set()
@@ -921,11 +1042,13 @@ async def get_ai_recommendations(
         except Exception:
             pass
 
-    return AIRecommendations(
+    ai_recs = AIRecommendations(
         market_summary=market_summary,
         tokens=tokens_scored[:15],
         timestamp=datetime.now(timezone.utc).isoformat(),
     )
+    cache.set(cache_key, ai_recs, ttl=300)  # 5 min cache
+    return ai_recs
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -934,6 +1057,10 @@ async def get_ai_recommendations(
 
 @app.get("/api/leaderboard", response_model=List[LeaderboardEntry])
 async def get_leaderboard(limit: int = Query(25, ge=1, le=100)):
+    cache_key = f"leaderboard:{limit}"
+    cached = cache.get(cache_key)
+    if cached:
+        return cached
     pairs = await dex.search_pairs("SOL")
     entries: List[LeaderboardEntry] = []
     seen = set()
@@ -969,7 +1096,9 @@ async def get_leaderboard(limit: int = Query(25, ge=1, le=100)):
     for i, e in enumerate(entries):
         e.rank = i + 1
 
-    return entries[:limit]
+    result = entries[:limit]
+    cache.set(cache_key, result, ttl=180)  # 3 min cache
+    return result
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -1046,14 +1175,21 @@ async def health():
     return {
         "status": "healthy",
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        "version": "3.0.0",
         "ai_available": gemini_client is not None,
-        "version": "2.0.0",
         "blockchain": blockchain.get_status(),
+        "cache": cache.stats,
         "collectors": {
             "coingecko": cg is not None,
             "dexscreener": dex is not None,
             "news": news is not None,
             "technical": ta is not None,
+        },
+        "security": {
+            "rate_limiting": True,
+            "login_lockout": True,
+            "security_headers": True,
+            "cors_restricted": "*" not in _allowed_origins,
         },
     }
 
@@ -1160,13 +1296,18 @@ async def _auto_trade_loop():
             ).fetchall()
             conn.close()
 
+            logger.info("Auto-trade loop: %d enabled user(s)", len(enabled_users))
             for row in enabled_users:
                 try:
                     result = await trading_engine.auto_trade_cycle(
                         row["user_id"], cg, dex, gemini_client
                     )
+                    logger.info("Auto-trade user %d result: status=%s, new=%d, updated=%d, actions=%d",
+                        row["user_id"], result.get("status", "ok"),
+                        result.get("new_trades", 0), result.get("positions_updated", 0),
+                        len(result.get("actions", [])))
                     if result.get("actions"):
-                        logger.info("Auto-trade user %d: %s", row["user_id"], result["actions"])
+                        logger.info("Auto-trade user %d trades: %s", row["user_id"], result["actions"])
                         # Send email notifications for each trade in background
                         import threading
                         threading.Thread(
@@ -1397,8 +1538,14 @@ async def manual_buy(body: ManualBuyRequest, user=Depends(require_user)):
 @app.get("/api/trader/research")
 async def run_research(user=Depends(require_user)):
     """Manually trigger AI research and return opportunities."""
+    cache_key = "trader_research"
+    cached = cache.get(cache_key)
+    if cached:
+        return cached
     opportunities = await trading_engine.research_opportunities(cg, dex, gemini_client)
-    return {"opportunities": opportunities[:15], "total": len(opportunities)}
+    result = {"opportunities": opportunities[:15], "total": len(opportunities)}
+    cache.set(cache_key, result, ttl=300)  # 5 min cache
+    return result
 
 
 # ── Run trade cycle manually ──
@@ -1521,6 +1668,10 @@ async def bot_ask(body: BotAskRequest, user=Depends(require_user)):
     question = body.question.strip()
     if not question:
         raise HTTPException(400, "Question cannot be empty")
+    # Input sanitization — limit length, strip control characters
+    if len(question) > 1000:
+        question = question[:1000]
+    question = ''.join(c for c in question if c.isprintable() or c in '\n\r\t')
 
     # ── 1. Detect coins / topics mentioned ──
     q_lower = question.lower()
@@ -2485,8 +2636,15 @@ async def trigger_learning_evaluation(user=Depends(require_user)):
     ll = _get_ll()
     if not ll:
         raise HTTPException(503, "Learning loop not available")
-    evaluated = await ll.evaluate_pending(cg)
-    return {"evaluated": evaluated, "message": f"Evaluated {evaluated} pending predictions"}
+    result = await ll.evaluate_pending(cg)
+    e24 = result.get("evaluated_24h", 0)
+    e7d = result.get("evaluated_7d", 0)
+    return {
+        "evaluated_24h": e24,
+        "evaluated_7d": e7d,
+        "errors": result.get("errors", 0),
+        "message": f"Evaluated {e24} (24h) and {e7d} (7d) predictions",
+    }
 
 
 @app.get("/api/ai/learning/adjustments")
