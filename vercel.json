@@ -1,5 +1,4 @@
 {
-  "alias": ["pumpiq.com", "www.pumpiq.com"],
   "builds": [
     {
       "src": "web_app.py",

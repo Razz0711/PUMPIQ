@@ -10,7 +10,7 @@ Required env vars:
     SMTP_EMAIL         – sender email address
     SMTP_PASSWORD      – sender password or app password
     SMTP_USE_TLS       – true/false (default true)
-    APP_BASE_URL       – e.g. https://pumpiq.com
+    APP_BASE_URL       – e.g. https://pumpiq.vercel.app
 
 Optional:
     SMTP_FROM_NAME     – display name (default "PumpIQ")
@@ -126,7 +126,7 @@ def _base_template(title: str, content: str) -> str:
 
 def send_verification_email(to_email: str, username: str, token: str) -> bool:
     """Send email verification link."""
-    base_url = _cfg("APP_BASE_URL", "https://pumpiq.com")
+    base_url = _cfg("APP_BASE_URL", "https://pumpiq.vercel.app")
     verify_url = f"{base_url}/verify-email?token={token}"
     content = f"""
     <p style="color: #ccc; line-height: 1.6;">
@@ -152,7 +152,7 @@ def send_verification_email(to_email: str, username: str, token: str) -> bool:
 
 def send_registration_email(to_email: str, username: str, password: str) -> bool:
     """Send professional registration confirmation with credentials."""
-    base_url = _cfg("APP_BASE_URL", "https://pumpiq.com")
+    base_url = _cfg("APP_BASE_URL", "https://pumpiq.vercel.app")
     masked_pw = password[:2] + "*" * (len(password) - 3) + password[-1] if len(password) > 3 else "***"
     content = f"""
     <p style="color: #ccc; line-height: 1.6;">
@@ -206,7 +206,7 @@ def send_registration_email(to_email: str, username: str, password: str) -> bool
 
 def send_password_reset_email(to_email: str, username: str, token: str) -> bool:
     """Send password reset link."""
-    base_url = _cfg("APP_BASE_URL", "https://pumpiq.com")
+    base_url = _cfg("APP_BASE_URL", "https://pumpiq.vercel.app")
     reset_url = f"{base_url}/reset-password?token={token}"
     content = f"""
     <p style="color: #ccc; line-height: 1.6;">
@@ -232,7 +232,7 @@ def send_password_reset_email(to_email: str, username: str, token: str) -> bool:
 
 def send_welcome_email(to_email: str, username: str) -> bool:
     """Send welcome email after verification."""
-    base_url = _cfg("APP_BASE_URL", "https://pumpiq.com")
+    base_url = _cfg("APP_BASE_URL", "https://pumpiq.vercel.app")
     content = f"""
     <p style="color: #ccc; line-height: 1.6;">
         Hey <strong>{username}</strong>,<br><br>
@@ -262,7 +262,7 @@ def send_welcome_email(to_email: str, username: str) -> bool:
 def send_price_alert_email(to_email: str, username: str, coin_name: str, symbol: str,
                            price: float, alert_type: str, threshold: float) -> bool:
     """Send a price alert notification."""
-    base_url = _cfg("APP_BASE_URL", "https://pumpiq.com")
+    base_url = _cfg("APP_BASE_URL", "https://pumpiq.vercel.app")
     direction = "above" if alert_type == "above" else "below"
     content = f"""
     <p style="color: #ccc; line-height: 1.6;">
@@ -387,7 +387,7 @@ def send_trade_email(
     """Send a detailed trade notification email for every BUY or SELL."""
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc).strftime("%B %d, %Y at %I:%M %p UTC")
-    base_url = _cfg("APP_BASE_URL", "https://pumpiq.com")
+    base_url = _cfg("APP_BASE_URL", "https://pumpiq.vercel.app")
 
     is_buy = action.upper() == "BUY"
     action_label = "BUY" if is_buy else "SELL"

@@ -4,7 +4,7 @@ PumpIQ – Launch the web application.
 Usage:
     python run_web.py
 
-Live:    https://pumpiq.com
+Live:    https://pumpiq.vercel.app
 Local:   http://localhost:8000
 """
 
@@ -13,7 +13,7 @@ import uvicorn
 if __name__ == "__main__":
     print("\n" + "=" * 50)
     print("  PumpIQ – AI Crypto Intelligence")
-    print("  Live:  https://pumpiq.com")
+    print("  Live:  https://pumpiq.vercel.app")
     print("  Local: http://localhost:8000")
     print("=" * 50 + "\n")
 
