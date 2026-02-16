@@ -4,7 +4,8 @@ PumpIQ Web Application — Full Platform
 Self-contained web server: auth, wallet connect, token feed, AI recs, leaderboard.
 
 Run with:  python run_web.py
-Open:      http://localhost:8000
+Live:      https://pumpiq.com
+Local:     http://localhost:8000
 """
 
 from __future__ import annotations
@@ -208,7 +209,7 @@ app = FastAPI(
 # ── Security Middleware Stack (order matters: last added = first executed) ──
 
 # CORS: restrict to known origins in production
-_allowed_origins = os.getenv("CORS_ORIGINS", "*").split(",")
+_allowed_origins = os.getenv("CORS_ORIGINS", "https://pumpiq.com,https://www.pumpiq.com").split(",")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins,
