@@ -292,10 +292,40 @@ def send_price_alert_email(to_email: str, username: str, coin_name: str, symbol:
     )
 
 
+def _get_ip_geolocation(ip_address: str) -> dict:
+    """Get approximate location from IP address using free ip-api.com."""
+    try:
+        import urllib.request, json
+        # Skip private/localhost IPs
+        if ip_address in ("127.0.0.1", "localhost", "::1", "unknown") or ip_address.startswith(("192.168.", "10.", "172.")):
+            return {"city": "Local Network", "region": "", "country": "", "isp": "Local", "query": ip_address}
+        url = f"http://ip-api.com/json/{ip_address}?fields=status,message,country,regionName,city,isp,query"
+        req = urllib.request.Request(url, headers={"User-Agent": "PumpIQ/3.0"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode())
+            if data.get("status") == "success":
+                return {
+                    "city": data.get("city", "Unknown"),
+                    "region": data.get("regionName", ""),
+                    "country": data.get("country", ""),
+                    "isp": data.get("isp", ""),
+                    "query": data.get("query", ip_address),
+                }
+    except Exception as e:
+        logger.debug("IP geolocation failed for %s: %s", ip_address, e)
+    return {"city": "Unknown", "region": "", "country": "", "isp": "", "query": ip_address}
+
+
 def send_login_alert_email(to_email: str, username: str, ip_address: str, user_agent: str) -> bool:
-    """Send a security alert when someone logs in."""
+    """Send a security alert when someone logs in, including IP geolocation."""
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc).strftime("%B %d, %Y at %I:%M %p UTC")
+
+    # Get IP geolocation
+    geo = _get_ip_geolocation(ip_address)
+    location_parts = [p for p in [geo.get("city"), geo.get("region"), geo.get("country")] if p]
+    location_str = ", ".join(location_parts) if location_parts else "Unknown location"
+    isp_str = geo.get("isp", "")
 
     # Parse browser/OS from user-agent for a cleaner display
     device = "Unknown device"
@@ -344,6 +374,14 @@ def send_login_alert_email(to_email: str, username: str, ip_address: str, user_a
                 <td style="color: #fff; padding: 8px 0; font-size: 14px; font-weight: 600; text-align: right; border-top: 1px solid #2a2a3a;">{ip_address}</td>
             </tr>
             <tr>
+                <td style="color: #888; padding: 8px 0; font-size: 14px; border-top: 1px solid #2a2a3a;">&#x1F4CD; Location</td>
+                <td style="color: #00d4aa; padding: 8px 0; font-size: 14px; font-weight: 600; text-align: right; border-top: 1px solid #2a2a3a;">{location_str}</td>
+            </tr>
+            <tr>
+                <td style="color: #888; padding: 8px 0; font-size: 14px; border-top: 1px solid #2a2a3a;">ISP / Network</td>
+                <td style="color: #fff; padding: 8px 0; font-size: 14px; text-align: right; border-top: 1px solid #2a2a3a;">{isp_str}</td>
+            </tr>
+            <tr>
                 <td style="color: #888; padding: 8px 0; font-size: 14px; border-top: 1px solid #2a2a3a;">Device</td>
                 <td style="color: #fff; padding: 8px 0; font-size: 14px; text-align: right; border-top: 1px solid #2a2a3a;">{device}</td>
             </tr>
@@ -361,7 +399,7 @@ def send_login_alert_email(to_email: str, username: str, ip_address: str, user_a
     """
     return _send_email(
         to_email,
-        f"\U0001F6E1 PumpIQ Security Alert — New Login Detected",
+        f"\U0001F6E1 PumpIQ Security Alert — New Login from {location_str}",
         _base_template("New Login Detected", content),
     )
 

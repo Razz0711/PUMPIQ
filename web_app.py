@@ -322,13 +322,26 @@ async def api_register(body: auth.UserRegister):
         raise HTTPException(500, f"Registration error: {type(e).__name__}: {e}")
     if not user:
         raise HTTPException(409, "Email or username already taken")
-    # Send welcome email with credentials
+
+    # Send registration confirmation + verification email
+    verification_sent = False
     try:
         smtp_service.send_registration_email(body.email, body.username, body.password)
     except Exception as e:
         logger.warning("Failed to send registration email: %s", e)
+    try:
+        verification_sent = auth.send_verification_email(user.id)
+    except Exception as e:
+        logger.warning("Failed to send verification email: %s", e)
+
     token = auth.create_access_token(user.id, user.email)
-    return {"access_token": token, "token_type": "bearer", "user": user.model_dump()}
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": user.model_dump(),
+        "verification_sent": verification_sent,
+        "message": "Account created! Please check your email to verify your account." if verification_sent else "Account created!",
+    }
 
 
 @app.post("/api/auth/login")
@@ -361,12 +374,22 @@ async def api_login(body: auth.UserLogin, request: Request):
             f"Invalid email or password. {attempts_left} attempt(s) remaining."
         )
 
+    # Require email verification before login (only when SMTP is configured)
+    if not user.email_verified and smtp_service.is_configured():
+        login_tracker.record_success(login_key)  # don't penalize for unverified
+        raise HTTPException(
+            403,
+            "Please verify your email before logging in. Check your inbox for the verification link."
+        )
+
     # Successful login—clear failure tracking
     login_tracker.record_success(login_key)
     token = auth.create_access_token(user.id, user.email)
-    # Send login alert email in background (non-blocking)
+    # Send login alert email with IP geolocation in background (non-blocking)
     try:
         ip = request.headers.get("x-forwarded-for", request.client.host if request.client else "Unknown")
+        if "," in ip:
+            ip = ip.split(",")[0].strip()
         user_agent = request.headers.get("user-agent", "Unknown device")
         import threading
         threading.Thread(

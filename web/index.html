@@ -3702,6 +3702,19 @@ async function submitAuth() {
                 method: 'POST',
                 body: JSON.stringify({ email, password, username }),
             });
+
+            // Show verification message after registration
+            if (data.verification_sent) {
+                errEl.style.color = '#00d4aa';
+                errEl.innerHTML = '✅ Account created! Check <strong>' + email + '</strong> for a verification link before logging in.';
+                errEl.style.display = 'block';
+                btn.disabled = false;
+                btn.textContent = originalText;
+                btn.style.opacity = '1';
+                // Switch to login mode after showing message
+                setTimeout(() => showAuthModal('login'), 4000);
+                return;
+            }
         }
 
         authToken = data.access_token;
@@ -3710,8 +3723,15 @@ async function submitAuth() {
         updateAuthUI();
         closeModal('authModal');
     } catch (e) {
-        errEl.style.color = '#ff4d4d';
-        errEl.textContent = e.message || 'Something went wrong. Please try again.';
+        const msg = e.message || 'Something went wrong. Please try again.';
+        // Handle email verification required (403)
+        if (msg.includes('verify your email')) {
+            errEl.style.color = '#ff9900';
+            errEl.innerHTML = '📧 ' + msg + '<br><a href="#" style="color:#7c5cff;font-size:12px;margin-top:6px;display:inline-block" onclick="resendVerificationFromLogin(\'' + email + '\')">Resend verification email</a>';
+        } else {
+            errEl.style.color = '#ff4d4d';
+            errEl.textContent = msg;
+        }
         errEl.style.display = 'block';
     } finally {
         btn.disabled = false;
