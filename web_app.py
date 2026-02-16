@@ -1203,6 +1203,56 @@ async def health():
     }
 
 
+@app.get("/api/debug/auth-test")
+async def debug_auth_test():
+    """Diagnostic endpoint to test bcrypt and SQLite on Vercel."""
+    results = {}
+    # Test 1: bcrypt hash
+    try:
+        h = auth.hash_password("TestPass1")
+        results["bcrypt_hash"] = "OK"
+        results["hash_preview"] = h[:20] + "..."
+    except Exception as e:
+        results["bcrypt_hash"] = f"FAIL: {type(e).__name__}: {e}"
+    # Test 2: bcrypt verify
+    try:
+        ok = auth.verify_password("TestPass1", h)
+        results["bcrypt_verify"] = f"OK: {ok}"
+    except Exception as e:
+        results["bcrypt_verify"] = f"FAIL: {type(e).__name__}: {e}"
+    # Test 3: SQLite write
+    try:
+        import sqlite3
+        conn = auth.get_db()
+        conn.execute("SELECT 1")
+        tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+        results["sqlite"] = f"OK: {len(tables)} tables"
+        results["tables"] = tables
+        results["db_path"] = auth.DB_PATH
+        conn.close()
+    except Exception as e:
+        results["sqlite"] = f"FAIL: {type(e).__name__}: {e}"
+    # Test 4: Full register flow
+    try:
+        import uuid
+        test_email = f"__diag_{uuid.uuid4().hex[:8]}@test.com"
+        user = auth.register_user(test_email, f"diag_{uuid.uuid4().hex[:6]}", "DiagPass1")
+        if user:
+            results["register"] = f"OK: user_id={user.id}"
+            # Cleanup
+            conn = auth.get_db()
+            conn.execute("DELETE FROM users WHERE email = ?", (test_email,))
+            conn.commit()
+            conn.close()
+        else:
+            results["register"] = "FAIL: returned None"
+    except Exception as e:
+        results["register"] = f"FAIL: {type(e).__name__}: {e}"
+        import traceback
+        results["register_traceback"] = traceback.format_exc()
+    return results
+
+
 # ══════════════════════════════════════════════════════════════════
 # AUTO-TRADER TRADE EMAIL NOTIFICATIONS
 # ══════════════════════════════════════════════════════════════════
