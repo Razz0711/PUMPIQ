@@ -315,7 +315,11 @@ async def api_register(body: auth.UserRegister):
     password_issues = body.validate_password_strength()
     if password_issues:
         raise HTTPException(400, "; ".join(password_issues))
-    user = auth.register_user(body.email, body.username, body.password)
+    try:
+        user = auth.register_user(body.email, body.username, body.password)
+    except Exception as e:
+        logger.exception("register_user crashed: %s", e)
+        raise HTTPException(500, f"Registration error: {type(e).__name__}: {e}")
     if not user:
         raise HTTPException(409, "Email or username already taken")
     # Send welcome email with credentials
@@ -340,7 +344,11 @@ async def api_login(body: auth.UserLogin, request: Request):
             f"Account temporarily locked due to too many failed attempts. Try again in {remaining} seconds."
         )
 
-    user = auth.authenticate_user(body.email, body.password)
+    try:
+        user = auth.authenticate_user(body.email, body.password)
+    except Exception as e:
+        logger.exception("authenticate_user crashed: %s", e)
+        raise HTTPException(500, f"Login error: {type(e).__name__}: {e}")
     if not user:
         now_locked, attempts_left = login_tracker.record_failure(login_key)
         if now_locked:
