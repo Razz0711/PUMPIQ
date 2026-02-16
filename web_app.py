@@ -1253,6 +1253,36 @@ async def debug_auth_test():
     return results
 
 
+@app.post("/api/debug/register-test")
+async def debug_register_test(body: auth.UserRegister):
+    """POST diagnostic — same as register but with full error capture."""
+    import traceback, uuid
+    results = {"step": "start"}
+    try:
+        results["step"] = "validate_password"
+        issues = body.validate_password_strength()
+        if issues:
+            return {"error": "weak_password", "issues": issues}
+
+        results["step"] = "register_user"
+        user = auth.register_user(body.email, body.username, body.password)
+        if not user:
+            return {"error": "duplicate", "step": results["step"]}
+
+        results["step"] = "create_token"
+        token = auth.create_access_token(user.id, user.email)
+
+        results["step"] = "model_dump"
+        user_data = user.model_dump()
+
+        results["step"] = "done"
+        return {"success": True, "user_id": user.id, "token_preview": token[:20]}
+    except Exception as e:
+        results["error"] = f"{type(e).__name__}: {e}"
+        results["traceback"] = traceback.format_exc()
+        return results
+
+
 # ══════════════════════════════════════════════════════════════════
 # AUTO-TRADER TRADE EMAIL NOTIFICATIONS
 # ══════════════════════════════════════════════════════════════════
