@@ -3089,7 +3089,7 @@ a:hover { text-decoration: underline; }
         </div>
         <div class="form-group">
             <label>Password</label>
-            <input class="form-input" id="authPassword" type="password" placeholder="Min 6 characters" onkeydown="if(event.key==='Enter')submitAuth()">
+            <input class="form-input" id="authPassword" type="password" placeholder="Min 8 chars, 1 uppercase, 1 digit" onkeydown="if(event.key==='Enter')submitAuth()">
         </div>
         <button class="btn btn-primary" style="width:100%;margin-top:8px;transition:opacity 0.2s" id="authSubmitBtn" onclick="submitAuth()">Login</button>
 
@@ -3676,7 +3676,7 @@ async function submitAuth() {
 
     // Validation
     if (!email) { errEl.textContent = 'Please enter your email'; errEl.style.display = 'block'; return; }
-    if (!password || password.length < 6) { errEl.textContent = 'Password must be at least 6 characters'; errEl.style.display = 'block'; return; }
+    if (!password || password.length < 8) { errEl.textContent = 'Password must be at least 8 characters with 1 uppercase letter and 1 digit'; errEl.style.display = 'block'; return; }
     if (authMode === 'register') {
         const username = document.getElementById('regUsername').value.trim();
         if (!username) { errEl.textContent = 'Please enter a username'; errEl.style.display = 'block'; return; }

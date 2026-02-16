@@ -36,8 +36,8 @@ else:
         "JWTs will be invalidated on server restart. "
         "Set SECRET_KEY in .env for persistent sessions."
     )
-ALGORITHM = os.getenv("ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+ALGORITHM = os.getenv("ALGORITHM", "HS256").strip()
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60").strip())
 
 # On Vercel (serverless), use /tmp for writable SQLite; locally use project dir
 IS_VERCEL = bool(os.getenv("VERCEL"))
