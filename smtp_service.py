@@ -298,8 +298,8 @@ def _get_ip_geolocation(ip_address: str) -> dict:
         import urllib.request, json
         # Skip private/localhost IPs
         if ip_address in ("127.0.0.1", "localhost", "::1", "unknown") or ip_address.startswith(("192.168.", "10.", "172.")):
-            return {"city": "Local Network", "region": "", "country": "", "isp": "Local", "query": ip_address}
-        url = f"http://ip-api.com/json/{ip_address}?fields=status,message,country,regionName,city,isp,query"
+            return {"city": "Local Network", "region": "", "country": "India", "isp": "Local", "query": ip_address, "lat": 0, "lon": 0, "offset": 19800, "timezone": "Asia/Kolkata"}
+        url = f"http://ip-api.com/json/{ip_address}?fields=status,message,country,regionName,city,isp,query,lat,lon,timezone,offset"
         req = urllib.request.Request(url, headers={"User-Agent": "PumpIQ/3.0"})
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read().decode())
@@ -310,22 +310,42 @@ def _get_ip_geolocation(ip_address: str) -> dict:
                     "country": data.get("country", ""),
                     "isp": data.get("isp", ""),
                     "query": data.get("query", ip_address),
+                    "lat": data.get("lat", 0),
+                    "lon": data.get("lon", 0),
+                    "offset": data.get("offset", 0),
+                    "timezone": data.get("timezone", "UTC"),
                 }
     except Exception as e:
         logger.debug("IP geolocation failed for %s: %s", ip_address, e)
-    return {"city": "Unknown", "region": "", "country": "", "isp": "", "query": ip_address}
+    return {"city": "Unknown", "region": "", "country": "", "isp": "", "query": ip_address, "lat": 0, "lon": 0, "offset": 0, "timezone": "UTC"}
 
 
 def send_login_alert_email(to_email: str, username: str, ip_address: str, user_agent: str) -> bool:
-    """Send a security alert when someone logs in, including IP geolocation."""
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc).strftime("%B %d, %Y at %I:%M %p UTC")
+    """Send a security alert when someone logs in, including IP geolocation & DIGIPIN."""
+    from datetime import datetime, timezone as tz, timedelta as td
 
     # Get IP geolocation
     geo = _get_ip_geolocation(ip_address)
+
+    # Use the IP's timezone offset for accurate local time
+    offset_seconds = geo.get("offset", 0)
+    tz_name = geo.get("timezone", "UTC")
+    local_tz = tz(td(seconds=offset_seconds))
+    now = datetime.now(local_tz).strftime("%B %d, %Y at %I:%M %p") + f" ({tz_name})"
+
     location_parts = [p for p in [geo.get("city"), geo.get("region"), geo.get("country")] if p]
     location_str = ", ".join(location_parts) if location_parts else "Unknown location"
     isp_str = geo.get("isp", "")
+
+    # Generate DIGIPIN for Indian locations (lat 1.5–39.0, lon 63.5–99.0)
+    digipin_str = ""
+    lat, lon = geo.get("lat", 0), geo.get("lon", 0)
+    if 1.5 <= lat <= 39.0 and 63.5 <= lon <= 99.0:
+        try:
+            from digipin import encode as digipin_encode
+            digipin_str = digipin_encode(lat, lon)
+        except Exception as e:
+            logger.debug("DIGIPIN generation failed: %s", e)
 
     # Parse browser/OS from user-agent for a cleaner display
     device = "Unknown device"
@@ -380,7 +400,13 @@ def send_login_alert_email(to_email: str, username: str, ip_address: str, user_a
             <tr>
                 <td style="color: #888; padding: 8px 0; font-size: 14px; border-top: 1px solid #2a2a3a;">ISP / Network</td>
                 <td style="color: #fff; padding: 8px 0; font-size: 14px; text-align: right; border-top: 1px solid #2a2a3a;">{isp_str}</td>
-            </tr>
+            </tr>{''.join([f'''
+            <tr>
+                <td style="color: #888; padding: 8px 0; font-size: 14px; border-top: 1px solid #2a2a3a;">&#x1F4EC; DIGIPIN</td>
+                <td style="color: #ff9900; padding: 8px 0; font-size: 14px; font-weight: 700; text-align: right; border-top: 1px solid #2a2a3a; letter-spacing: 1.5px;">
+                    <a href="https://www.indiapost.gov.in/VAS/Pages/FindDigipin.aspx" style="color: #ff9900; text-decoration: none;">{digipin_str}</a>
+                </td>
+            </tr>'''] if digipin_str else [])}
             <tr>
                 <td style="color: #888; padding: 8px 0; font-size: 14px; border-top: 1px solid #2a2a3a;">Device</td>
                 <td style="color: #fff; padding: 8px 0; font-size: 14px; text-align: right; border-top: 1px solid #2a2a3a;">{device}</td>
