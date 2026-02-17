@@ -29,6 +29,9 @@ digipin==2.0.1
 # Cloud Database (Turso — persistent SQLite on Vercel)
 libsql-client>=0.3.0
 
+# Google Cloud Storage (persistent SQLite backup on Vercel)
+google-cloud-storage>=2.14.0
+
 # Blockchain (Base L2 / Ethereum) — optional, lazily imported
 # web3>=6.0.0     # Excluded from Vercel (heavy native deps); install locally
 # py-solc-x>=2.0.0

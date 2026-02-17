@@ -1,15 +1,18 @@
 """
 PumpIQ Database Abstraction Layer
 =====================================
-Provides a unified sqlite3-compatible interface for both:
+Provides a unified sqlite3-compatible interface for:
   - Local SQLite (development)
-  - Turso cloud database (production on Vercel)
+  - Google Cloud Storage-synced SQLite (production on Vercel — persistent)
+  - Turso cloud database (alternative production option)
 
-When TURSO_DATABASE_URL and TURSO_AUTH_TOKEN env vars are set,
-all database operations go to Turso (persistent cloud SQLite).
-Otherwise, falls back to local SQLite file.
+Priority: Turso > GCS-synced SQLite > ephemeral /tmp SQLite > local file
 
-Required env vars for Turso (production):
+Required env vars for GCS (recommended for Vercel):
+    GCS_BUCKET_NAME            – e.g. pumpiq-db
+    GOOGLE_CREDENTIALS_BASE64  – base64-encoded service account JSON
+
+Required env vars for Turso (alternative):
     TURSO_DATABASE_URL  – e.g. libsql://your-db-name-org.turso.io
     TURSO_AUTH_TOKEN     – Bearer token from Turso dashboard
 """
@@ -19,6 +22,7 @@ from __future__ import annotations
 import os
 import sqlite3
 import logging
+import threading
 from typing import Any, List, Optional, Sequence, Tuple, Union
 
 logger = logging.getLogger(__name__)
@@ -26,9 +30,20 @@ logger = logging.getLogger(__name__)
 # ── Configuration ───────────────────────────────────────────────
 
 IS_VERCEL = bool(os.getenv("VERCEL"))
+
+# Turso (highest priority)
 TURSO_URL = os.getenv("TURSO_DATABASE_URL", "").strip()
 TURSO_TOKEN = os.getenv("TURSO_AUTH_TOKEN", "").strip()
 USE_TURSO = bool(TURSO_URL and TURSO_TOKEN)
+
+# Google Cloud Storage (second priority)
+GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "").strip()
+GCS_CREDENTIALS_B64 = os.getenv("GOOGLE_CREDENTIALS_BASE64", "").strip()
+USE_GCS = bool(GCS_BUCKET_NAME) and not USE_TURSO
+
+GCS_DB_BLOB_NAME = "pumpiq.db"  # name of the DB file in the bucket
+_gcs_synced = False  # track if we've downloaded from GCS this cold start
+_gcs_lock = threading.Lock()  # thread-safe GCS sync
 
 LOCAL_DB_PATH = (
     "/tmp/pumpiq.db" if (IS_VERCEL and not USE_TURSO)
@@ -37,10 +52,112 @@ LOCAL_DB_PATH = (
 
 if USE_TURSO:
     logger.info("Database: Turso cloud (%s)", TURSO_URL.split("//")[-1].split(".")[0] if "//" in TURSO_URL else "remote")
+elif USE_GCS:
+    logger.info("Database: GCS-synced SQLite (bucket=%s)", GCS_BUCKET_NAME)
 elif IS_VERCEL:
-    logger.warning("Database: Ephemeral /tmp SQLite (set TURSO_DATABASE_URL for persistence)")
+    logger.warning("Database: Ephemeral /tmp SQLite (set GCS_BUCKET_NAME or TURSO_DATABASE_URL for persistence)")
 else:
     logger.info("Database: Local SQLite (%s)", LOCAL_DB_PATH)
+
+
+# ── Google Cloud Storage sync ──────────────────────────────────
+
+def _get_gcs_client():
+    """Get an authenticated GCS client."""
+    try:
+        from google.cloud import storage
+        from google.oauth2 import service_account
+        import base64
+        import json
+
+        if GCS_CREDENTIALS_B64:
+            creds_json = json.loads(base64.b64decode(GCS_CREDENTIALS_B64))
+            credentials = service_account.Credentials.from_service_account_info(creds_json)
+            return storage.Client(credentials=credentials, project=creds_json.get("project_id"))
+        else:
+            # Fall back to default credentials (e.g. GOOGLE_APPLICATION_CREDENTIALS env)
+            return storage.Client()
+    except ImportError:
+        logger.error("google-cloud-storage not installed. Run: pip install google-cloud-storage")
+        raise
+    except Exception as e:
+        logger.error("Failed to create GCS client: %s", e)
+        raise
+
+
+def _download_from_gcs():
+    """Download pumpiq.db from GCS to LOCAL_DB_PATH if it exists in the bucket."""
+    global _gcs_synced
+    if _gcs_synced:
+        return  # Already downloaded this cold start
+
+    with _gcs_lock:
+        if _gcs_synced:
+            return
+        try:
+            client = _get_gcs_client()
+            bucket = client.bucket(GCS_BUCKET_NAME)
+            blob = bucket.blob(GCS_DB_BLOB_NAME)
+
+            if blob.exists():
+                blob.download_to_filename(LOCAL_DB_PATH)
+                size_kb = os.path.getsize(LOCAL_DB_PATH) / 1024
+                logger.info("GCS: Downloaded pumpiq.db (%.1f KB) from bucket %s", size_kb, GCS_BUCKET_NAME)
+            else:
+                logger.info("GCS: No existing pumpiq.db in bucket %s — starting fresh", GCS_BUCKET_NAME)
+
+            _gcs_synced = True
+        except Exception as e:
+            logger.error("GCS download failed: %s — using local/empty DB", e)
+            _gcs_synced = True  # Don't retry endlessly
+
+
+def _upload_to_gcs():
+    """Upload LOCAL_DB_PATH to GCS bucket (called after writes)."""
+    try:
+        if not os.path.exists(LOCAL_DB_PATH):
+            return
+        client = _get_gcs_client()
+        bucket = client.bucket(GCS_BUCKET_NAME)
+        blob = bucket.blob(GCS_DB_BLOB_NAME)
+        blob.upload_from_filename(LOCAL_DB_PATH)
+        size_kb = os.path.getsize(LOCAL_DB_PATH) / 1024
+        logger.debug("GCS: Uploaded pumpiq.db (%.1f KB) to bucket %s", size_kb, GCS_BUCKET_NAME)
+    except Exception as e:
+        logger.error("GCS upload failed: %s — data may be lost on cold start", e)
+
+
+class _GCSWrappedConnection:
+    """
+    Wraps a sqlite3.Connection and auto-syncs to GCS on commit().
+    All existing SQL code works unchanged.
+    """
+
+    def __init__(self, conn: sqlite3.Connection):
+        self._conn = conn
+        self.row_factory = conn.row_factory
+
+    def execute(self, sql: str, parameters: Sequence = ()) -> sqlite3.Cursor:
+        return self._conn.execute(sql, parameters)
+
+    def executescript(self, sql: str):
+        result = self._conn.executescript(sql)
+        _upload_to_gcs()  # executescript auto-commits in sqlite3
+        return result
+
+    def commit(self) -> None:
+        self._conn.commit()
+        # Sync to GCS after every commit (ensures persistence)
+        _upload_to_gcs()
+
+    def close(self) -> None:
+        self._conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
 
 
 # ── Turso sqlite3-compatible wrapper ───────────────────────────
@@ -166,8 +283,9 @@ class _TursoConnection:
 def get_db():
     """
     Get a database connection.
-    Returns a sqlite3.Connection (local) or _TursoConnection (cloud).
-    Both support the same interface: execute, executescript, commit, close.
+    Returns a sqlite3.Connection (local), _GCSWrappedConnection (GCS-synced),
+    or _TursoConnection (cloud).
+    All support the same interface: execute, executescript, commit, close.
     Row access by column name: row["column"].
     """
     if USE_TURSO:
@@ -182,7 +300,11 @@ def get_db():
             logger.error("Failed to connect to Turso: %s", e)
             raise
 
-    # Local SQLite fallback
+    # GCS-synced SQLite: download DB from cloud on first access
+    if USE_GCS:
+        _download_from_gcs()
+
+    # Local/GCS SQLite
     conn = sqlite3.connect(LOCAL_DB_PATH)
     conn.row_factory = sqlite3.Row
     try:
@@ -190,6 +312,9 @@ def get_db():
     except sqlite3.OperationalError:
         pass
     conn.execute("PRAGMA foreign_keys=ON")
+
+    if USE_GCS:
+        return _GCSWrappedConnection(conn)
     return conn
 
 
