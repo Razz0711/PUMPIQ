@@ -32,12 +32,13 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from blockchain_service import blockchain
+import db as db_module  # centralized DB abstraction
 
 logger = logging.getLogger(__name__)
 
-# On Vercel (serverless), use /tmp for writable SQLite; locally use project dir
-IS_VERCEL = bool(os.getenv("VERCEL"))
-DB_PATH = "/tmp/pumpiq.db" if IS_VERCEL else os.path.join(os.path.dirname(__file__), "pumpiq.db")
+# Database paths (delegated to db module for Turso support)
+IS_VERCEL = db_module.IS_VERCEL
+DB_PATH = db_module.get_db_path()
 
 # Late-import learning loop (avoid circular)
 _learning_loop = None
@@ -55,15 +56,9 @@ def _get_learning_loop():
 
 # -- Database ------------------------------------------------------------------
 
-def _get_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    try:
-        conn.execute("PRAGMA journal_mode=WAL")
-    except sqlite3.OperationalError:
-        pass  # WAL may not be supported on some serverless filesystems
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+def _get_db():
+    """Get a database connection (local SQLite or Turso cloud)."""
+    return db_module.get_db()
 
 
 def init_trading_tables():
@@ -152,12 +147,12 @@ def init_trading_tables():
     try:
         conn.execute("ALTER TABLE trade_orders ADD COLUMN tx_hash TEXT NOT NULL DEFAULT ''")
         conn.commit()
-    except sqlite3.OperationalError:
+    except (sqlite3.OperationalError, Exception):
         pass
     try:
         conn.execute("ALTER TABLE trade_positions ADD COLUMN tx_hash TEXT NOT NULL DEFAULT ''")
         conn.commit()
-    except sqlite3.OperationalError:
+    except (sqlite3.OperationalError, Exception):
         pass
     conn.commit()
     conn.close()

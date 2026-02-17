@@ -20,6 +20,7 @@ from pydantic import BaseModel, EmailStr
 import smtp_service
 import sms_service
 from blockchain_service import blockchain
+import db as db_module  # centralized DB abstraction (local SQLite / Turso cloud)
 
 import logging
 logger = logging.getLogger(__name__)
@@ -39,9 +40,9 @@ else:
 ALGORITHM = os.getenv("ALGORITHM", "HS256").strip()
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60").strip())
 
-# On Vercel (serverless), use /tmp for writable SQLite; locally use project dir
-IS_VERCEL = bool(os.getenv("VERCEL"))
-DB_PATH = "/tmp/pumpiq.db" if IS_VERCEL else os.path.join(os.path.dirname(__file__), "pumpiq.db")
+# Database path (delegated to db module for Turso support)
+IS_VERCEL = db_module.IS_VERCEL
+DB_PATH = db_module.get_db_path()
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -140,15 +141,9 @@ class TokenResponse(BaseModel):
 
 # ── Database Setup ──────────────────────────────────────────────
 
-def get_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    try:
-        conn.execute("PRAGMA journal_mode=WAL")
-    except sqlite3.OperationalError:
-        pass  # WAL may not be supported on some serverless filesystems
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+def get_db():
+    """Get a database connection (local SQLite or Turso cloud)."""
+    return db_module.get_db()
 
 
 def init_db():
@@ -288,20 +283,20 @@ def init_db():
     try:
         conn.execute("ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0")
         conn.commit()
-    except sqlite3.OperationalError:
+    except (sqlite3.OperationalError, Exception):
         pass  # column already exists
     # Migration: add tx_hash column to wallet_transactions
     try:
         conn.execute("ALTER TABLE wallet_transactions ADD COLUMN tx_hash TEXT NOT NULL DEFAULT ''")
         conn.commit()
-    except sqlite3.OperationalError:
+    except (sqlite3.OperationalError, Exception):
         pass
     # Migration: add phone_number & phone_last4 to bank_accounts
     for col, default in [("phone_number", "''"), ("phone_last4", "''")]:
         try:
             conn.execute(f"ALTER TABLE bank_accounts ADD COLUMN {col} TEXT NOT NULL DEFAULT {default}")
             conn.commit()
-        except sqlite3.OperationalError:
+        except (sqlite3.OperationalError, Exception):
             pass
     # Migration: recreate otp_codes table without FK on bank_id (allows bank_id=0 for phone verification)
     # Check if existing table has the problematic FK constraint by trying to drop and recreate
@@ -387,8 +382,11 @@ def register_user(email: str, username: str, password: str) -> Optional[UserResp
         blockchain.record_transaction_async(bonus_hash, "signup_bonus", "USD", 10000.0)
 
         return _get_user_response(conn, user_id)
-    except sqlite3.IntegrityError:
-        return None
+    except (sqlite3.IntegrityError, Exception) as e:
+        if 'UNIQUE constraint' in str(e) or 'IntegrityError' in type(e).__name__ or 'Integrity' in str(e).lower():
+            return None
+        # Re-raise unexpected errors
+        raise
     finally:
         conn.close()
 

@@ -451,7 +451,6 @@ class ResendByEmail(BaseModel):
 @app.post("/api/auth/resend-verification-by-email")
 async def resend_verification_by_email(body: ResendByEmail):
     """Resend verification for users who can't log in yet (no token)."""
-    import sqlite3
     conn = auth.get_db()
     try:
         row = conn.execute("SELECT id, email_verified FROM users WHERE email = ?", (body.email.lower(),)).fetchone()
@@ -1322,7 +1321,6 @@ async def _auto_trade_loop():
     logger.info("Auto-trade background loop started")
     while True:
         try:
-            import sqlite3
             conn = trading_engine._get_db()
             enabled_users = conn.execute(
                 "SELECT user_id FROM trade_settings WHERE auto_trade_enabled = 1"
@@ -1622,7 +1620,6 @@ async def get_trader_log(limit: int = Query(50), user=Depends(require_user)):
 @app.get("/api/verify-tx/{tx_hash}")
 async def verify_transaction(tx_hash: str, user=Depends(require_user)):
     """Look up a transaction hash in trade_orders and wallet_transactions."""
-    import sqlite3 as _sqlite3
 
     result = {"tx_hash": tx_hash, "found": False, "source": None, "transaction": None, "verified": False, "on_chain": None}
 
