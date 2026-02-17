@@ -178,7 +178,11 @@ class CoinGeckoCollector:
         return coins
 
     async def get_coin_detail(self, coin_id: str) -> Optional[CoinMarketData]:
-        """Full detail for one coin (by CoinGecko id like ``solana``)."""
+        """Full detail for one coin (by CoinGecko id like ``solana``).
+
+        Falls back to /coins/markets?ids=<id> if /coins/{id} is rate-limited.
+        """
+        # ── attempt 1: detailed endpoint ──
         try:
             data = await self._get(
                 f"/coins/{coin_id}",
@@ -189,31 +193,51 @@ class CoinGeckoCollector:
                     "developer_data": "false",
                 },
             )
+            md = data.get("market_data", {})
+            return CoinMarketData(
+                coin_id=data.get("id", coin_id),
+                symbol=data.get("symbol", ""),
+                name=data.get("name", ""),
+                current_price=md.get("current_price", {}).get(self.currency, 0),
+                market_cap=md.get("market_cap", {}).get(self.currency, 0),
+                market_cap_rank=data.get("market_cap_rank"),
+                total_volume_24h=md.get("total_volume", {}).get(self.currency, 0),
+                price_change_24h=md.get("price_change_24h", 0),
+                price_change_pct_24h=md.get("price_change_percentage_24h", 0),
+                price_change_pct_7d=md.get("price_change_percentage_7d", 0),
+                price_change_pct_30d=md.get("price_change_percentage_30d", 0),
+                ath=md.get("ath", {}).get(self.currency, 0),
+                ath_change_pct=md.get("ath_change_percentage", {}).get(self.currency, 0),
+                circulating_supply=md.get("circulating_supply", 0) or 0,
+                total_supply=md.get("total_supply"),
+                high_24h=md.get("high_24h", {}).get(self.currency, 0),
+                low_24h=md.get("low_24h", {}).get(self.currency, 0),
+                last_updated=datetime.now(timezone.utc),
+            )
         except Exception as exc:
-            logger.error("CoinGecko /coins/%s error: %s", coin_id, exc)
-            return None
+            logger.warning("CoinGecko /coins/%s failed (%s), trying /coins/markets fallback", coin_id, exc)
 
-        md = data.get("market_data", {})
-        return CoinMarketData(
-            coin_id=data.get("id", coin_id),
-            symbol=data.get("symbol", ""),
-            name=data.get("name", ""),
-            current_price=md.get("current_price", {}).get(self.currency, 0),
-            market_cap=md.get("market_cap", {}).get(self.currency, 0),
-            market_cap_rank=data.get("market_cap_rank"),
-            total_volume_24h=md.get("total_volume", {}).get(self.currency, 0),
-            price_change_24h=md.get("price_change_24h", 0),
-            price_change_pct_24h=md.get("price_change_percentage_24h", 0),
-            price_change_pct_7d=md.get("price_change_percentage_7d", 0),
-            price_change_pct_30d=md.get("price_change_percentage_30d", 0),
-            ath=md.get("ath", {}).get(self.currency, 0),
-            ath_change_pct=md.get("ath_change_percentage", {}).get(self.currency, 0),
-            circulating_supply=md.get("circulating_supply", 0) or 0,
-            total_supply=md.get("total_supply"),
-            high_24h=md.get("high_24h", {}).get(self.currency, 0),
-            low_24h=md.get("low_24h", {}).get(self.currency, 0),
-            last_updated=datetime.now(timezone.utc),
-        )
+        # ── attempt 2: fallback via /coins/markets?ids=<id> ──
+        try:
+            data = await self._get(
+                "/coins/markets",
+                {
+                    "vs_currency": self.currency,
+                    "ids": coin_id,
+                    "order": "market_cap_desc",
+                    "per_page": "1",
+                    "page": "1",
+                    "sparkline": "false",
+                    "price_change_percentage": "24h,7d,30d",
+                },
+            )
+            if data and len(data) > 0:
+                logger.info("CoinGecko fallback succeeded for %s", coin_id)
+                return self._parse_market_item(data[0])
+        except Exception as exc2:
+            logger.error("CoinGecko fallback /coins/markets?ids=%s also failed: %s", coin_id, exc2)
+
+        return None
 
     async def get_price_history(
         self,

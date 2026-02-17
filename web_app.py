@@ -724,9 +724,28 @@ async def get_token_feed(
 # TOKEN DETAIL
 # ══════════════════════════════════════════════════════════════════
 
+# Common ticker / symbol → CoinGecko ID mapping
+_COIN_ALIASES: dict = {
+    "btc": "bitcoin", "eth": "ethereum", "sol": "solana",
+    "xrp": "ripple", "doge": "dogecoin", "ada": "cardano",
+    "avax": "avalanche-2", "link": "chainlink", "dot": "polkadot",
+    "matic": "matic-network", "shib": "shiba-inu", "uni": "uniswap",
+    "atom": "cosmos", "ltc": "litecoin", "near": "near",
+    "bnb": "binancecoin", "trx": "tron", "xlm": "stellar",
+    "icp": "internet-computer", "apt": "aptos", "sui": "sui",
+    "arb": "arbitrum", "op": "optimism", "pepe": "pepe",
+    "bonk": "bonk", "wif": "dogwifcoin", "render": "render-token",
+    "fet": "fetch-ai", "inj": "injective-protocol",
+}
+
+
 @app.get("/api/token/{coin_id}", response_model=TokenDetail)
 async def get_token_detail(coin_id: str):
-    coin = await cg.get_coin_detail(coin_id.lower())
+    _ensure_initialized()
+    coin_id_lower = coin_id.lower().strip()
+    # Resolve common aliases (btc→bitcoin, sol→solana, etc.)
+    coin_id_lower = _COIN_ALIASES.get(coin_id_lower, coin_id_lower)
+    coin = await cg.get_coin_detail(coin_id_lower)
     if not coin:
         raise HTTPException(404, f"Token '{coin_id}' not found on CoinGecko")
 
