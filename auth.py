@@ -1,15 +1,15 @@
 """
 PumpIQ Authentication Module
 ==============================
-SQLite-backed user management with JWT tokens, wallet linking, and portfolio tracking.
+Supabase-backed user management with JWT tokens, wallet linking, and portfolio tracking.
 """
 
 from __future__ import annotations
 
 import os
-import sqlite3
 import hashlib
 import secrets
+import json as _json
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
 
@@ -19,15 +19,12 @@ from pydantic import BaseModel, EmailStr
 
 import smtp_service
 from blockchain_service import blockchain
+from supabase_db import get_supabase
 
 # ── Config ──────────────────────────────────────────────────────
 SECRET_KEY = os.getenv("SECRET_KEY", "pumpiq_dev_secret_key_change_in_production")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
-
-# On Vercel (serverless), use /tmp for writable SQLite; locally use project dir
-IS_VERCEL = bool(os.getenv("VERCEL"))
-DB_PATH = "/tmp/pumpiq.db" if IS_VERCEL else os.path.join(os.path.dirname(__file__), "pumpiq.db")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "10080"))  # 7 days
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -99,150 +96,10 @@ class TokenResponse(BaseModel):
 
 # ── Database Setup ──────────────────────────────────────────────
 
-def get_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    try:
-        conn.execute("PRAGMA journal_mode=WAL")
-    except sqlite3.OperationalError:
-        pass  # WAL may not be supported on some serverless filesystems
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
-
-
 def init_db():
-    """Create tables if they don't exist."""
-    conn = get_db()
-    conn.executescript("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT UNIQUE NOT NULL,
-            username TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            email_verified INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            last_login TEXT
-        );
-
-        CREATE TABLE IF NOT EXISTS wallets (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            address TEXT NOT NULL,
-            chain TEXT NOT NULL DEFAULT 'ethereum',
-            label TEXT DEFAULT '',
-            added_at TEXT NOT NULL DEFAULT (datetime('now')),
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-            UNIQUE(user_id, address, chain)
-        );
-
-        CREATE TABLE IF NOT EXISTS watchlist (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            coin_id TEXT NOT NULL,
-            added_at TEXT NOT NULL DEFAULT (datetime('now')),
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-            UNIQUE(user_id, coin_id)
-        );
-
-        CREATE TABLE IF NOT EXISTS portfolio (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            coin_id TEXT NOT NULL,
-            amount REAL NOT NULL DEFAULT 0,
-            avg_buy_price REAL NOT NULL DEFAULT 0,
-            notes TEXT DEFAULT '',
-            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-            UNIQUE(user_id, coin_id)
-        );
-
-        CREATE TABLE IF NOT EXISTS trade_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            coin_id TEXT NOT NULL,
-            action TEXT NOT NULL,
-            amount REAL NOT NULL,
-            price REAL NOT NULL,
-            timestamp TEXT NOT NULL DEFAULT (datetime('now')),
-            wallet_address TEXT DEFAULT '',
-            tx_hash TEXT DEFAULT '',
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
-
-        CREATE TABLE IF NOT EXISTS email_tokens (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            token TEXT UNIQUE NOT NULL,
-            token_type TEXT NOT NULL,
-            expires_at TEXT NOT NULL,
-            used INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
-
-        CREATE TABLE IF NOT EXISTS bank_accounts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            account_holder TEXT NOT NULL,
-            account_number_hash TEXT NOT NULL,
-            account_last4 TEXT NOT NULL,
-            ifsc_code TEXT NOT NULL,
-            bank_name TEXT NOT NULL,
-            verified INTEGER NOT NULL DEFAULT 0,
-            status TEXT NOT NULL DEFAULT 'pending',
-            added_at TEXT NOT NULL DEFAULT (datetime('now')),
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
-
-        CREATE TABLE IF NOT EXISTS wallet_balance (
-            user_id INTEGER PRIMARY KEY,
-            balance REAL NOT NULL DEFAULT 0.0,
-            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
-
-        CREATE TABLE IF NOT EXISTS wallet_transactions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            type TEXT NOT NULL,
-            amount REAL NOT NULL,
-            bank_id INTEGER,
-            description TEXT DEFAULT '',
-            tx_hash TEXT NOT NULL DEFAULT '',
-            status TEXT NOT NULL DEFAULT 'completed',
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
-
-        CREATE TABLE IF NOT EXISTS user_preferences (
-            user_id INTEGER PRIMARY KEY,
-            risk_profile TEXT NOT NULL DEFAULT 'balanced',
-            ai_sensitivity REAL NOT NULL DEFAULT 0.5,
-            auto_trade_threshold REAL NOT NULL DEFAULT 7.0,
-            max_daily_trades INTEGER NOT NULL DEFAULT 10,
-            preferred_chains TEXT NOT NULL DEFAULT '["ethereum","solana"]',
-            notification_email INTEGER NOT NULL DEFAULT 1,
-            notification_push INTEGER NOT NULL DEFAULT 1,
-            dark_mode INTEGER NOT NULL DEFAULT 1,
-            language TEXT NOT NULL DEFAULT 'en',
-            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
-    """)
-    # Migration: add email_verified column if missing (existing DBs)
-    try:
-        conn.execute("ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0")
-        conn.commit()
-    except sqlite3.OperationalError:
-        pass  # column already exists
-    # Migration: add tx_hash column to wallet_transactions
-    try:
-        conn.execute("ALTER TABLE wallet_transactions ADD COLUMN tx_hash TEXT NOT NULL DEFAULT ''")
-        conn.commit()
-    except sqlite3.OperationalError:
-        pass
-    conn.commit()
-    conn.close()
+    """No-op for Supabase — tables are created via the Supabase SQL Editor.
+    Run database/supabase_schema.sql in your Supabase project's SQL Editor."""
+    pass
 
 
 def _generate_wallet_tx_hash(user_id: int, tx_type: str, amount: float, timestamp: str) -> str:
@@ -282,89 +139,88 @@ def decode_token(token: str) -> Optional[Dict[str, Any]]:
 # ── User CRUD ───────────────────────────────────────────────────
 
 def register_user(email: str, username: str, password: str) -> Optional[UserResponse]:
-    conn = get_db()
+    sb = get_supabase()
     try:
-        cursor = conn.execute(
-            "INSERT INTO users (email, username, password_hash) VALUES (?, ?, ?)",
-            (email.lower(), username, hash_password(password)),
-        )
-        user_id = cursor.lastrowid
+        result = sb.table("users").insert({
+            "email": email.lower(),
+            "username": username,
+            "password_hash": hash_password(password),
+        }).execute()
+
+        if not result.data:
+            return None
+
+        user_id = result.data[0]["id"]
+
         # Give new users a starting wallet balance of $10,000
-        conn.execute(
-            "INSERT INTO wallet_balance (user_id, balance, updated_at) VALUES (?, 10000.0, datetime('now'))",
-            (user_id,),
-        )
+        sb.table("wallet_balance").insert({
+            "user_id": user_id,
+            "balance": 10000.0,
+        }).execute()
+
         timestamp = datetime.now(timezone.utc).isoformat()
         bonus_hash = _generate_wallet_tx_hash(user_id, 'signup_bonus', 10000.0, timestamp)
-        conn.execute(
-            "INSERT INTO wallet_transactions (user_id, type, amount, description, tx_hash, status, created_at) VALUES (?, 'signup_bonus', 10000.0, 'Welcome bonus - $10,000 starting balance', ?, 'completed', ?)",
-            (user_id, bonus_hash, timestamp),
-        )
-        conn.commit()
+
+        sb.table("wallet_transactions").insert({
+            "user_id": user_id,
+            "type": "signup_bonus",
+            "amount": 10000.0,
+            "description": "Welcome bonus - $10,000 starting balance",
+            "tx_hash": bonus_hash,
+            "status": "completed",
+            "created_at": timestamp,
+        }).execute()
 
         # Record signup bonus on blockchain
         blockchain.record_transaction_async(bonus_hash, "signup_bonus", "USD", 10000.0)
 
-        return _get_user_response(conn, user_id)
-    except sqlite3.IntegrityError:
-        return None
-    finally:
-        conn.close()
+        return _get_user_response(user_id)
+    except Exception as e:
+        # Unique constraint violation (duplicate email/username)
+        if "duplicate" in str(e).lower() or "23505" in str(e):
+            return None
+        raise
 
 
 def authenticate_user(email: str, password: str) -> Optional[UserResponse]:
-    conn = get_db()
-    try:
-        row = conn.execute(
-            "SELECT * FROM users WHERE email = ?", (email.lower(),)
-        ).fetchone()
-        if not row or not verify_password(password, row["password_hash"]):
-            return None
-        conn.execute(
-            "UPDATE users SET last_login = datetime('now') WHERE id = ?", (row["id"],)
-        )
-        conn.commit()
-        return _get_user_response(conn, row["id"])
-    finally:
-        conn.close()
+    sb = get_supabase()
+    result = sb.table("users").select("*").eq("email", email.lower()).execute()
+    if not result.data:
+        return None
+    row = result.data[0]
+    if not verify_password(password, row["password_hash"]):
+        return None
+    sb.table("users").update({"last_login": datetime.now(timezone.utc).isoformat()}).eq("id", row["id"]).execute()
+    return _get_user_response(row["id"])
 
 
 def get_user_by_id(user_id: int) -> Optional[UserResponse]:
-    conn = get_db()
-    try:
-        return _get_user_response(conn, user_id)
-    finally:
-        conn.close()
+    return _get_user_response(user_id)
 
 
-def _get_user_response(conn: sqlite3.Connection, user_id: int) -> Optional[UserResponse]:
-    row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
-    if not row:
+def _get_user_response(user_id: int) -> Optional[UserResponse]:
+    sb = get_supabase()
+    result = sb.table("users").select("*").eq("id", user_id).execute()
+    if not result.data:
         return None
+    row = result.data[0]
 
-    wallets = conn.execute(
-        "SELECT address, chain, label FROM wallets WHERE user_id = ?", (user_id,)
-    ).fetchall()
-    watchlist = conn.execute(
-        "SELECT coin_id FROM watchlist WHERE user_id = ?", (user_id,)
-    ).fetchall()
-    bank_accounts = conn.execute(
-        "SELECT id, account_holder, account_last4, ifsc_code, bank_name, verified, status, added_at FROM bank_accounts WHERE user_id = ?",
-        (user_id,),
-    ).fetchall()
-    bal_row = conn.execute(
-        "SELECT balance FROM wallet_balance WHERE user_id = ?", (user_id,)
-    ).fetchone()
+    wallets = sb.table("wallets").select("address, chain, label").eq("user_id", user_id).execute()
+    watchlist = sb.table("watchlist").select("coin_id").eq("user_id", user_id).execute()
+    bank_accounts = sb.table("bank_accounts").select(
+        "id, account_holder, account_last4, ifsc_code, bank_name, verified, status, added_at"
+    ).eq("user_id", user_id).execute()
+    bal = sb.table("wallet_balance").select("balance").eq("user_id", user_id).execute()
 
     return UserResponse(
         id=row["id"],
         email=row["email"],
         username=row["username"],
-        email_verified=bool(row["email_verified"]) if "email_verified" in row.keys() else False,
-        wallets=[dict(w) for w in wallets],
-        watchlist=[w["coin_id"] for w in watchlist],
-        bank_accounts=[dict(b) for b in bank_accounts],
-        wallet_balance=bal_row["balance"] if bal_row else 0.0,
+        email_verified=bool(row.get("email_verified", False)),
+        wallets=[dict(w) for w in wallets.data] if wallets.data else [],
+        watchlist=[w["coin_id"] for w in watchlist.data] if watchlist.data else [],
+        bank_accounts=[dict(b) for b in bank_accounts.data] if bank_accounts.data else [],
+        wallet_balance=bal.data[0]["balance"] if bal.data else 0.0,
         created_at=row["created_at"],
     )
 
@@ -431,62 +287,51 @@ def add_bank_account(user_id: int, account_holder: str, account_number: str, ifs
     last4 = account_number[-4:]
     detected_bank = result.get("bank_detected", bank_name)
 
-    conn = get_db()
+    sb = get_supabase()
     try:
         # Check for duplicate
-        existing = conn.execute(
-            "SELECT id FROM bank_accounts WHERE user_id = ? AND account_number_hash = ?",
-            (user_id, acc_hash),
-        ).fetchone()
-        if existing:
+        existing = sb.table("bank_accounts").select("id").eq("user_id", user_id).eq("account_number_hash", acc_hash).execute()
+        if existing.data:
             return {"success": False, "errors": ["This bank account is already linked"]}
 
-        conn.execute(
-            """INSERT INTO bank_accounts (user_id, account_holder, account_number_hash, account_last4, ifsc_code, bank_name, verified, status)
-               VALUES (?, ?, ?, ?, ?, ?, 1, 'verified')""",
-            (user_id, account_holder.strip(), acc_hash, last4, ifsc_code.upper(), detected_bank),
-        )
-        conn.commit()
+        sb.table("bank_accounts").insert({
+            "user_id": user_id,
+            "account_holder": account_holder.strip(),
+            "account_number_hash": acc_hash,
+            "account_last4": last4,
+            "ifsc_code": ifsc_code.upper(),
+            "bank_name": detected_bank,
+            "verified": True,
+            "status": "verified",
+        }).execute()
         return {"success": True, "bank_name": detected_bank, "last4": last4}
     except Exception as e:
         return {"success": False, "errors": [str(e)]}
-    finally:
-        conn.close()
 
 
 def remove_bank_account(user_id: int, bank_id: int) -> bool:
-    conn = get_db()
+    sb = get_supabase()
     try:
-        conn.execute("DELETE FROM bank_accounts WHERE id = ? AND user_id = ?", (bank_id, user_id))
-        conn.commit()
+        sb.table("bank_accounts").delete().eq("id", bank_id).eq("user_id", user_id).execute()
         return True
     except Exception:
         return False
-    finally:
-        conn.close()
 
 
 def get_bank_accounts(user_id: int) -> List[Dict[str, Any]]:
-    conn = get_db()
-    try:
-        rows = conn.execute(
-            "SELECT id, account_holder, account_last4, ifsc_code, bank_name, verified, status, added_at FROM bank_accounts WHERE user_id = ?",
-            (user_id,),
-        ).fetchall()
-        return [dict(r) for r in rows]
-    finally:
-        conn.close()
+    sb = get_supabase()
+    result = sb.table("bank_accounts").select(
+        "id, account_holder, account_last4, ifsc_code, bank_name, verified, status, added_at"
+    ).eq("user_id", user_id).execute()
+    return [dict(r) for r in result.data] if result.data else []
 
 
 # ── Wallet Balance Management ──────────────────────────────────
 
 def get_wallet_balance(user_id: int) -> float:
-    conn = get_db()
-    try:
-        row = conn.execute("SELECT balance FROM wallet_balance WHERE user_id = ?", (user_id,)).fetchone()
-        return row["balance"] if row else 0.0
-    finally:
-        conn.close()
+    sb = get_supabase()
+    result = sb.table("wallet_balance").select("balance").eq("user_id", user_id).execute()
+    return result.data[0]["balance"] if result.data else 0.0
 
 
 def deposit_to_wallet(user_id: int, amount: float, bank_id: int) -> Dict[str, Any]:
@@ -496,44 +341,40 @@ def deposit_to_wallet(user_id: int, amount: float, bank_id: int) -> Dict[str, An
     if amount > 1000000:
         return {"success": False, "error": "Maximum deposit limit is $1,000,000"}
 
-    conn = get_db()
+    sb = get_supabase()
     try:
         # Verify bank account belongs to user and is verified
-        bank = conn.execute(
-            "SELECT * FROM bank_accounts WHERE id = ? AND user_id = ? AND verified = 1",
-            (bank_id, user_id),
-        ).fetchone()
-        if not bank:
+        bank = sb.table("bank_accounts").select("*").eq("id", bank_id).eq("user_id", user_id).eq("verified", True).execute()
+        if not bank.data:
             return {"success": False, "error": "Bank account not found or not verified"}
+        bank_row = bank.data[0]
 
-        # Upsert wallet balance
-        conn.execute(
-            """INSERT INTO wallet_balance (user_id, balance, updated_at)
-               VALUES (?, ?, datetime('now'))
-               ON CONFLICT(user_id) DO UPDATE SET
-                   balance = balance + ?,
-                   updated_at = datetime('now')""",
-            (user_id, amount, amount),
-        )
+        # Atomically update wallet balance via RPC
+        new_balance = sb.rpc("update_wallet_balance", {"p_user_id": user_id, "p_delta": amount}).execute()
+
         # Record transaction
         timestamp = datetime.now(timezone.utc).isoformat()
         dep_hash = _generate_wallet_tx_hash(user_id, 'deposit', amount, timestamp)
-        conn.execute(
-            "INSERT INTO wallet_transactions (user_id, type, amount, bank_id, description, tx_hash, status, created_at) VALUES (?, 'deposit', ?, ?, ?, ?, 'completed', ?)",
-            (user_id, amount, bank_id, f"Deposit from {bank['bank_name']} ****{bank['account_last4']}", dep_hash, timestamp),
-        )
-        conn.commit()
+        sb.table("wallet_transactions").insert({
+            "user_id": user_id,
+            "type": "deposit",
+            "amount": amount,
+            "bank_id": bank_id,
+            "description": f"Deposit from {bank_row['bank_name']} ****{bank_row['account_last4']}",
+            "tx_hash": dep_hash,
+            "status": "completed",
+            "created_at": timestamp,
+        }).execute()
 
-        new_balance = conn.execute("SELECT balance FROM wallet_balance WHERE user_id = ?", (user_id,)).fetchone()
+        bal = sb.table("wallet_balance").select("balance").eq("user_id", user_id).execute()
+        final_balance = bal.data[0]["balance"] if bal.data else amount
 
         # Record deposit on blockchain
         blockchain.record_transaction_async(dep_hash, "deposit", "USD", amount)
 
-        return {"success": True, "new_balance": new_balance["balance"], "bank_name": bank["bank_name"], "tx_hash": dep_hash}
+        return {"success": True, "new_balance": final_balance, "bank_name": bank_row["bank_name"], "tx_hash": dep_hash}
     except Exception as e:
         return {"success": False, "error": str(e)}
-    finally:
-        conn.close()
 
 
 def withdraw_from_wallet(user_id: int, amount: float, bank_id: int) -> Dict[str, Any]:
@@ -541,297 +382,230 @@ def withdraw_from_wallet(user_id: int, amount: float, bank_id: int) -> Dict[str,
     if amount <= 0:
         return {"success": False, "error": "Amount must be greater than 0"}
 
-    conn = get_db()
+    sb = get_supabase()
     try:
-        bal_row = conn.execute("SELECT balance FROM wallet_balance WHERE user_id = ?", (user_id,)).fetchone()
-        current = bal_row["balance"] if bal_row else 0.0
+        bal = sb.table("wallet_balance").select("balance").eq("user_id", user_id).execute()
+        current = bal.data[0]["balance"] if bal.data else 0.0
         if amount > current:
             return {"success": False, "error": "Insufficient wallet balance"}
 
-        bank = conn.execute(
-            "SELECT * FROM bank_accounts WHERE id = ? AND user_id = ? AND verified = 1",
-            (bank_id, user_id),
-        ).fetchone()
-        if not bank:
+        bank = sb.table("bank_accounts").select("*").eq("id", bank_id).eq("user_id", user_id).eq("verified", True).execute()
+        if not bank.data:
             return {"success": False, "error": "Bank account not found or not verified"}
+        bank_row = bank.data[0]
 
-        conn.execute(
-            "UPDATE wallet_balance SET balance = balance - ?, updated_at = datetime('now') WHERE user_id = ?",
-            (amount, user_id),
-        )
+        # Atomically deduct balance via RPC
+        sb.rpc("update_wallet_balance", {"p_user_id": user_id, "p_delta": -amount}).execute()
+
         timestamp = datetime.now(timezone.utc).isoformat()
         wd_hash = _generate_wallet_tx_hash(user_id, 'withdraw', amount, timestamp)
-        conn.execute(
-            "INSERT INTO wallet_transactions (user_id, type, amount, bank_id, description, tx_hash, status, created_at) VALUES (?, 'withdraw', ?, ?, ?, ?, 'completed', ?)",
-            (user_id, amount, bank_id, f"Withdrawal to {bank['bank_name']} ****{bank['account_last4']}", wd_hash, timestamp),
-        )
-        conn.commit()
+        sb.table("wallet_transactions").insert({
+            "user_id": user_id,
+            "type": "withdraw",
+            "amount": amount,
+            "bank_id": bank_id,
+            "description": f"Withdrawal to {bank_row['bank_name']} ****{bank_row['account_last4']}",
+            "tx_hash": wd_hash,
+            "status": "completed",
+            "created_at": timestamp,
+        }).execute()
 
-        new_balance = conn.execute("SELECT balance FROM wallet_balance WHERE user_id = ?", (user_id,)).fetchone()
+        new_bal = sb.table("wallet_balance").select("balance").eq("user_id", user_id).execute()
+        final_balance = new_bal.data[0]["balance"] if new_bal.data else 0.0
 
         # Record withdrawal on blockchain
         blockchain.record_transaction_async(wd_hash, "withdraw", "USD", amount)
 
-        return {"success": True, "new_balance": new_balance["balance"], "tx_hash": wd_hash}
+        return {"success": True, "new_balance": final_balance, "tx_hash": wd_hash}
     except Exception as e:
         return {"success": False, "error": str(e)}
-    finally:
-        conn.close()
 
 
 def get_wallet_transactions(user_id: int, limit: int = 20) -> List[Dict[str, Any]]:
-    conn = get_db()
-    try:
-        rows = conn.execute(
-            "SELECT id, type, amount, description, tx_hash, status, created_at FROM wallet_transactions WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
-            (user_id, limit),
-        ).fetchall()
-        return [dict(r) for r in rows]
-    finally:
-        conn.close()
+    sb = get_supabase()
+    result = sb.table("wallet_transactions").select(
+        "id, type, amount, description, tx_hash, status, created_at"
+    ).eq("user_id", user_id).order("created_at", desc=True).limit(limit).execute()
+    return [dict(r) for r in result.data] if result.data else []
 
 
 # ── Wallet Management ──────────────────────────────────────────
 
 def add_wallet(user_id: int, address: str, chain: str = "ethereum", label: str = "") -> bool:
-    conn = get_db()
+    sb = get_supabase()
     try:
-        conn.execute(
-            "INSERT OR IGNORE INTO wallets (user_id, address, chain, label) VALUES (?, ?, ?, ?)",
-            (user_id, address.lower(), chain.lower(), label),
-        )
-        conn.commit()
+        sb.table("wallets").upsert({
+            "user_id": user_id,
+            "address": address.lower(),
+            "chain": chain.lower(),
+            "label": label,
+        }, on_conflict="user_id,address,chain").execute()
         return True
     except Exception:
         return False
-    finally:
-        conn.close()
 
 
 def remove_wallet(user_id: int, address: str, chain: str = "ethereum") -> bool:
-    conn = get_db()
+    sb = get_supabase()
     try:
-        conn.execute(
-            "DELETE FROM wallets WHERE user_id = ? AND address = ? AND chain = ?",
-            (user_id, address.lower(), chain.lower()),
-        )
-        conn.commit()
+        sb.table("wallets").delete().eq("user_id", user_id).eq("address", address.lower()).eq("chain", chain.lower()).execute()
         return True
     except Exception:
         return False
-    finally:
-        conn.close()
 
 
 def get_wallets(user_id: int) -> List[Dict[str, str]]:
-    conn = get_db()
-    try:
-        rows = conn.execute(
-            "SELECT address, chain, label, added_at FROM wallets WHERE user_id = ?",
-            (user_id,),
-        ).fetchall()
-        return [dict(r) for r in rows]
-    finally:
-        conn.close()
+    sb = get_supabase()
+    result = sb.table("wallets").select("address, chain, label, added_at").eq("user_id", user_id).execute()
+    return [dict(r) for r in result.data] if result.data else []
 
 
 # ── Watchlist ───────────────────────────────────────────────────
 
 def add_to_watchlist(user_id: int, coin_id: str) -> bool:
-    conn = get_db()
+    sb = get_supabase()
     try:
-        conn.execute(
-            "INSERT OR IGNORE INTO watchlist (user_id, coin_id) VALUES (?, ?)",
-            (user_id, coin_id.lower()),
-        )
-        conn.commit()
+        sb.table("watchlist").upsert({
+            "user_id": user_id,
+            "coin_id": coin_id.lower(),
+        }, on_conflict="user_id,coin_id").execute()
         return True
     except Exception:
         return False
-    finally:
-        conn.close()
 
 
 def remove_from_watchlist(user_id: int, coin_id: str) -> bool:
-    conn = get_db()
+    sb = get_supabase()
     try:
-        conn.execute(
-            "DELETE FROM watchlist WHERE user_id = ? AND coin_id = ?",
-            (user_id, coin_id.lower()),
-        )
-        conn.commit()
+        sb.table("watchlist").delete().eq("user_id", user_id).eq("coin_id", coin_id.lower()).execute()
         return True
     except Exception:
         return False
-    finally:
-        conn.close()
 
 
 def get_watchlist(user_id: int) -> List[str]:
-    conn = get_db()
-    try:
-        rows = conn.execute(
-            "SELECT coin_id FROM watchlist WHERE user_id = ?", (user_id,)
-        ).fetchall()
-        return [r["coin_id"] for r in rows]
-    finally:
-        conn.close()
+    sb = get_supabase()
+    result = sb.table("watchlist").select("coin_id").eq("user_id", user_id).execute()
+    return [r["coin_id"] for r in result.data] if result.data else []
 
 
 # ── Portfolio ───────────────────────────────────────────────────
 
 def update_portfolio(user_id: int, coin_id: str, amount: float, avg_price: float, notes: str = "") -> bool:
-    conn = get_db()
+    sb = get_supabase()
     try:
-        conn.execute(
-            """INSERT INTO portfolio (user_id, coin_id, amount, avg_buy_price, notes, updated_at)
-               VALUES (?, ?, ?, ?, ?, datetime('now'))
-               ON CONFLICT(user_id, coin_id) DO UPDATE SET
-                   amount = excluded.amount,
-                   avg_buy_price = excluded.avg_buy_price,
-                   notes = excluded.notes,
-                   updated_at = datetime('now')""",
-            (user_id, coin_id.lower(), amount, avg_price, notes),
-        )
-        conn.commit()
+        sb.table("portfolio").upsert({
+            "user_id": user_id,
+            "coin_id": coin_id.lower(),
+            "amount": amount,
+            "avg_buy_price": avg_price,
+            "notes": notes,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }, on_conflict="user_id,coin_id").execute()
         return True
     except Exception:
         return False
-    finally:
-        conn.close()
 
 
 def get_portfolio(user_id: int) -> List[Dict[str, Any]]:
-    conn = get_db()
-    try:
-        rows = conn.execute(
-            "SELECT coin_id, amount, avg_buy_price, notes, updated_at FROM portfolio WHERE user_id = ?",
-            (user_id,),
-        ).fetchall()
-        return [dict(r) for r in rows]
-    finally:
-        conn.close()
+    sb = get_supabase()
+    result = sb.table("portfolio").select(
+        "coin_id, amount, avg_buy_price, notes, updated_at"
+    ).eq("user_id", user_id).execute()
+    return [dict(r) for r in result.data] if result.data else []
 
 
 # ── Email Verification ──────────────────────────────────────────
 
 def send_verification_email(user_id: int) -> bool:
     """Generate token and send verification email."""
-    conn = get_db()
-    try:
-        row = conn.execute("SELECT email, username FROM users WHERE id = ?", (user_id,)).fetchone()
-        if not row:
-            return False
+    sb = get_supabase()
+    result = sb.table("users").select("email, username").eq("id", user_id).execute()
+    if not result.data:
+        return False
+    row = result.data[0]
 
-        token = smtp_service.generate_verification_token()
-        expires = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+    token = smtp_service.generate_verification_token()
+    expires = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
 
-        conn.execute(
-            "INSERT INTO email_tokens (user_id, token, token_type, expires_at) VALUES (?, ?, 'verify', ?)",
-            (user_id, token, expires),
-        )
-        conn.commit()
+    sb.table("email_tokens").insert({
+        "user_id": user_id,
+        "token": token,
+        "token_type": "verify",
+        "expires_at": expires,
+    }).execute()
 
-        return smtp_service.send_verification_email(row["email"], row["username"], token)
-    finally:
-        conn.close()
+    return smtp_service.send_verification_email(row["email"], row["username"], token)
 
 
 def verify_email(token: str) -> Optional[str]:
     """Verify email from token. Returns error string or None on success."""
-    conn = get_db()
-    try:
-        row = conn.execute(
-            "SELECT * FROM email_tokens WHERE token = ? AND token_type = 'verify' AND used = 0",
-            (token,),
-        ).fetchone()
-        if not row:
-            return "Invalid or expired verification link"
+    sb = get_supabase()
+    result = sb.table("email_tokens").select("*").eq("token", token).eq("token_type", "verify").eq("used", False).execute()
+    if not result.data:
+        return "Invalid or expired verification link"
+    row = result.data[0]
 
-        if datetime.fromisoformat(row["expires_at"]) < datetime.now(timezone.utc):
-            return "Verification link has expired"
+    if datetime.fromisoformat(row["expires_at"].replace("Z", "+00:00")) < datetime.now(timezone.utc):
+        return "Verification link has expired"
 
-        conn.execute("UPDATE users SET email_verified = 1 WHERE id = ?", (row["user_id"],))
-        conn.execute("UPDATE email_tokens SET used = 1 WHERE id = ?", (row["id"],))
-        conn.commit()
+    sb.table("users").update({"email_verified": True}).eq("id", row["user_id"]).execute()
+    sb.table("email_tokens").update({"used": True}).eq("id", row["id"]).execute()
 
-        # Send welcome email
-        user = conn.execute("SELECT email, username FROM users WHERE id = ?", (row["user_id"],)).fetchone()
-        if user:
-            smtp_service.send_welcome_email(user["email"], user["username"])
+    # Send welcome email
+    user = sb.table("users").select("email, username").eq("id", row["user_id"]).execute()
+    if user.data:
+        smtp_service.send_welcome_email(user.data[0]["email"], user.data[0]["username"])
 
-        return None  # success
-    finally:
-        conn.close()
+    return None  # success
 
 
 # ── Password Reset ──────────────────────────────────────────────
 
 def request_password_reset(email: str) -> bool:
     """Generate reset token and send email. Returns True if user exists."""
-    conn = get_db()
-    try:
-        row = conn.execute(
-            "SELECT id, username FROM users WHERE email = ?", (email.lower(),)
-        ).fetchone()
-        if not row:
-            return False  # user not found (don't reveal this to frontend)
+    sb = get_supabase()
+    result = sb.table("users").select("id, username").eq("email", email.lower()).execute()
+    if not result.data:
+        return False
+    row = result.data[0]
 
-        token = smtp_service.generate_reset_token()
-        expires = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    token = smtp_service.generate_reset_token()
+    expires = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
 
-        # Invalidate old reset tokens
-        conn.execute(
-            "UPDATE email_tokens SET used = 1 WHERE user_id = ? AND token_type = 'reset' AND used = 0",
-            (row["id"],),
-        )
-        conn.execute(
-            "INSERT INTO email_tokens (user_id, token, token_type, expires_at) VALUES (?, ?, 'reset', ?)",
-            (row["id"], token, expires),
-        )
-        conn.commit()
+    # Invalidate old reset tokens
+    sb.table("email_tokens").update({"used": True}).eq("user_id", row["id"]).eq("token_type", "reset").eq("used", False).execute()
 
-        return smtp_service.send_password_reset_email(email.lower(), row["username"], token)
-    finally:
-        conn.close()
+    sb.table("email_tokens").insert({
+        "user_id": row["id"],
+        "token": token,
+        "token_type": "reset",
+        "expires_at": expires,
+    }).execute()
+
+    return smtp_service.send_password_reset_email(email.lower(), row["username"], token)
 
 
 def reset_password(token: str, new_password: str) -> Optional[str]:
     """Reset password from token. Returns error string or None on success."""
-    conn = get_db()
-    try:
-        row = conn.execute(
-            "SELECT * FROM email_tokens WHERE token = ? AND token_type = 'reset' AND used = 0",
-            (token,),
-        ).fetchone()
-        if not row:
-            return "Invalid or expired reset link"
+    sb = get_supabase()
+    result = sb.table("email_tokens").select("*").eq("token", token).eq("token_type", "reset").eq("used", False).execute()
+    if not result.data:
+        return "Invalid or expired reset link"
+    row = result.data[0]
 
-        if datetime.fromisoformat(row["expires_at"]) < datetime.now(timezone.utc):
-            return "Reset link has expired"
+    if datetime.fromisoformat(row["expires_at"].replace("Z", "+00:00")) < datetime.now(timezone.utc):
+        return "Reset link has expired"
 
-        conn.execute(
-            "UPDATE users SET password_hash = ? WHERE id = ?",
-            (hash_password(new_password), row["user_id"]),
-        )
-        conn.execute("UPDATE email_tokens SET used = 1 WHERE id = ?", (row["id"],))
-        conn.commit()
-        return None  # success
-    finally:
-        conn.close()
+    sb.table("users").update({"password_hash": hash_password(new_password)}).eq("id", row["user_id"]).execute()
+    sb.table("email_tokens").update({"used": True}).eq("id", row["id"]).execute()
+    return None  # success
 
 
 def resend_verification(user_id: int) -> bool:
     """Resend verification email, invalidating old tokens."""
-    conn = get_db()
-    try:
-        conn.execute(
-            "UPDATE email_tokens SET used = 1 WHERE user_id = ? AND token_type = 'verify' AND used = 0",
-            (user_id,),
-        )
-        conn.commit()
-    finally:
-        conn.close()
+    sb = get_supabase()
+    sb.table("email_tokens").update({"used": True}).eq("user_id", user_id).eq("token_type", "verify").eq("used", False).execute()
     return send_verification_email(user_id)
 
 
@@ -839,37 +613,31 @@ def resend_verification(user_id: int) -> bool:
 
 def get_user_preferences(user_id: int) -> UserPreferencesResponse:
     """Get user AI/trading preferences. Returns defaults if no row exists."""
-    conn = get_db()
+    sb = get_supabase()
+    result = sb.table("user_preferences").select("*").eq("user_id", user_id).execute()
+    if not result.data:
+        return UserPreferencesResponse()
+    row = result.data[0]
+    chains = ["ethereum", "solana"]
     try:
-        row = conn.execute(
-            "SELECT * FROM user_preferences WHERE user_id = ?", (user_id,)
-        ).fetchone()
-        if not row:
-            return UserPreferencesResponse()
-        import json as _json
-        chains = ["ethereum", "solana"]
-        try:
-            chains = _json.loads(row["preferred_chains"])
-        except Exception:
-            pass
-        return UserPreferencesResponse(
-            risk_profile=row["risk_profile"],
-            ai_sensitivity=row["ai_sensitivity"],
-            auto_trade_threshold=row["auto_trade_threshold"],
-            max_daily_trades=row["max_daily_trades"],
-            preferred_chains=chains,
-            notification_email=bool(row["notification_email"]),
-            notification_push=bool(row["notification_push"]),
-            dark_mode=bool(row["dark_mode"]),
-            language=row["language"],
-        )
-    finally:
-        conn.close()
+        chains = _json.loads(row["preferred_chains"])
+    except Exception:
+        pass
+    return UserPreferencesResponse(
+        risk_profile=row["risk_profile"],
+        ai_sensitivity=row["ai_sensitivity"],
+        auto_trade_threshold=row["auto_trade_threshold"],
+        max_daily_trades=row["max_daily_trades"],
+        preferred_chains=chains,
+        notification_email=bool(row["notification_email"]),
+        notification_push=bool(row["notification_push"]),
+        dark_mode=bool(row["dark_mode"]),
+        language=row["language"],
+    )
 
 
 def update_user_preferences(user_id: int, updates: Dict[str, Any]) -> UserPreferencesResponse:
     """Upsert user preferences. Only supplied fields are updated."""
-    import json as _json
     current = get_user_preferences(user_id)
     merged = current.model_dump()
 
@@ -893,40 +661,20 @@ def update_user_preferences(user_id: int, updates: Dict[str, Any]) -> UserPrefer
     if "language" in updates and updates["language"] is not None:
         merged["language"] = str(updates["language"])[:5]
 
-    conn = get_db()
-    try:
-        conn.execute("""
-            INSERT INTO user_preferences
-                (user_id, risk_profile, ai_sensitivity, auto_trade_threshold,
-                 max_daily_trades, preferred_chains, notification_email,
-                 notification_push, dark_mode, language, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-            ON CONFLICT(user_id) DO UPDATE SET
-                risk_profile = excluded.risk_profile,
-                ai_sensitivity = excluded.ai_sensitivity,
-                auto_trade_threshold = excluded.auto_trade_threshold,
-                max_daily_trades = excluded.max_daily_trades,
-                preferred_chains = excluded.preferred_chains,
-                notification_email = excluded.notification_email,
-                notification_push = excluded.notification_push,
-                dark_mode = excluded.dark_mode,
-                language = excluded.language,
-                updated_at = datetime('now')
-        """, (
-            user_id,
-            merged["risk_profile"],
-            merged["ai_sensitivity"],
-            merged["auto_trade_threshold"],
-            merged["max_daily_trades"],
-            _json.dumps(merged["preferred_chains"]),
-            1 if merged["notification_email"] else 0,
-            1 if merged["notification_push"] else 0,
-            1 if merged["dark_mode"] else 0,
-            merged["language"],
-        ))
-        conn.commit()
-    finally:
-        conn.close()
+    sb = get_supabase()
+    sb.table("user_preferences").upsert({
+        "user_id": user_id,
+        "risk_profile": merged["risk_profile"],
+        "ai_sensitivity": merged["ai_sensitivity"],
+        "auto_trade_threshold": merged["auto_trade_threshold"],
+        "max_daily_trades": merged["max_daily_trades"],
+        "preferred_chains": _json.dumps(merged["preferred_chains"]),
+        "notification_email": merged["notification_email"],
+        "notification_push": merged["notification_push"],
+        "dark_mode": merged["dark_mode"],
+        "language": merged["language"],
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }).execute()
 
     return get_user_preferences(user_id)
 

@@ -36,6 +36,7 @@ import auth
 import smtp_service
 import trading_engine
 from blockchain_service import blockchain
+from supabase_db import get_supabase
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -179,9 +180,16 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
 
 
 async def require_user(authorization: Optional[str] = Header(None)):
-    user = await get_current_user(authorization)
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(401, "Not authenticated — no token provided. Please log in.")
+    token = authorization.split(" ", 1)[1]
+    payload = auth.decode_token(token)
+    if not payload:
+        raise HTTPException(401, "Not authenticated — token expired or invalid. Please log in again.")
+    user_id = int(payload.get("sub", 0))
+    user = auth.get_user_by_id(user_id)
     if not user:
-        raise HTTPException(401, "Not authenticated")
+        raise HTTPException(401, "Not authenticated — user not found. Please register again.")
     return user
 
 
@@ -367,19 +375,17 @@ class ResendByEmail(BaseModel):
 @app.post("/api/auth/resend-verification-by-email")
 async def resend_verification_by_email(body: ResendByEmail):
     """Resend verification for users who can't log in yet (no token)."""
-    import sqlite3
-    conn = auth.get_db()
+    sb = get_supabase()
     try:
-        row = conn.execute("SELECT id, email_verified FROM users WHERE email = ?", (body.email.lower(),)).fetchone()
-        if not row:
+        resp = sb.table("users").select("id, email_verified").eq("email", body.email.lower()).execute()
+        if not resp.data:
             return {"message": "If an account with that email exists, a verification link has been sent."}
+        row = resp.data[0]
         if row["email_verified"]:
             return {"message": "Email is already verified. You can log in."}
         auth.resend_verification(row["id"])
     except Exception:
         pass
-    finally:
-        conn.close()
     return {"message": "If an account with that email exists, a verification link has been sent."}
 
 
@@ -1077,18 +1083,11 @@ def _send_trade_cycle_emails(user_id: int, cycle_result: dict):
     balance = trading_engine._get_wallet_balance(user_id)
 
     # Parse each action string and look up full position/order details
-    conn = trading_engine._get_db()
-    try:
-        # Get recent orders for this cycle (last N orders matching action count)
-        recent_orders = conn.execute(
-            "SELECT * FROM trade_orders WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
-            (user_id, len(actions) + 2)
-        ).fetchall()
-    finally:
-        conn.close()
+    sb = get_supabase()
+    resp = sb.table("trade_orders").select("*").eq("user_id", user_id).order("created_at", desc=True).limit(len(actions) + 2).execute()
+    recent_orders = resp.data or []
 
     for order in recent_orders[:len(actions)]:
-        order = dict(order)
         action = order.get("action", "BUY")
         symbol = order.get("symbol", "???")
         coin_id = order.get("coin_id", "")
@@ -1105,22 +1104,15 @@ def _send_trade_cycle_emails(user_id: int, cycle_result: dict):
         coin_name = symbol
 
         if order.get("position_id"):
-            conn2 = trading_engine._get_db()
-            try:
-                pos = conn2.execute(
-                    "SELECT * FROM trade_positions WHERE id = ?",
-                    (order["position_id"],)
-                ).fetchone()
-                if pos:
-                    pos = dict(pos)
-                    coin_name = pos.get("coin_name", symbol)
-                    stop_loss = pos.get("stop_loss", 0)
-                    take_profit = pos.get("take_profit", 0)
-                    if action == "SELL":
-                        pnl = pos.get("pnl", 0)
-                        pnl_pct = pos.get("pnl_pct", 0)
-            finally:
-                conn2.close()
+            pos_resp = sb.table("trade_positions").select("*").eq("id", order["position_id"]).execute()
+            if pos_resp.data:
+                pos = pos_resp.data[0]
+                coin_name = pos.get("coin_name", symbol)
+                stop_loss = pos.get("stop_loss", 0)
+                take_profit = pos.get("take_profit", 0)
+                if action == "SELL":
+                    pnl = pos.get("pnl", 0)
+                    pnl_pct = pos.get("pnl_pct", 0)
 
         try:
             smtp_service.send_trade_email(
@@ -1153,12 +1145,9 @@ async def _auto_trade_loop():
     logger.info("Auto-trade background loop started")
     while True:
         try:
-            import sqlite3
-            conn = trading_engine._get_db()
-            enabled_users = conn.execute(
-                "SELECT user_id FROM trade_settings WHERE auto_trade_enabled = 1"
-            ).fetchall()
-            conn.close()
+            sb = get_supabase()
+            resp = sb.table("trade_settings").select("user_id").eq("auto_trade_enabled", 1).execute()
+            enabled_users = resp.data or []
 
             for row in enabled_users:
                 try:
@@ -1442,45 +1431,35 @@ async def get_trader_log(limit: int = Query(50), user=Depends(require_user)):
 @app.get("/api/verify-tx/{tx_hash}")
 async def verify_transaction(tx_hash: str, user=Depends(require_user)):
     """Look up a transaction hash in trade_orders and wallet_transactions."""
-    import sqlite3 as _sqlite3
-
     result = {"tx_hash": tx_hash, "found": False, "source": None, "transaction": None, "verified": False, "on_chain": None}
 
+    sb = get_supabase()
+
     # Search trade_orders
-    conn = trading_engine._get_db()
-    try:
-        row = conn.execute("SELECT * FROM trade_orders WHERE tx_hash = ?", (tx_hash,)).fetchone()
-        if row:
-            trade = dict(row)
-            # Recompute hash to verify integrity
-            verified = trading_engine.verify_tx_hash(
-                tx_hash, trade["user_id"], trade["action"], trade["coin_id"],
-                trade["symbol"], trade["price"], trade["quantity"],
-                trade["amount"], trade["created_at"],
-            )
-            result.update(found=True, source="trade", transaction=trade, verified=verified)
-            # Check on-chain status
-            on_chain = blockchain.verify_on_chain(tx_hash)
-            if on_chain:
-                result["on_chain"] = on_chain
-            return result
-    finally:
-        conn.close()
+    trade_resp = sb.table("trade_orders").select("*").eq("tx_hash", tx_hash).execute()
+    if trade_resp.data:
+        trade = trade_resp.data[0]
+        verified = trading_engine.verify_tx_hash(
+            tx_hash, trade["user_id"], trade["action"], trade["coin_id"],
+            trade["symbol"], trade["price"], trade["quantity"],
+            trade["amount"], trade["created_at"],
+        )
+        result.update(found=True, source="trade", transaction=trade, verified=verified)
+        on_chain = blockchain.verify_on_chain(tx_hash)
+        if on_chain:
+            result["on_chain"] = on_chain
+        return result
 
     # Search wallet_transactions
-    w_conn = auth.get_db()
-    try:
-        row = w_conn.execute("SELECT * FROM wallet_transactions WHERE tx_hash = ?", (tx_hash,)).fetchone()
-        if row:
-            wtx = dict(row)
-            expected = auth._generate_wallet_tx_hash(wtx["user_id"], wtx["type"], wtx["amount"], wtx["created_at"])
-            result.update(found=True, source="wallet", transaction=wtx, verified=(expected == tx_hash))
-            on_chain = blockchain.verify_on_chain(tx_hash)
-            if on_chain:
-                result["on_chain"] = on_chain
-            return result
-    finally:
-        w_conn.close()
+    wtx_resp = sb.table("wallet_transactions").select("*").eq("tx_hash", tx_hash).execute()
+    if wtx_resp.data:
+        wtx = wtx_resp.data[0]
+        expected = auth._generate_wallet_tx_hash(wtx["user_id"], wtx["type"], wtx["amount"], wtx["created_at"])
+        result.update(found=True, source="wallet", transaction=wtx, verified=(expected == tx_hash))
+        on_chain = blockchain.verify_on_chain(tx_hash)
+        if on_chain:
+            result["on_chain"] = on_chain
+        return result
 
     return result
 
@@ -1961,87 +1940,11 @@ def _build_data_driven_answer(question: str, q_lower: str, coins: list, data_par
 # ══════════════════════════════════════════════════════════════════
 
 def _init_algo_tables():
-    """Create strategy tables for AlgoTrader."""
-    conn = trading_engine._get_db()
-    conn.executescript('''
-        CREATE TABLE IF NOT EXISTS algo_strategies (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            name TEXT NOT NULL,
-            description TEXT NOT NULL DEFAULT '',
-            instruments TEXT NOT NULL DEFAULT '[]',
-            legs TEXT NOT NULL DEFAULT '[]',
-            strategy_type TEXT NOT NULL DEFAULT 'time_based',
-            order_type TEXT NOT NULL DEFAULT 'market',
-            risk_config TEXT NOT NULL DEFAULT '{}',
-            advanced_config TEXT NOT NULL DEFAULT '{}',
-            status TEXT NOT NULL DEFAULT 'stopped',
-            pnl REAL NOT NULL DEFAULT 0,
-            total_trades INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
-
-        CREATE TABLE IF NOT EXISTS algo_exchanges (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            name TEXT NOT NULL,
-            api_key_last4 TEXT NOT NULL DEFAULT '',
-            connected INTEGER NOT NULL DEFAULT 1,
-            connected_at TEXT NOT NULL DEFAULT (datetime('now')),
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
-
-        CREATE TABLE IF NOT EXISTS algo_backtest_results (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            strategy_id INTEGER NOT NULL,
-            time_range TEXT NOT NULL DEFAULT '1M',
-            total_return REAL NOT NULL DEFAULT 0,
-            max_drawdown REAL NOT NULL DEFAULT 0,
-            win_rate REAL NOT NULL DEFAULT 0,
-            sharpe_ratio REAL NOT NULL DEFAULT 0,
-            total_trades INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-            FOREIGN KEY (strategy_id) REFERENCES algo_strategies(id) ON DELETE CASCADE
-        );
-
-        CREATE TABLE IF NOT EXISTS algo_trade_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            strategy_id INTEGER,
-            severity TEXT NOT NULL DEFAULT 'INFO',
-            message TEXT NOT NULL,
-            metadata TEXT NOT NULL DEFAULT '{}',
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
-
-        CREATE TABLE IF NOT EXISTS algo_trade_reports (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            strategy_id INTEGER,
-            strategy_name TEXT NOT NULL DEFAULT '',
-            pair TEXT NOT NULL DEFAULT '',
-            action TEXT NOT NULL DEFAULT 'BUY',
-            qty REAL NOT NULL DEFAULT 0,
-            buy_price REAL NOT NULL DEFAULT 0,
-            sell_price REAL NOT NULL DEFAULT 0,
-            pnl REAL NOT NULL DEFAULT 0,
-            fees REAL NOT NULL DEFAULT 0,
-            status TEXT NOT NULL DEFAULT 'closed',
-            exchange TEXT NOT NULL DEFAULT '',
-            mode TEXT NOT NULL DEFAULT 'live',
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
-    ''')
-    conn.close()
+    """No-op — algo tables are created in Supabase dashboard via algo_tables.sql."""
+    pass
 
 
-# Run table init alongside trading tables
+# Algo tables managed in Supabase
 _init_algo_tables()
 
 
@@ -2086,201 +1989,128 @@ class AlgoBacktestRequest(BaseModel):
 
 @app.get("/api/algo/strategies")
 async def list_algo_strategies(user=Depends(require_user)):
-    conn = trading_engine._get_db()
-    try:
-        rows = conn.execute(
-            "SELECT * FROM algo_strategies WHERE user_id = ? ORDER BY created_at DESC",
-            (user.id,)
-        ).fetchall()
-        return [dict(r) for r in rows]
-    finally:
-        conn.close()
+    sb = get_supabase()
+    resp = sb.table("algo_strategies").select("*").eq("user_id", user.id).order("created_at", desc=True).execute()
+    return resp.data or []
 
 
 @app.post("/api/algo/strategies")
 async def create_algo_strategy(body: AlgoStrategyCreate, user=Depends(require_user)):
-    conn = trading_engine._get_db()
-    try:
-        cur = conn.execute(
-            """INSERT INTO algo_strategies (user_id, name, description, instruments, legs,
-               strategy_type, order_type, risk_config, advanced_config)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (user.id, body.name, body.description,
-             json.dumps(body.instruments), json.dumps(body.legs),
-             body.strategy_type, body.order_type,
-             json.dumps(body.risk_config), json.dumps(body.advanced_config))
-        )
-        conn.commit()
-        strategy_id = cur.lastrowid
-        row = conn.execute("SELECT * FROM algo_strategies WHERE id = ?", (strategy_id,)).fetchone()
-        return dict(row)
-    finally:
-        conn.close()
+    sb = get_supabase()
+    row = {
+        "user_id": user.id, "name": body.name, "description": body.description,
+        "instruments": json.dumps(body.instruments), "legs": json.dumps(body.legs),
+        "strategy_type": body.strategy_type, "order_type": body.order_type,
+        "risk_config": json.dumps(body.risk_config), "advanced_config": json.dumps(body.advanced_config),
+    }
+    resp = sb.table("algo_strategies").insert(row).execute()
+    return resp.data[0]
 
 
 @app.put("/api/algo/strategies/{strategy_id}")
 async def update_algo_strategy(strategy_id: int, body: AlgoStrategyUpdate, user=Depends(require_user)):
-    conn = trading_engine._get_db()
-    try:
-        existing = conn.execute(
-            "SELECT * FROM algo_strategies WHERE id = ? AND user_id = ?",
-            (strategy_id, user.id)
-        ).fetchone()
-        if not existing:
-            raise HTTPException(404, "Strategy not found")
+    sb = get_supabase()
+    existing = sb.table("algo_strategies").select("id").eq("id", strategy_id).eq("user_id", user.id).execute()
+    if not existing.data:
+        raise HTTPException(404, "Strategy not found")
 
-        updates = body.model_dump(exclude_none=True)
-        if "instruments" in updates:
-            updates["instruments"] = json.dumps(updates["instruments"])
-        if "legs" in updates:
-            updates["legs"] = json.dumps(updates["legs"])
-        if "risk_config" in updates:
-            updates["risk_config"] = json.dumps(updates["risk_config"])
-        if "advanced_config" in updates:
-            updates["advanced_config"] = json.dumps(updates["advanced_config"])
+    updates = body.model_dump(exclude_none=True)
+    if "instruments" in updates:
+        updates["instruments"] = json.dumps(updates["instruments"])
+    if "legs" in updates:
+        updates["legs"] = json.dumps(updates["legs"])
+    if "risk_config" in updates:
+        updates["risk_config"] = json.dumps(updates["risk_config"])
+    if "advanced_config" in updates:
+        updates["advanced_config"] = json.dumps(updates["advanced_config"])
 
-        updates["updated_at"] = datetime.now(timezone.utc).isoformat()
-
-        set_clause = ", ".join(f"{k} = ?" for k in updates)
-        values = list(updates.values()) + [strategy_id, user.id]
-        conn.execute(
-            f"UPDATE algo_strategies SET {set_clause} WHERE id = ? AND user_id = ?",
-            values
-        )
-        conn.commit()
-        row = conn.execute("SELECT * FROM algo_strategies WHERE id = ?", (strategy_id,)).fetchone()
-        return dict(row)
-    finally:
-        conn.close()
+    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+    resp = sb.table("algo_strategies").update(updates).eq("id", strategy_id).eq("user_id", user.id).execute()
+    return resp.data[0]
 
 
 @app.delete("/api/algo/strategies/{strategy_id}")
 async def delete_algo_strategy(strategy_id: int, user=Depends(require_user)):
-    conn = trading_engine._get_db()
-    try:
-        conn.execute(
-            "DELETE FROM algo_strategies WHERE id = ? AND user_id = ?",
-            (strategy_id, user.id)
-        )
-        conn.commit()
-        return {"success": True}
-    finally:
-        conn.close()
+    sb = get_supabase()
+    sb.table("algo_strategies").delete().eq("id", strategy_id).eq("user_id", user.id).execute()
+    return {"success": True}
 
 
 @app.post("/api/algo/strategies/{strategy_id}/deploy")
 async def deploy_algo_strategy(strategy_id: int, user=Depends(require_user)):
-    conn = trading_engine._get_db()
-    try:
-        existing = conn.execute(
-            "SELECT * FROM algo_strategies WHERE id = ? AND user_id = ?",
-            (strategy_id, user.id)
-        ).fetchone()
-        if not existing:
-            raise HTTPException(404, "Strategy not found")
+    sb = get_supabase()
+    existing = sb.table("algo_strategies").select("id").eq("id", strategy_id).eq("user_id", user.id).execute()
+    if not existing.data:
+        raise HTTPException(404, "Strategy not found")
 
-        # Check if user has connected exchanges
-        exchanges = conn.execute(
-            "SELECT COUNT(*) as cnt FROM algo_exchanges WHERE user_id = ? AND connected = 1",
-            (user.id,)
-        ).fetchone()
-        if exchanges["cnt"] == 0:
-            raise HTTPException(400, "Connect an exchange before deploying")
+    # Check if user has connected exchanges
+    exchanges = sb.table("algo_exchanges").select("id").eq("user_id", user.id).eq("connected", 1).execute()
+    if not exchanges.data:
+        raise HTTPException(400, "Connect an exchange before deploying")
 
-        conn.execute(
-            "UPDATE algo_strategies SET status = 'running', updated_at = ? WHERE id = ? AND user_id = ?",
-            (datetime.now(timezone.utc).isoformat(), strategy_id, user.id)
-        )
-        conn.commit()
-        return {"success": True, "status": "running"}
-    finally:
-        conn.close()
+    sb.table("algo_strategies").update({
+        "status": "running",
+        "updated_at": datetime.now(timezone.utc).isoformat()
+    }).eq("id", strategy_id).eq("user_id", user.id).execute()
+    return {"success": True, "status": "running"}
 
 
 # ── Exchange Endpoints ──
 
 @app.get("/api/algo/exchanges")
 async def list_algo_exchanges(user=Depends(require_user)):
-    conn = trading_engine._get_db()
-    try:
-        rows = conn.execute(
-            "SELECT id, name, api_key_last4, connected, connected_at FROM algo_exchanges WHERE user_id = ?",
-            (user.id,)
-        ).fetchall()
-        return [dict(r) for r in rows]
-    finally:
-        conn.close()
+    sb = get_supabase()
+    resp = sb.table("algo_exchanges").select("id, name, api_key_last4, connected, connected_at").eq("user_id", user.id).execute()
+    return resp.data or []
 
 
 @app.post("/api/algo/exchanges")
 async def connect_algo_exchange(body: AlgoExchangeConnect, user=Depends(require_user)):
-    conn = trading_engine._get_db()
-    try:
-        api_last4 = body.api_key[-4:] if len(body.api_key) >= 4 else body.api_key
-        cur = conn.execute(
-            "INSERT INTO algo_exchanges (user_id, name, api_key_last4) VALUES (?, ?, ?)",
-            (user.id, body.name, api_last4)
-        )
-        conn.commit()
-        return {"success": True, "id": cur.lastrowid, "name": body.name}
-    finally:
-        conn.close()
+    sb = get_supabase()
+    api_last4 = body.api_key[-4:] if len(body.api_key) >= 4 else body.api_key
+    resp = sb.table("algo_exchanges").insert({
+        "user_id": user.id, "name": body.name, "api_key_last4": api_last4
+    }).execute()
+    return {"success": True, "id": resp.data[0]["id"], "name": body.name}
 
 
 @app.delete("/api/algo/exchanges/{exchange_id}")
 async def disconnect_algo_exchange(exchange_id: int, user=Depends(require_user)):
-    conn = trading_engine._get_db()
-    try:
-        conn.execute(
-            "DELETE FROM algo_exchanges WHERE id = ? AND user_id = ?",
-            (exchange_id, user.id)
-        )
-        conn.commit()
-        return {"success": True}
-    finally:
-        conn.close()
+    sb = get_supabase()
+    sb.table("algo_exchanges").delete().eq("id", exchange_id).eq("user_id", user.id).execute()
+    return {"success": True}
 
 
 # ── Backtest Endpoint ──
 
 @app.post("/api/algo/backtest")
 async def run_algo_backtest(body: AlgoBacktestRequest, user=Depends(require_user)):
-    conn = trading_engine._get_db()
-    try:
-        strategy = conn.execute(
-            "SELECT * FROM algo_strategies WHERE id = ? AND user_id = ?",
-            (body.strategy_id, user.id)
-        ).fetchone()
-        if not strategy:
-            raise HTTPException(404, "Strategy not found")
+    sb = get_supabase()
+    strategy = sb.table("algo_strategies").select("id").eq("id", body.strategy_id).eq("user_id", user.id).execute()
+    if not strategy.data:
+        raise HTTPException(404, "Strategy not found")
 
-        import random
-        total_return = round(random.uniform(-15, 50), 2)
-        max_drawdown = round(random.uniform(-20, -2), 2)
-        win_rate = round(random.uniform(35, 75), 1)
-        sharpe = round(random.uniform(0.3, 2.5), 2)
-        total_trades = random.randint(20, 200)
+    import random
+    total_return = round(random.uniform(-15, 50), 2)
+    max_drawdown = round(random.uniform(-20, -2), 2)
+    win_rate = round(random.uniform(35, 75), 1)
+    sharpe = round(random.uniform(0.3, 2.5), 2)
+    total_trades = random.randint(20, 200)
 
-        conn.execute(
-            """INSERT INTO algo_backtest_results
-               (user_id, strategy_id, time_range, total_return, max_drawdown,
-                win_rate, sharpe_ratio, total_trades)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (user.id, body.strategy_id, body.time_range,
-             total_return, max_drawdown, win_rate, sharpe, total_trades)
-        )
-        conn.commit()
+    sb.table("algo_backtest_results").insert({
+        "user_id": user.id, "strategy_id": body.strategy_id, "time_range": body.time_range,
+        "total_return": total_return, "max_drawdown": max_drawdown,
+        "win_rate": win_rate, "sharpe_ratio": sharpe, "total_trades": total_trades,
+    }).execute()
 
-        return {
-            "total_return": total_return,
-            "max_drawdown": max_drawdown,
-            "win_rate": win_rate,
-            "sharpe_ratio": sharpe,
-            "total_trades": total_trades,
-            "time_range": body.time_range,
-        }
-    finally:
-        conn.close()
+    return {
+        "total_return": total_return,
+        "max_drawdown": max_drawdown,
+        "win_rate": win_rate,
+        "sharpe_ratio": sharpe,
+        "total_trades": total_trades,
+        "time_range": body.time_range,
+    }
 
 
 # ── Trade Engine Logs ──
@@ -2300,53 +2130,34 @@ async def get_trade_engine_logs(
     limit: int = 100,
     user=Depends(require_user),
 ):
-    conn = trading_engine._get_db()
-    try:
-        query = "SELECT * FROM algo_trade_logs WHERE user_id = ?"
-        params = [user.id]
-        if date_from:
-            query += " AND created_at >= ?"
-            params.append(date_from)
-        if date_to:
-            query += " AND created_at <= ?"
-            params.append(date_to + " 23:59:59")
-        if severity:
-            query += " AND severity = ?"
-            params.append(severity.upper())
-        query += " ORDER BY created_at DESC LIMIT ?"
-        params.append(limit)
-        rows = conn.execute(query, params).fetchall()
-        return [dict(r) for r in rows]
-    finally:
-        conn.close()
+    sb = get_supabase()
+    query = sb.table("algo_trade_logs").select("*").eq("user_id", user.id)
+    if date_from:
+        query = query.gte("created_at", date_from)
+    if date_to:
+        query = query.lte("created_at", date_to + " 23:59:59")
+    if severity:
+        query = query.eq("severity", severity.upper())
+    resp = query.order("created_at", desc=True).limit(limit).execute()
+    return resp.data or []
 
 
 @app.post("/api/algo/logs")
 async def create_trade_log(body: TradeLogCreate, user=Depends(require_user)):
-    conn = trading_engine._get_db()
-    try:
-        cur = conn.execute(
-            """INSERT INTO algo_trade_logs
-               (user_id, strategy_id, severity, message, metadata)
-               VALUES (?, ?, ?, ?, ?)""",
-            (user.id, body.strategy_id, body.severity.upper(),
-             body.message, json.dumps(body.metadata))
-        )
-        conn.commit()
-        return {"success": True, "id": cur.lastrowid}
-    finally:
-        conn.close()
+    sb = get_supabase()
+    resp = sb.table("algo_trade_logs").insert({
+        "user_id": user.id, "strategy_id": body.strategy_id,
+        "severity": body.severity.upper(), "message": body.message,
+        "metadata": json.dumps(body.metadata),
+    }).execute()
+    return {"success": True, "id": resp.data[0]["id"]}
 
 
 @app.delete("/api/algo/logs")
 async def clear_trade_logs(user=Depends(require_user)):
-    conn = trading_engine._get_db()
-    try:
-        conn.execute("DELETE FROM algo_trade_logs WHERE user_id = ?", (user.id,))
-        conn.commit()
-        return {"success": True}
-    finally:
-        conn.close()
+    sb = get_supabase()
+    sb.table("algo_trade_logs").delete().eq("user_id", user.id).execute()
+    return {"success": True}
 
 
 # ── Trade Reports ──
@@ -2373,66 +2184,52 @@ async def get_trade_reports(
     mode: Optional[str] = None,
     user=Depends(require_user),
 ):
-    conn = trading_engine._get_db()
-    try:
-        query = "SELECT * FROM algo_trade_reports WHERE user_id = ?"
-        params = [user.id]
-        if date_from:
-            query += " AND created_at >= ?"
-            params.append(date_from)
-        if date_to:
-            query += " AND created_at <= ?"
-            params.append(date_to + " 23:59:59")
-        if exchange:
-            query += " AND exchange = ?"
-            params.append(exchange)
-        if mode:
-            query += " AND mode = ?"
-            params.append(mode)
-        query += " ORDER BY created_at DESC"
-        rows = conn.execute(query, params).fetchall()
+    sb = get_supabase()
+    query = sb.table("algo_trade_reports").select("*").eq("user_id", user.id)
+    if date_from:
+        query = query.gte("created_at", date_from)
+    if date_to:
+        query = query.lte("created_at", date_to + " 23:59:59")
+    if exchange:
+        query = query.eq("exchange", exchange)
+    if mode:
+        query = query.eq("mode", mode)
+    resp = query.order("created_at", desc=True).execute()
 
-        reports = [dict(r) for r in rows]
-        total_trades = len(reports)
-        wins = [r for r in reports if r["pnl"] > 0]
-        losses = [r for r in reports if r["pnl"] <= 0]
-        total_pnl = sum(r["pnl"] for r in reports)
-        total_fees = sum(r["fees"] for r in reports)
-        net_pnl = total_pnl - total_fees
+    reports = resp.data or []
+    total_trades = len(reports)
+    wins = [r for r in reports if r["pnl"] > 0]
+    losses = [r for r in reports if r["pnl"] <= 0]
+    total_pnl = sum(r["pnl"] for r in reports)
+    total_fees = sum(r["fees"] for r in reports)
+    net_pnl = total_pnl - total_fees
 
-        return {
-            "trades": reports,
-            "summary": {
-                "total_trades": total_trades,
-                "winning_trades": len(wins),
-                "losing_trades": len(losses),
-                "mtm": round(total_pnl, 2),
-                "brokerage": round(total_fees, 2),
-                "net_pnl": round(net_pnl, 2),
-                "win_rate": round(len(wins) / total_trades * 100, 1) if total_trades > 0 else 0,
-            },
-        }
-    finally:
-        conn.close()
+    return {
+        "trades": reports,
+        "summary": {
+            "total_trades": total_trades,
+            "winning_trades": len(wins),
+            "losing_trades": len(losses),
+            "mtm": round(total_pnl, 2),
+            "brokerage": round(total_fees, 2),
+            "net_pnl": round(net_pnl, 2),
+            "win_rate": round(len(wins) / total_trades * 100, 1) if total_trades > 0 else 0,
+        },
+    }
 
 
 @app.post("/api/algo/reports")
 async def create_trade_report(body: TradeReportCreate, user=Depends(require_user)):
-    conn = trading_engine._get_db()
-    try:
-        cur = conn.execute(
-            """INSERT INTO algo_trade_reports
-               (user_id, strategy_id, strategy_name, pair, action,
-                qty, buy_price, sell_price, pnl, fees, exchange, mode)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (user.id, body.strategy_id, body.strategy_name, body.pair,
-             body.action, body.qty, body.buy_price, body.sell_price,
-             body.pnl, body.fees, body.exchange, body.mode)
-        )
-        conn.commit()
-        return {"success": True, "id": cur.lastrowid}
-    finally:
-        conn.close()
+    sb = get_supabase()
+    resp = sb.table("algo_trade_reports").insert({
+        "user_id": user.id, "strategy_id": body.strategy_id,
+        "strategy_name": body.strategy_name, "pair": body.pair,
+        "action": body.action, "qty": body.qty,
+        "buy_price": body.buy_price, "sell_price": body.sell_price,
+        "pnl": body.pnl, "fees": body.fees,
+        "exchange": body.exchange, "mode": body.mode,
+    }).execute()
+    return {"success": True, "id": resp.data[0]["id"]}
 
 
 # ══════════════════════════════════════════════════════════════════

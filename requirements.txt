@@ -13,6 +13,9 @@ httpx==0.26.0
 # AI
 google-genai>=1.0.0
 
+# Database (Supabase)
+supabase>=2.0.0
+
 # Authentication & Security
 python-jose[cryptography]==3.3.0
 passlib==1.7.4
