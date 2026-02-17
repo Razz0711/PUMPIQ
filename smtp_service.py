@@ -10,7 +10,7 @@ Required env vars:
     SMTP_EMAIL         – sender email address
     SMTP_PASSWORD      – sender password or app password
     SMTP_USE_TLS       – true/false (default true)
-    APP_BASE_URL       – e.g. http://localhost:8000
+    APP_BASE_URL       – e.g. https://pumpiq.vercel.app
 
 Optional:
     SMTP_FROM_NAME     – display name (default "PumpIQ")
@@ -126,7 +126,7 @@ def _base_template(title: str, content: str) -> str:
 
 def send_verification_email(to_email: str, username: str, token: str) -> bool:
     """Send email verification link."""
-    base_url = _cfg("APP_BASE_URL", "http://localhost:8000")
+    base_url = _cfg("APP_BASE_URL", "https://pumpiq.vercel.app")
     verify_url = f"{base_url}/verify-email?token={token}"
     content = f"""
     <p style="color: #ccc; line-height: 1.6;">
@@ -152,7 +152,7 @@ def send_verification_email(to_email: str, username: str, token: str) -> bool:
 
 def send_registration_email(to_email: str, username: str, password: str) -> bool:
     """Send professional registration confirmation with credentials."""
-    base_url = _cfg("APP_BASE_URL", "http://localhost:8000")
+    base_url = _cfg("APP_BASE_URL", "https://pumpiq.vercel.app")
     masked_pw = password[:2] + "*" * (len(password) - 3) + password[-1] if len(password) > 3 else "***"
     content = f"""
     <p style="color: #ccc; line-height: 1.6;">
@@ -206,7 +206,7 @@ def send_registration_email(to_email: str, username: str, password: str) -> bool
 
 def send_password_reset_email(to_email: str, username: str, token: str) -> bool:
     """Send password reset link."""
-    base_url = _cfg("APP_BASE_URL", "http://localhost:8000")
+    base_url = _cfg("APP_BASE_URL", "https://pumpiq.vercel.app")
     reset_url = f"{base_url}/reset-password?token={token}"
     content = f"""
     <p style="color: #ccc; line-height: 1.6;">
@@ -232,7 +232,7 @@ def send_password_reset_email(to_email: str, username: str, token: str) -> bool:
 
 def send_welcome_email(to_email: str, username: str) -> bool:
     """Send welcome email after verification."""
-    base_url = _cfg("APP_BASE_URL", "http://localhost:8000")
+    base_url = _cfg("APP_BASE_URL", "https://pumpiq.vercel.app")
     content = f"""
     <p style="color: #ccc; line-height: 1.6;">
         Hey <strong>{username}</strong>,<br><br>
@@ -262,7 +262,7 @@ def send_welcome_email(to_email: str, username: str) -> bool:
 def send_price_alert_email(to_email: str, username: str, coin_name: str, symbol: str,
                            price: float, alert_type: str, threshold: float) -> bool:
     """Send a price alert notification."""
-    base_url = _cfg("APP_BASE_URL", "http://localhost:8000")
+    base_url = _cfg("APP_BASE_URL", "https://pumpiq.vercel.app")
     direction = "above" if alert_type == "above" else "below"
     content = f"""
     <p style="color: #ccc; line-height: 1.6;">
@@ -292,10 +292,60 @@ def send_price_alert_email(to_email: str, username: str, coin_name: str, symbol:
     )
 
 
+def _get_ip_geolocation(ip_address: str) -> dict:
+    """Get approximate location from IP address using free ip-api.com."""
+    try:
+        import urllib.request, json
+        # Skip private/localhost IPs
+        if ip_address in ("127.0.0.1", "localhost", "::1", "unknown") or ip_address.startswith(("192.168.", "10.", "172.")):
+            return {"city": "Local Network", "region": "", "country": "India", "isp": "Local", "query": ip_address, "lat": 0, "lon": 0, "offset": 19800, "timezone": "Asia/Kolkata"}
+        url = f"http://ip-api.com/json/{ip_address}?fields=status,message,country,regionName,city,isp,query,lat,lon,timezone,offset"
+        req = urllib.request.Request(url, headers={"User-Agent": "PumpIQ/3.0"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode())
+            if data.get("status") == "success":
+                return {
+                    "city": data.get("city", "Unknown"),
+                    "region": data.get("regionName", ""),
+                    "country": data.get("country", ""),
+                    "isp": data.get("isp", ""),
+                    "query": data.get("query", ip_address),
+                    "lat": data.get("lat", 0),
+                    "lon": data.get("lon", 0),
+                    "offset": data.get("offset", 0),
+                    "timezone": data.get("timezone", "UTC"),
+                }
+    except Exception as e:
+        logger.debug("IP geolocation failed for %s: %s", ip_address, e)
+    return {"city": "Unknown", "region": "", "country": "", "isp": "", "query": ip_address, "lat": 0, "lon": 0, "offset": 0, "timezone": "UTC"}
+
+
 def send_login_alert_email(to_email: str, username: str, ip_address: str, user_agent: str) -> bool:
-    """Send a security alert when someone logs in."""
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc).strftime("%B %d, %Y at %I:%M %p UTC")
+    """Send a security alert when someone logs in, including IP geolocation & DIGIPIN."""
+    from datetime import datetime, timezone as tz, timedelta as td
+
+    # Get IP geolocation
+    geo = _get_ip_geolocation(ip_address)
+
+    # Use the IP's timezone offset for accurate local time
+    offset_seconds = geo.get("offset", 0)
+    tz_name = geo.get("timezone", "UTC")
+    local_tz = tz(td(seconds=offset_seconds))
+    now = datetime.now(local_tz).strftime("%B %d, %Y at %I:%M %p") + f" ({tz_name})"
+
+    location_parts = [p for p in [geo.get("city"), geo.get("region"), geo.get("country")] if p]
+    location_str = ", ".join(location_parts) if location_parts else "Unknown location"
+    isp_str = geo.get("isp", "")
+
+    # Generate DIGIPIN for Indian locations (lat 1.5–39.0, lon 63.5–99.0)
+    digipin_str = ""
+    lat, lon = geo.get("lat", 0), geo.get("lon", 0)
+    if 1.5 <= lat <= 39.0 and 63.5 <= lon <= 99.0:
+        try:
+            from digipin import encode as digipin_encode
+            digipin_str = digipin_encode(lat, lon)
+        except Exception as e:
+            logger.debug("DIGIPIN generation failed: %s", e)
 
     # Parse browser/OS from user-agent for a cleaner display
     device = "Unknown device"
@@ -344,6 +394,20 @@ def send_login_alert_email(to_email: str, username: str, ip_address: str, user_a
                 <td style="color: #fff; padding: 8px 0; font-size: 14px; font-weight: 600; text-align: right; border-top: 1px solid #2a2a3a;">{ip_address}</td>
             </tr>
             <tr>
+                <td style="color: #888; padding: 8px 0; font-size: 14px; border-top: 1px solid #2a2a3a;">&#x1F4CD; Location</td>
+                <td style="color: #00d4aa; padding: 8px 0; font-size: 14px; font-weight: 600; text-align: right; border-top: 1px solid #2a2a3a;">{location_str}</td>
+            </tr>
+            <tr>
+                <td style="color: #888; padding: 8px 0; font-size: 14px; border-top: 1px solid #2a2a3a;">ISP / Network</td>
+                <td style="color: #fff; padding: 8px 0; font-size: 14px; text-align: right; border-top: 1px solid #2a2a3a;">{isp_str}</td>
+            </tr>{''.join([f'''
+            <tr>
+                <td style="color: #888; padding: 8px 0; font-size: 14px; border-top: 1px solid #2a2a3a;">&#x1F4EC; DIGIPIN</td>
+                <td style="color: #ff9900; padding: 8px 0; font-size: 14px; font-weight: 700; text-align: right; border-top: 1px solid #2a2a3a; letter-spacing: 1.5px;">
+                    <a href="https://www.indiapost.gov.in/VAS/Pages/FindDigipin.aspx" style="color: #ff9900; text-decoration: none;">{digipin_str}</a>
+                </td>
+            </tr>'''] if digipin_str else [])}
+            <tr>
                 <td style="color: #888; padding: 8px 0; font-size: 14px; border-top: 1px solid #2a2a3a;">Device</td>
                 <td style="color: #fff; padding: 8px 0; font-size: 14px; text-align: right; border-top: 1px solid #2a2a3a;">{device}</td>
             </tr>
@@ -361,7 +425,7 @@ def send_login_alert_email(to_email: str, username: str, ip_address: str, user_a
     """
     return _send_email(
         to_email,
-        f"\U0001F6E1 PumpIQ Security Alert — New Login Detected",
+        f"\U0001F6E1 PumpIQ Security Alert — New Login from {location_str}",
         _base_template("New Login Detected", content),
     )
 
@@ -387,7 +451,7 @@ def send_trade_email(
     """Send a detailed trade notification email for every BUY or SELL."""
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc).strftime("%B %d, %Y at %I:%M %p UTC")
-    base_url = _cfg("APP_BASE_URL", "http://localhost:8000")
+    base_url = _cfg("APP_BASE_URL", "https://pumpiq.vercel.app")
 
     is_buy = action.upper() == "BUY"
     action_label = "BUY" if is_buy else "SELL"

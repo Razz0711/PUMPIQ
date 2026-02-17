@@ -643,13 +643,82 @@ a:hover { text-decoration: underline; }
 /* ══════════════════════════════════════════════════════════════════
    STRATEGY BUILDER PAGE
    ══════════════════════════════════════════════════════════════════ */
-.builder-layout {
+.builder-top-row {
+    display: grid;
+    grid-template-columns: 1fr 1.2fr;
+    gap: 20px;
+    margin-bottom: 20px;
+}
+.builder-mid-row {
+    display: grid;
+    grid-template-columns: 1fr 1.5fr;
+    gap: 20px;
+    margin-bottom: 20px;
+}
+.builder-bot-row {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 20px;
+    margin-bottom: 20px;
 }
-.builder-left { display: flex; flex-direction: column; gap: 20px; }
-.builder-right { display: flex; flex-direction: column; gap: 20px; }
+.builder-actions {
+    display: flex; gap: 12px; justify-content: flex-end;
+}
+
+/* Instrument chips */
+.instrument-chips {
+    display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px;
+    min-height: 80px; padding: 12px;
+    border: 1.5px dashed var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg);
+    align-items: flex-start; align-content: flex-start;
+}
+.instrument-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 12px 5px 10px;
+    background: var(--accent-light); color: var(--accent);
+    border-radius: 20px; font-size: 12px; font-weight: 600;
+}
+.instrument-chip .chip-remove {
+    width: 16px; height: 16px; border-radius: 50%;
+    border: none; background: rgba(67,97,238,0.2);
+    color: var(--accent); font-size: 11px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    line-height: 1;
+}
+.instrument-chip .chip-remove:hover { background: var(--accent); color: #fff; }
+.instrument-add-btn {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 5px 14px; border-radius: 20px;
+    border: 1.5px dashed var(--border);
+    background: var(--bg-white); color: var(--text-muted);
+    font-size: 12px; font-weight: 600; cursor: pointer;
+    transition: all 0.15s;
+}
+.instrument-add-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Instrument dropdown */
+.instrument-dropdown {
+    position: absolute; top: 100%; left: 0; right: 0;
+    background: var(--bg-white); border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm); box-shadow: var(--shadow-lg);
+    max-height: 220px; overflow-y: auto; z-index: 50;
+    display: none;
+}
+.instrument-dropdown.open { display: block; }
+.instrument-dropdown-item {
+    padding: 10px 14px; font-size: 13px;
+    cursor: pointer; transition: background 0.1s;
+    display: flex; justify-content: space-between;
+}
+.instrument-dropdown-item:hover { background: var(--bg-hover); }
+.instrument-dropdown-item.selected { background: var(--accent-light); color: var(--accent); font-weight: 600; }
+.instrument-dropdown-search {
+    padding: 10px 14px; border: none; border-bottom: 1px solid var(--border);
+    width: 100%; font-size: 13px; font-family: inherit;
+    background: var(--bg-white); color: var(--text-primary); outline: none;
+}
 
 .leg-card {
     background: var(--bg-card);
@@ -660,47 +729,61 @@ a:hover { text-decoration: underline; }
 }
 .leg-header {
     display: flex; justify-content: space-between; align-items: center;
-    margin-bottom: 16px;
+    margin-bottom: 16px; padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-light);
 }
 .leg-title { font-size: 15px; font-weight: 700; }
-.leg-title span { color: var(--accent); font-size: 13px; margin-left: 8px; }
+.leg-title span { font-size: 13px; margin-left: 8px; }
+.leg-title .buy-tag { color: var(--green); }
+.leg-title .sell-tag { color: var(--red); }
+.leg-subtitle { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
 .leg-badge {
-    padding: 3px 10px; border-radius: 12px;
+    padding: 4px 12px; border-radius: 12px;
     font-size: 11px; font-weight: 700;
     background: var(--green-light); color: var(--green);
+    letter-spacing: 0.5px;
 }
 
 .leg-grid {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
-    gap: 12px;
+    gap: 14px;
 }
 .leg-grid-2 {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 12px;
+    gap: 14px;
 }
 .leg-grid-4 {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 12px;
+    gap: 14px;
 }
 
 .leg-field label {
-    display: block; font-size: 12px; font-weight: 600;
+    display: block; font-size: 11px; font-weight: 600;
     color: var(--text-muted); margin-bottom: 6px;
+    text-transform: uppercase; letter-spacing: 0.3px;
+}
+
+.leg-section-divider {
+    font-size: 11px; font-weight: 700; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.5px;
+    margin: 16px 0 8px; padding-bottom: 6px;
+    border-bottom: 1px solid var(--border-light);
 }
 
 .leg-actions {
     display: flex; justify-content: flex-end; gap: 8px;
-    margin-top: 12px; padding-top: 12px;
+    margin-top: 16px; padding-top: 12px;
     border-top: 1px solid var(--border-light);
 }
 .leg-actions button {
-    width: 32px; height: 32px;
+    width: 34px; height: 34px;
     border: 1px solid var(--border); border-radius: 8px;
     background: var(--bg-white); cursor: pointer;
     color: var(--text-muted); display: flex; align-items: center; justify-content: center;
+    font-size: 16px; transition: all 0.15s;
 }
 .leg-actions button:hover { color: var(--text-primary); background: var(--bg-hover); }
 .leg-actions button.delete { color: var(--red); }
@@ -708,7 +791,7 @@ a:hover { text-decoration: underline; }
 
 /* Risk Management */
 .risk-grid {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
 }
 .risk-input {
     padding: 10px 14px;
@@ -718,6 +801,7 @@ a:hover { text-decoration: underline; }
     color: var(--text-primary);
     font-size: 14px; font-family: inherit;
     width: 100%; outline: none;
+    transition: border 0.15s;
 }
 .risk-input:focus { border-color: var(--accent); }
 .risk-input::placeholder { color: var(--text-muted); }
@@ -730,11 +814,12 @@ a:hover { text-decoration: underline; }
 .adv-item {
     display: flex; align-items: center; gap: 8px;
     font-size: 13px; color: var(--text-secondary);
+    padding: 6px 0;
 }
-.adv-item input { accent-color: var(--accent); }
+.adv-item input { accent-color: var(--accent); width: 16px; height: 16px; }
 
 /* Day Selector */
-.day-selector { display: flex; gap: 6px; }
+.day-selector { display: flex; gap: 6px; flex-wrap: wrap; }
 .day-pill {
     padding: 6px 14px; border-radius: 20px;
     font-size: 12px; font-weight: 600;
@@ -742,9 +827,35 @@ a:hover { text-decoration: underline; }
     background: var(--accent-light);
     color: var(--accent);
     cursor: pointer; transition: all 0.15s;
+    user-select: none;
 }
 .day-pill.active { background: var(--accent); color: #fff; }
 .day-pill:hover { background: var(--accent); color: #fff; }
+
+/* Order type radio pills */
+.order-type-pills {
+    display: flex; gap: 0;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+.order-type-pill {
+    flex: 1; padding: 10px 0; text-align: center;
+    font-size: 13px; font-weight: 600;
+    cursor: pointer; background: var(--bg-white);
+    color: var(--text-secondary); border: none;
+    transition: all 0.15s;
+}
+.order-type-pill:not(:last-child) { border-right: 1.5px solid var(--border); }
+.order-type-pill input { display: none; }
+.order-type-pill.active { background: var(--accent); color: #fff; }
+
+/* Time inputs row */
+.time-row {
+    display: flex; gap: 16px; margin-top: 16px;
+    align-items: flex-end;
+}
+.time-row > div { flex: 1; }
 
 /* ══════════════════════════════════════════════════════════════════
    STRATEGIES PAGE
@@ -1559,129 +1670,108 @@ a:hover { text-decoration: underline; }
     <div class="page" id="page-builder">
         <div class="section-heading">Strategy Builder</div>
 
-        <div class="builder-layout">
-            <div class="builder-left">
-                <!-- Strategy Type -->
-                <div class="card">
-                    <div class="card-title">Strategy Type</div>
-                    <div class="card-subtitle">Choose your strategy approach</div>
-                    <div class="checkbox-group" style="margin-top:12px;">
-                        <label class="check-item"><input type="checkbox" checked id="chkTimeBased"> Time Based</label>
-                        <label class="check-item"><input type="checkbox" id="chkIndicator"> Indicator Based</label>
-                        <label class="check-item"><input type="checkbox" id="chkPriceAction"> Price Action Based</label>
-                    </div>
+        <!-- ROW 1: Strategy Type + Select Instruments -->
+        <div class="builder-top-row">
+            <div class="card">
+                <div class="card-title">Strategy Type</div>
+                <div class="card-subtitle">Choose your strategy approach</div>
+                <div class="checkbox-group" style="margin-top:12px;">
+                    <label class="check-item"><input type="checkbox" checked id="chkTimeBased"> Time Based</label>
+                    <label class="check-item"><input type="checkbox" id="chkIndicator"> Indicator Based</label>
+                    <label class="check-item"><input type="checkbox" id="chkPriceAction"> Price Action Based</label>
                 </div>
+            </div>
 
-                <!-- Select Instruments -->
-                <div class="card">
-                    <div class="card-title">Select Instruments</div>
-                    <div class="card-subtitle">Choose crypto pairs to trade</div>
-                    <div style="margin-top:12px;">
-                        <select class="form-select" id="instrumentSelect" multiple style="height:120px;">
-                            <option value="BTC/USDT" selected>BTC/USDT — Bitcoin</option>
-                            <option value="ETH/USDT">ETH/USDT — Ethereum</option>
-                            <option value="SOL/USDT">SOL/USDT — Solana</option>
-                            <option value="BNB/USDT">BNB/USDT — BNB</option>
-                            <option value="XRP/USDT">XRP/USDT — Ripple</option>
-                            <option value="ADA/USDT">ADA/USDT — Cardano</option>
-                            <option value="DOGE/USDT">DOGE/USDT — Dogecoin</option>
-                            <option value="AVAX/USDT">AVAX/USDT — Avalanche</option>
-                            <option value="DOT/USDT">DOT/USDT — Polkadot</option>
-                            <option value="LINK/USDT">LINK/USDT — Chainlink</option>
-                            <option value="MATIC/USDT">MATIC/USDT — Polygon</option>
-                            <option value="SHIB/USDT">SHIB/USDT — Shiba Inu</option>
-                            <option value="ARB/USDT">ARB/USDT — Arbitrum</option>
-                            <option value="OP/USDT">OP/USDT — Optimism</option>
-                            <option value="NEAR/USDT">NEAR/USDT — NEAR</option>
-                        </select>
-                        <button class="btn btn-outline btn-sm" style="margin-top:8px;" onclick="document.getElementById('addInstrumentModal') && openModal('addInstrumentModal')">+ Add Custom Pair</button>
-                    </div>
+            <div class="card">
+                <div class="card-title">Select Instruments</div>
+                <div class="card-subtitle">Choose crypto pairs to trade</div>
+                <div class="instrument-chips" id="instrumentChips">
+                    <span class="instrument-chip" data-pair="BTC/USDT">BTC/USDT <button class="chip-remove" onclick="removeInstrument(this)">×</button></span>
                 </div>
-
-                <!-- Order Type -->
-                <div class="card">
-                    <div class="card-title">Order Type</div>
-                    <div class="card-subtitle">Select your order execution type</div>
-                    <div class="radio-group" style="margin-top:12px;">
-                        <label class="radio-item"><input type="radio" name="orderType" value="market" checked> Market Order</label>
-                        <label class="radio-item"><input type="radio" name="orderType" value="limit"> Limit Order</label>
-                        <label class="radio-item"><input type="radio" name="orderType" value="stop-limit"> Stop-Limit Order</label>
-                    </div>
-
-                    <div style="display:flex;gap:16px;margin-top:16px;">
-                        <div>
-                            <label class="form-label">Start Time</label>
-                            <div class="time-input">
-                                <input type="text" value="00:00" style="width:50px;"> 🕐
-                            </div>
-                        </div>
-                        <div>
-                            <label class="form-label">End Time</label>
-                            <div class="time-input">
-                                <input type="text" value="23:59" style="width:50px;"> 🕐
-                            </div>
-                        </div>
-                    </div>
-
-                    <div style="margin-top:12px;">
-                        <label class="form-label">Active Days</label>
-                        <div class="day-selector">
-                            <div class="day-pill active">MON</div>
-                            <div class="day-pill active">TUE</div>
-                            <div class="day-pill active">WED</div>
-                            <div class="day-pill active">THU</div>
-                            <div class="day-pill active">FRI</div>
-                            <div class="day-pill">SAT</div>
-                            <div class="day-pill">SUN</div>
+                <div style="position:relative;margin-top:8px;">
+                    <button class="instrument-add-btn" onclick="toggleInstrumentDropdown()">+ Add</button>
+                    <div class="instrument-dropdown" id="instrumentDropdown">
+                        <input class="instrument-dropdown-search" placeholder="Search pairs..." oninput="filterInstruments(this.value)">
+                        <div id="instrumentDropdownList">
+                            <div class="instrument-dropdown-item selected" data-pair="BTC/USDT" onclick="toggleInstrumentSelect(this)">BTC/USDT <span style='font-size:11px;color:var(--text-muted)'>Bitcoin</span></div>
+                            <div class="instrument-dropdown-item" data-pair="ETH/USDT" onclick="toggleInstrumentSelect(this)">ETH/USDT <span style='font-size:11px;color:var(--text-muted)'>Ethereum</span></div>
+                            <div class="instrument-dropdown-item" data-pair="SOL/USDT" onclick="toggleInstrumentSelect(this)">SOL/USDT <span style='font-size:11px;color:var(--text-muted)'>Solana</span></div>
+                            <div class="instrument-dropdown-item" data-pair="BNB/USDT" onclick="toggleInstrumentSelect(this)">BNB/USDT <span style='font-size:11px;color:var(--text-muted)'>BNB</span></div>
+                            <div class="instrument-dropdown-item" data-pair="XRP/USDT" onclick="toggleInstrumentSelect(this)">XRP/USDT <span style='font-size:11px;color:var(--text-muted)'>Ripple</span></div>
+                            <div class="instrument-dropdown-item" data-pair="ADA/USDT" onclick="toggleInstrumentSelect(this)">ADA/USDT <span style='font-size:11px;color:var(--text-muted)'>Cardano</span></div>
+                            <div class="instrument-dropdown-item" data-pair="DOGE/USDT" onclick="toggleInstrumentSelect(this)">DOGE/USDT <span style='font-size:11px;color:var(--text-muted)'>Dogecoin</span></div>
+                            <div class="instrument-dropdown-item" data-pair="AVAX/USDT" onclick="toggleInstrumentSelect(this)">AVAX/USDT <span style='font-size:11px;color:var(--text-muted)'>Avalanche</span></div>
+                            <div class="instrument-dropdown-item" data-pair="DOT/USDT" onclick="toggleInstrumentSelect(this)">DOT/USDT <span style='font-size:11px;color:var(--text-muted)'>Polkadot</span></div>
+                            <div class="instrument-dropdown-item" data-pair="LINK/USDT" onclick="toggleInstrumentSelect(this)">LINK/USDT <span style='font-size:11px;color:var(--text-muted)'>Chainlink</span></div>
+                            <div class="instrument-dropdown-item" data-pair="MATIC/USDT" onclick="toggleInstrumentSelect(this)">MATIC/USDT <span style='font-size:11px;color:var(--text-muted)'>Polygon</span></div>
+                            <div class="instrument-dropdown-item" data-pair="SHIB/USDT" onclick="toggleInstrumentSelect(this)">SHIB/USDT <span style='font-size:11px;color:var(--text-muted)'>Shiba Inu</span></div>
+                            <div class="instrument-dropdown-item" data-pair="ARB/USDT" onclick="toggleInstrumentSelect(this)">ARB/USDT <span style='font-size:11px;color:var(--text-muted)'>Arbitrum</span></div>
+                            <div class="instrument-dropdown-item" data-pair="OP/USDT" onclick="toggleInstrumentSelect(this)">OP/USDT <span style='font-size:11px;color:var(--text-muted)'>Optimism</span></div>
+                            <div class="instrument-dropdown-item" data-pair="NEAR/USDT" onclick="toggleInstrumentSelect(this)">NEAR/USDT <span style='font-size:11px;color:var(--text-muted)'>NEAR</span></div>
                         </div>
                     </div>
                 </div>
+                <!-- Hidden select for form compat -->
+                <select id="instrumentSelect" multiple style="display:none;"><option value="BTC/USDT" selected>BTC/USDT</option></select>
+            </div>
+        </div>
 
-                <!-- Risk Management -->
-                <div class="card">
-                    <div class="card-title">Risk Management</div>
-                    <div class="card-subtitle">Control your trading outcomes by setting global limits on losses and profits.</div>
-                    <div class="risk-grid" style="margin-top:12px;">
-                        <div>
-                            <label class="form-label">Max Profit Target (USDT)</label>
-                            <input class="risk-input" type="number" placeholder="e.g. 500" id="riskProfit">
+        <!-- ROW 2: Order Type + Strategy Legs -->
+        <div class="builder-mid-row">
+            <div class="card">
+                <div class="card-title">Order Type</div>
+                <div class="card-subtitle">Select your type</div>
+                <div class="order-type-pills" style="margin-top:12px;">
+                    <label class="order-type-pill active" onclick="selectOrderType(this)">
+                        <input type="radio" name="orderType" value="market" checked> Market
+                    </label>
+                    <label class="order-type-pill" onclick="selectOrderType(this)">
+                        <input type="radio" name="orderType" value="limit"> Limit
+                    </label>
+                    <label class="order-type-pill" onclick="selectOrderType(this)">
+                        <input type="radio" name="orderType" value="stop-limit"> Stop-Limit
+                    </label>
+                </div>
+
+                <div class="time-row">
+                    <div>
+                        <label class="form-label">Start Time</label>
+                        <div class="time-input">
+                            <input type="text" value="00:00" id="builderStartTime" style="width:50px;"> 🕐
                         </div>
-                        <div>
-                            <label class="form-label">Max Loss Limit (USDT)</label>
-                            <input class="risk-input" type="number" placeholder="e.g. 200" id="riskLoss">
-                        </div>
-                        <div>
-                            <label class="form-label">Max Daily Trades</label>
-                            <input class="risk-input" type="number" placeholder="e.g. 10" id="riskMaxTrades">
-                        </div>
-                        <div>
-                            <label class="form-label">Max Open Positions</label>
-                            <input class="risk-input" type="number" placeholder="e.g. 5" id="riskMaxPos">
+                    </div>
+                    <div>
+                        <label class="form-label">Square Off</label>
+                        <div class="time-input">
+                            <input type="text" value="23:59" id="builderEndTime" style="width:50px;"> 🕐
                         </div>
                     </div>
                 </div>
 
-                <!-- Advanced Features -->
-                <div class="card">
-                    <div class="card-title">Advanced Features <span style="display:inline-flex;width:18px;height:18px;border-radius:50%;background:var(--border);align-items:center;justify-content:center;font-size:11px;color:var(--text-muted);vertical-align:middle;cursor:help;" title="Advanced execution controls">ℹ</span></div>
-                    <div class="card-subtitle">Utilize advanced execution controls for dynamic stop-loss movement, conditional entry/re-entry, and strategy-wide exit synchronization.</div>
-                    <div class="adv-grid" style="margin-top:12px;">
-                        <label class="adv-item"><input type="checkbox"> Move SL to Cost</label>
-                        <label class="adv-item"><input type="checkbox"> Exit All on SL/TP</label>
-                        <label class="adv-item"><input type="checkbox"> Pre-set SL Order</label>
-                        <label class="adv-item"><input type="checkbox"> Wait & Confirm</label>
-                        <label class="adv-item"><input type="checkbox"> Premium Difference</label>
-                        <label class="adv-item"><input type="checkbox"> Re Entry/Execute</label>
-                        <label class="adv-item"><input type="checkbox"> Trail SL</label>
-                        <label class="adv-item"><input type="checkbox"> DCA on Dip</label>
-                        <label class="adv-item"><input type="checkbox"> Martingale</label>
+                <div style="margin-top:14px;">
+                    <label class="form-label">Active Days</label>
+                    <div class="day-selector">
+                        <div class="day-pill active">MON</div>
+                        <div class="day-pill active">TUE</div>
+                        <div class="day-pill active">WED</div>
+                        <div class="day-pill active">THU</div>
+                        <div class="day-pill active">FRI</div>
+                        <div class="day-pill">SAT</div>
+                        <div class="day-pill">SUN</div>
+                    </div>
+                </div>
+
+                <div style="margin-top:16px;">
+                    <label class="form-label">No Trade After</label>
+                    <div class="time-input" style="width:fit-content;">
+                        <input type="text" value="23:59" id="builderNoTradeAfter" style="width:50px;"> 🕐
                     </div>
                 </div>
             </div>
 
-            <div class="builder-right">
+            <div>
                 <!-- Strategy Legs Header -->
-                <div style="display:flex;justify-content:space-between;align-items:center;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
                     <h3 style="font-size:18px;font-weight:700;">Strategy Legs</h3>
                     <button class="btn btn-primary" onclick="addLeg()">+ Add Leg</button>
                 </div>
@@ -1690,20 +1780,21 @@ a:hover { text-decoration: underline; }
                 <div class="leg-card" id="leg-1">
                     <div class="leg-header">
                         <div>
-                            <span class="leg-title">Leg 1 <span>BUY LONG</span></span>
-                            <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">BUY LONG • Entry at Market Price</div>
+                            <span class="leg-title">Leg 1 <span class="buy-tag">BUY CE</span></span>
+                            <div class="leg-subtitle">BUY CE • Strike ATM</div>
                         </div>
                         <span class="leg-badge">ACTIVE</span>
                     </div>
 
                     <div class="leg-grid">
                         <div class="leg-field">
-                            <label>Qty (USDT)</label>
+                            <label>Qty</label>
                             <div class="num-input">
                                 <button onclick="adjustQty(this,-1)">−</button>
-                                <input type="number" value="100" min="1">
+                                <input type="number" value="0" min="0">
                                 <button onclick="adjustQty(this,1)">+</button>
                             </div>
+                            <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Multiples of lot (-)</div>
                         </div>
                         <div class="leg-field">
                             <label>Position</label>
@@ -1713,51 +1804,48 @@ a:hover { text-decoration: underline; }
                             </div>
                         </div>
                         <div class="leg-field">
-                            <label>Order Type</label>
+                            <label>Option Type</label>
                             <div class="tab-pair">
-                                <button class="tab-opt active">Spot</button>
-                                <button class="tab-opt" onclick="toggleTabPair(this)">Futures</button>
+                                <button class="tab-opt active">Call</button>
+                                <button class="tab-opt" onclick="toggleTabPair(this)">Put</button>
                             </div>
                         </div>
                     </div>
 
-                    <div class="leg-grid" style="margin-top:12px;">
+                    <div class="leg-grid" style="margin-top:14px;">
                         <div class="leg-field">
-                            <label>Leverage</label>
+                            <label>Expiry</label>
                             <select class="form-select">
-                                <option>1x</option>
-                                <option>2x</option>
-                                <option>3x</option>
-                                <option selected>5x</option>
-                                <option>10x</option>
-                                <option>20x</option>
-                                <option>50x</option>
-                                <option>100x</option>
+                                <option selected>WEEKLY</option>
+                                <option>MONTHLY</option>
+                                <option>NEXT WEEK</option>
+                                <option>NEXT MONTH</option>
                             </select>
                         </div>
                         <div class="leg-field">
-                            <label>Entry Trigger</label>
+                            <label>Strike Criteria</label>
                             <select class="form-select">
-                                <option selected>Market Price</option>
-                                <option>Limit Price</option>
-                                <option>% Above Market</option>
-                                <option>% Below Market</option>
+                                <option selected>ATM pt</option>
+                                <option>ATM %</option>
+                                <option>ATM + Straddle Width</option>
+                                <option>Closest Premium</option>
                             </select>
                         </div>
                         <div class="leg-field">
-                            <label>Timeframe</label>
+                            <label>Strike Type</label>
                             <select class="form-select">
-                                <option>1m</option>
-                                <option>5m</option>
-                                <option selected>15m</option>
-                                <option>1h</option>
-                                <option>4h</option>
-                                <option>1d</option>
+                                <option selected>ATM</option>
+                                <option>ITM 1</option>
+                                <option>ITM 2</option>
+                                <option>ITM 3</option>
+                                <option>OTM 1</option>
+                                <option>OTM 2</option>
+                                <option>OTM 3</option>
                             </select>
                         </div>
                     </div>
 
-                    <div class="leg-grid" style="margin-top:12px;">
+                    <div class="leg-grid" style="margin-top:14px;">
                         <div class="leg-field">
                             <label>SL Type</label>
                             <select class="form-select">
@@ -1767,8 +1855,8 @@ a:hover { text-decoration: underline; }
                             </select>
                         </div>
                         <div class="leg-field">
-                            <label>Stop Loss</label>
-                            <input class="form-input" type="number" placeholder="e.g. 5">
+                            <label>SL</label>
+                            <input class="form-input" type="number" placeholder="">
                         </div>
                         <div class="leg-field">
                             <label>On Price</label>
@@ -1779,7 +1867,7 @@ a:hover { text-decoration: underline; }
                         </div>
                     </div>
 
-                    <div class="leg-grid" style="margin-top:12px;">
+                    <div class="leg-grid" style="margin-top:14px;">
                         <div class="leg-field">
                             <label>TP Type</label>
                             <select class="form-select">
@@ -1789,8 +1877,8 @@ a:hover { text-decoration: underline; }
                             </select>
                         </div>
                         <div class="leg-field">
-                            <label>Take Profit</label>
-                            <input class="form-input" type="number" placeholder="e.g. 10">
+                            <label>TP</label>
+                            <input class="form-input" type="number" placeholder="">
                         </div>
                         <div class="leg-field">
                             <label>On Price</label>
@@ -1806,14 +1894,64 @@ a:hover { text-decoration: underline; }
                         <button title="Clone Leg" onclick="cloneLeg(1)">📋</button>
                     </div>
                 </div>
+            </div>
+        </div>
 
-                <!-- Save Strategy Button -->
-                <div style="display:flex;gap:12px;justify-content:flex-end;">
-                    <button class="btn btn-outline" onclick="resetBuilder()">Reset</button>
-                    <button class="btn btn-primary btn-lg" onclick="saveStrategy()">💾 Save Strategy</button>
-                    <button class="btn btn-green btn-lg" onclick="deployStrategy()">🚀 Deploy Strategy</button>
+        <!-- ROW 3: Risk Management + Advanced Features -->
+        <div class="builder-bot-row">
+            <div class="card">
+                <div class="card-title">Risk Management</div>
+                <div class="card-subtitle">Control your trading outcomes by setting global limits on losses and profits on the strategy, and automating how gains are protected (trailing).</div>
+                <div class="risk-grid" style="margin-top:14px;">
+                    <div>
+                        <label class="form-label">Exit When Over All Profit In Amount (USDT)</label>
+                        <input class="risk-input" type="number" placeholder="" id="riskProfit">
+                    </div>
+                    <div>
+                        <label class="form-label">Exit When Over All Loss In Amount (USDT)</label>
+                        <input class="risk-input" type="number" placeholder="" id="riskLoss">
+                    </div>
+                </div>
+                <div style="margin-top:14px;">
+                    <label class="form-label">No Trade After</label>
+                    <div class="time-input" style="width:fit-content;">
+                        <input type="text" value="23:59" id="riskNoTradeAfter" style="width:50px;"> 🕐
+                    </div>
+                </div>
+                <div class="risk-grid" style="margin-top:14px;">
+                    <div>
+                        <label class="form-label">Max Daily Trades</label>
+                        <input class="risk-input" type="number" placeholder="e.g. 10" id="riskMaxTrades">
+                    </div>
+                    <div>
+                        <label class="form-label">Max Open Positions</label>
+                        <input class="risk-input" type="number" placeholder="e.g. 5" id="riskMaxPos">
+                    </div>
                 </div>
             </div>
+
+            <div class="card">
+                <div class="card-title">Advance Features <span style="display:inline-flex;width:18px;height:18px;border-radius:50%;background:var(--border);align-items:center;justify-content:center;font-size:11px;color:var(--text-muted);vertical-align:middle;cursor:help;" title="Advanced execution controls">ℹ</span></div>
+                <div class="card-subtitle">Utilize advanced execution controls for dynamic stop-loss movement, conditional entry/re-entry, and strategy-wide exit synchronization.</div>
+                <div class="adv-grid" style="margin-top:14px;">
+                    <label class="adv-item"><input type="checkbox"> Move SL to Cost</label>
+                    <label class="adv-item"><input type="checkbox"> Exit All on SL/Tgt</label>
+                    <label class="adv-item"><input type="checkbox"> Pre Punch SL</label>
+                    <label class="adv-item"><input type="checkbox"> Wait & Trade</label>
+                    <label class="adv-item"><input type="checkbox"> Premium Difference</label>
+                    <label class="adv-item"><input type="checkbox"> Re Entry/Execute</label>
+                    <label class="adv-item"><input type="checkbox"> Trail SL</label>
+                    <label class="adv-item"><input type="checkbox"> DCA on Dip</label>
+                    <label class="adv-item"><input type="checkbox"> Martingale</label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Save / Deploy buttons -->
+        <div class="builder-actions">
+            <button class="btn btn-outline" onclick="resetBuilder()">Reset</button>
+            <button class="btn btn-primary btn-lg" onclick="saveStrategy()">💾 Save Strategy</button>
+            <button class="btn btn-green btn-lg" onclick="deployStrategy()">🚀 Deploy Strategy</button>
         </div>
     </div>
 
@@ -2466,8 +2604,8 @@ a:hover { text-decoration: underline; }
 <script>
 // ── State ──
 const state = {
-    strategies: JSON.parse(localStorage.getItem('piq_strategies') || '[]'),
-    exchanges: JSON.parse(localStorage.getItem('piq_exchanges') || '[]'),
+    strategies: [],
+    exchanges: [],
     selectedExchange: null,
     legCounter: 1,
     currentStratTab: 'my',
@@ -2476,10 +2614,47 @@ const state = {
     theme: localStorage.getItem('piq_theme') || 'light',
 };
 
+function authHeaders() {
+    const token = localStorage.getItem('pumpiq_token');
+    return token ? { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
+}
+
+async function loadStrategiesFromAPI() {
+    try {
+        const res = await fetch('/api/algo/strategies', { headers: authHeaders() });
+        if (res.ok) {
+            const data = await res.json();
+            state.strategies = data.map(s => ({
+                ...s,
+                instruments: typeof s.instruments === 'string' ? JSON.parse(s.instruments) : (s.instruments || []),
+                legs: typeof s.legs === 'string' ? JSON.parse(s.legs) : (s.legs || []),
+                risk_config: typeof s.risk_config === 'string' ? JSON.parse(s.risk_config) : (s.risk_config || {}),
+                advanced_config: typeof s.advanced_config === 'string' ? JSON.parse(s.advanced_config) : (s.advanced_config || {}),
+                createdAt: s.created_at || s.createdAt,
+            }));
+        }
+    } catch (e) { console.warn('Failed to load strategies from API, using localStorage fallback', e); state.strategies = JSON.parse(localStorage.getItem('piq_strategies') || '[]'); }
+}
+
+async function loadExchangesFromAPI() {
+    try {
+        const res = await fetch('/api/algo/exchanges', { headers: authHeaders() });
+        if (res.ok) {
+            const data = await res.json();
+            state.exchanges = data.map(ex => ({
+                ...ex,
+                apiKeyLast4: ex.api_key_last4 || ex.apiKeyLast4 || '',
+                connectedAt: ex.connected_at || ex.connectedAt || '',
+            }));
+        }
+    } catch (e) { console.warn('Failed to load exchanges from API', e); state.exchanges = JSON.parse(localStorage.getItem('piq_exchanges') || '[]'); }
+}
+
 // ── Init ──
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     applyTheme();
     loadUserInfo();
+    await Promise.all([loadStrategiesFromAPI(), loadExchangesFromAPI()]);
     renderExchanges();
     renderStrategies();
     updateBtSelect();
@@ -2554,19 +2729,20 @@ function addLeg() {
     <div class="leg-card" id="leg-${legId}">
         <div class="leg-header">
             <div>
-                <span class="leg-title">Leg ${legId} <span>BUY LONG</span></span>
-                <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">BUY LONG • Entry at Market Price</div>
+                <span class="leg-title">Leg ${legId} <span class="buy-tag">BUY CE</span></span>
+                <div class="leg-subtitle">BUY CE • Strike ATM</div>
             </div>
             <span class="leg-badge">ACTIVE</span>
         </div>
         <div class="leg-grid">
             <div class="leg-field">
-                <label>Qty (USDT)</label>
+                <label>Qty</label>
                 <div class="num-input">
                     <button onclick="adjustQty(this,-1)">−</button>
-                    <input type="number" value="100" min="1">
+                    <input type="number" value="0" min="0">
                     <button onclick="adjustQty(this,1)">+</button>
                 </div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Multiples of lot (-)</div>
             </div>
             <div class="leg-field">
                 <label>Position</label>
@@ -2576,49 +2752,49 @@ function addLeg() {
                 </div>
             </div>
             <div class="leg-field">
-                <label>Order Type</label>
+                <label>Option Type</label>
                 <div class="tab-pair">
-                    <button class="tab-opt active">Spot</button>
-                    <button class="tab-opt" onclick="toggleTabPair(this)">Futures</button>
+                    <button class="tab-opt active">Call</button>
+                    <button class="tab-opt" onclick="toggleTabPair(this)">Put</button>
                 </div>
             </div>
         </div>
-        <div class="leg-grid" style="margin-top:12px;">
+        <div class="leg-grid" style="margin-top:14px;">
             <div class="leg-field">
-                <label>Leverage</label>
-                <select class="form-select"><option>1x</option><option>2x</option><option selected>5x</option><option>10x</option><option>20x</option></select>
+                <label>Expiry</label>
+                <select class="form-select"><option selected>WEEKLY</option><option>MONTHLY</option><option>NEXT WEEK</option><option>NEXT MONTH</option></select>
             </div>
             <div class="leg-field">
-                <label>Entry Trigger</label>
-                <select class="form-select"><option selected>Market Price</option><option>Limit Price</option><option>% Above Market</option><option>% Below Market</option></select>
+                <label>Strike Criteria</label>
+                <select class="form-select"><option selected>ATM pt</option><option>ATM %</option><option>ATM + Straddle Width</option><option>Closest Premium</option></select>
             </div>
             <div class="leg-field">
-                <label>Timeframe</label>
-                <select class="form-select"><option>1m</option><option>5m</option><option selected>15m</option><option>1h</option><option>4h</option><option>1d</option></select>
+                <label>Strike Type</label>
+                <select class="form-select"><option selected>ATM</option><option>ITM 1</option><option>ITM 2</option><option>ITM 3</option><option>OTM 1</option><option>OTM 2</option><option>OTM 3</option></select>
             </div>
         </div>
-        <div class="leg-grid" style="margin-top:12px;">
+        <div class="leg-grid" style="margin-top:14px;">
             <div class="leg-field">
                 <label>SL Type</label>
                 <select class="form-select"><option selected>SL%</option><option>SL Price</option><option>Trailing SL%</option></select>
             </div>
             <div class="leg-field">
-                <label>Stop Loss</label>
-                <input class="form-input" type="number" placeholder="e.g. 5">
+                <label>SL</label>
+                <input class="form-input" type="number" placeholder="">
             </div>
             <div class="leg-field">
                 <label>On Price</label>
                 <select class="form-select"><option selected>On Price</option><option>On % Change</option></select>
             </div>
         </div>
-        <div class="leg-grid" style="margin-top:12px;">
+        <div class="leg-grid" style="margin-top:14px;">
             <div class="leg-field">
                 <label>TP Type</label>
                 <select class="form-select"><option selected>TP%</option><option>TP Price</option><option>Trailing TP%</option></select>
             </div>
             <div class="leg-field">
-                <label>Take Profit</label>
-                <input class="form-input" type="number" placeholder="e.g. 10">
+                <label>TP</label>
+                <input class="form-input" type="number" placeholder="">
             </div>
             <div class="leg-field">
                 <label>On Price</label>
@@ -2647,7 +2823,7 @@ function cloneLeg(id) {
 function adjustQty(btn, delta) {
     const input = btn.parentElement.querySelector('input');
     const val = parseFloat(input.value) || 0;
-    input.value = Math.max(1, val + delta * 10);
+    input.value = Math.max(0, val + delta);
 }
 
 function toggleTabPair(btn) {
@@ -2660,6 +2836,79 @@ function toggleTabPair(btn) {
     else btn.classList.add('active');
 }
 
+// ── Instrument Chip Management ──
+function getSelectedInstruments() {
+    const chips = document.querySelectorAll('#instrumentChips .instrument-chip');
+    return Array.from(chips).map(c => c.getAttribute('data-pair'));
+}
+
+function syncInstrumentSelect() {
+    const sel = document.getElementById('instrumentSelect');
+    const selected = getSelectedInstruments();
+    Array.from(sel.options).forEach(opt => { opt.selected = selected.includes(opt.value); });
+    // Sync dropdown highlights
+    document.querySelectorAll('#instrumentDropdownList .instrument-dropdown-item').forEach(item => {
+        item.classList.toggle('selected', selected.includes(item.getAttribute('data-pair')));
+    });
+}
+
+function toggleInstrumentDropdown() {
+    const dd = document.getElementById('instrumentDropdown');
+    dd.classList.toggle('open');
+    if (dd.classList.contains('open')) {
+        dd.querySelector('.instrument-dropdown-search').focus();
+    }
+}
+
+function toggleInstrumentSelect(el) {
+    const pair = el.getAttribute('data-pair');
+    const chips = document.getElementById('instrumentChips');
+    const existing = chips.querySelector(`[data-pair="${pair}"]`);
+    if (existing) {
+        existing.remove();
+        el.classList.remove('selected');
+    } else {
+        const chip = document.createElement('span');
+        chip.className = 'instrument-chip';
+        chip.setAttribute('data-pair', pair);
+        chip.innerHTML = `${pair} <button class="chip-remove" onclick="removeInstrument(this)">×</button>`;
+        chips.appendChild(chip);
+        el.classList.add('selected');
+    }
+    syncInstrumentSelect();
+}
+
+function removeInstrument(btn) {
+    const chip = btn.closest('.instrument-chip');
+    const pair = chip.getAttribute('data-pair');
+    chip.remove();
+    const ddItem = document.querySelector(`#instrumentDropdownList [data-pair="${pair}"]`);
+    if (ddItem) ddItem.classList.remove('selected');
+    syncInstrumentSelect();
+}
+
+function filterInstruments(query) {
+    const items = document.querySelectorAll('#instrumentDropdownList .instrument-dropdown-item');
+    const q = query.toLowerCase();
+    items.forEach(item => {
+        item.style.display = item.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+}
+
+function selectOrderType(el) {
+    document.querySelectorAll('.order-type-pill').forEach(p => p.classList.remove('active'));
+    el.classList.add('active');
+    el.querySelector('input').checked = true;
+}
+
+// Close instrument dropdown on outside click
+document.addEventListener('click', (e) => {
+    const dd = document.getElementById('instrumentDropdown');
+    if (dd && !e.target.closest('.instrument-dropdown') && !e.target.closest('.instrument-add-btn')) {
+        dd.classList.remove('open');
+    }
+});
+
 function resetBuilder() {
     document.querySelectorAll('.leg-card:not(#leg-1)').forEach(l => l.remove());
     state.legCounter = 1;
@@ -2670,61 +2919,155 @@ function saveStrategy() {
     openModal('saveStratModal');
 }
 
-function confirmSaveStrategy() {
+async function confirmSaveStrategy() {
     const name = document.getElementById('stratName').value.trim();
     if (!name) { toast('Please enter a strategy name', 'error'); return; }
 
     const desc = document.getElementById('stratDesc').value.trim();
     const instruments = Array.from(document.getElementById('instrumentSelect').selectedOptions).map(o => o.value);
-    const legs = document.querySelectorAll('.leg-card').length;
 
-    const strategy = {
-        id: Date.now(),
-        name,
-        description: desc,
-        instruments,
-        legs,
-        status: 'stopped',
-        createdAt: new Date().toISOString(),
-        pnl: 0,
+    // Collect strategy type
+    const stratTypes = [];
+    if (document.getElementById('chkTimeBased')?.checked) stratTypes.push('time_based');
+    if (document.getElementById('chkIndicator')?.checked) stratTypes.push('indicator');
+    if (document.getElementById('chkPriceAction')?.checked) stratTypes.push('price_action');
+    const strategyType = stratTypes.join(',') || 'time_based';
+
+    // Collect order type
+    const orderTypeEl = document.querySelector('input[name="orderType"]:checked');
+    const orderType = orderTypeEl ? orderTypeEl.value : 'market';
+
+    // Collect legs data from the builder
+    const legCards = document.querySelectorAll('.leg-card');
+    const legsData = [];
+    legCards.forEach((card, idx) => {
+        const selects = card.querySelectorAll('.form-select');
+        const inputs = card.querySelectorAll('.form-input, .num-input input');
+        const tabPairs = card.querySelectorAll('.tab-pair');
+        const leg = {
+            leg_number: idx + 1,
+            qty: parseFloat(inputs[0]?.value) || 0,
+            position: tabPairs[0]?.querySelector('.active-green, .active-red')?.textContent || 'BUY',
+            option_type: tabPairs[1]?.querySelector('.active')?.textContent || 'Call',
+            expiry: selects[0]?.value || 'WEEKLY',
+            strike_criteria: selects[1]?.value || 'ATM pt',
+            strike_type: selects[2]?.value || 'ATM',
+            sl_type: selects[3]?.value || 'SL%',
+            stop_loss: parseFloat(inputs[1]?.value) || 0,
+            sl_on: selects[4]?.value || 'On Price',
+            tp_type: selects[5]?.value || 'TP%',
+            take_profit: parseFloat(inputs[2]?.value) || 0,
+            tp_on: selects[6]?.value || 'On Price',
+        };
+        legsData.push(leg);
+    });
+
+    // Collect risk config
+    const riskConfig = {
+        max_profit: parseFloat(document.getElementById('riskProfit')?.value) || 0,
+        max_loss: parseFloat(document.getElementById('riskLoss')?.value) || 0,
+        max_daily_trades: parseInt(document.getElementById('riskMaxTrades')?.value) || 0,
+        max_open_positions: parseInt(document.getElementById('riskMaxPos')?.value) || 0,
     };
 
-    state.strategies.push(strategy);
-    localStorage.setItem('piq_strategies', JSON.stringify(state.strategies));
+    // Collect advanced config
+    const advCheckboxes = document.querySelectorAll('.adv-grid input[type="checkbox"]');
+    const advLabels = ['move_sl_to_cost', 'exit_all_on_sl_tp', 'preset_sl_order', 'wait_confirm', 'premium_diff', 're_entry', 'trail_sl', 'dca_on_dip', 'martingale'];
+    const advancedConfig = {};
+    advCheckboxes.forEach((cb, i) => { advancedConfig[advLabels[i] || `adv_${i}`] = cb.checked; });
 
-    closeModal('saveStratModal');
-    renderStrategies();
-    updateBtSelect();
-    updateDashboardStats();
-    toast(`Strategy "${name}" saved!`, 'success');
-    document.getElementById('stratName').value = '';
-    document.getElementById('stratDesc').value = '';
+    // Collect active days & time
+    const activeDays = Array.from(document.querySelectorAll('.day-pill.active')).map(p => p.textContent.trim());
+    riskConfig.active_days = activeDays;
+
+    const body = {
+        name, description: desc, instruments,
+        legs: legsData, strategy_type: strategyType,
+        order_type: orderType, risk_config: riskConfig,
+        advanced_config: advancedConfig,
+    };
+
+    try {
+        const res = await fetch('/api/algo/strategies', {
+            method: 'POST', headers: authHeaders(), body: JSON.stringify(body),
+        });
+        if (!res.ok) { const err = await res.json().catch(() => ({})); toast(err.detail || 'Failed to save strategy', 'error'); return; }
+        const saved = await res.json();
+        toast(`Strategy "${name}" saved!`, 'success');
+        closeModal('saveStratModal');
+        await loadStrategiesFromAPI();
+        renderStrategies();
+        updateBtSelect();
+        updateDashboardStats();
+        document.getElementById('stratName').value = '';
+        document.getElementById('stratDesc').value = '';
+    } catch (e) {
+        console.error('Save strategy error:', e);
+        toast('Failed to save strategy', 'error');
+    }
 }
 
-function deployStrategy() {
+async function deployStrategy() {
     if (state.exchanges.length === 0) {
         toast('Connect an exchange first!', 'error');
         return;
     }
-    toast('Strategy deployed! 🚀', 'success');
+    // Save first, then deploy the newly saved strategy
+    const name = document.getElementById('stratName')?.value?.trim();
+    if (!name && state.strategies.length === 0) {
+        toast('Save a strategy first!', 'error');
+        return;
+    }
+    // If there's a name typed, save first
+    if (name) {
+        await confirmSaveStrategy();
+    }
+    // Deploy the most recent strategy
+    const latest = state.strategies[0];
+    if (!latest) { toast('No strategy to deploy', 'error'); return; }
+    try {
+        const res = await fetch(`/api/algo/strategies/${latest.id}/deploy`, {
+            method: 'POST', headers: authHeaders(),
+        });
+        if (!res.ok) { const err = await res.json().catch(() => ({})); toast(err.detail || 'Deploy failed', 'error'); return; }
+        toast('Strategy deployed! 🚀', 'success');
+        await loadStrategiesFromAPI();
+        renderStrategies();
+        updateDashboardStats();
+    } catch (e) {
+        toast('Deploy failed', 'error');
+    }
 }
 
-function addTemplate(name) {
-    const strategy = {
-        id: Date.now(),
-        name,
-        description: 'Template strategy',
-        instruments: ['BTC/USDT'],
-        legs: 1,
-        status: 'stopped',
-        createdAt: new Date().toISOString(),
-        pnl: 0,
+async function addTemplate(name) {
+    const templates = {
+        'BTC Moving Average Crossover': { instruments: ['BTC/USDT'], strategy_type: 'indicator', order_type: 'market', legs: [{leg_number:1, position:'BUY', market_type:'Spot', leverage:'1x', entry_trigger:'Market Price', timeframe:'4h', sl_type:'SL%', stop_loss:3, tp_type:'TP%', take_profit:6, qty:200}], risk_config: {max_loss:500, max_daily_trades:5}, description: 'Classic MA crossover strategy on BTC with 4h timeframe' },
+        'ETH RSI Swing Trading': { instruments: ['ETH/USDT'], strategy_type: 'indicator', order_type: 'limit', legs: [{leg_number:1, position:'BUY', market_type:'Spot', leverage:'2x', entry_trigger:'Limit Price', timeframe:'1h', sl_type:'SL%', stop_loss:4, tp_type:'TP%', take_profit:8, qty:150}], risk_config: {max_loss:300, max_daily_trades:8}, description: 'RSI-based swing trading on ETH' },
+        'SOL Momentum Scalper': { instruments: ['SOL/USDT'], strategy_type: 'price_action', order_type: 'market', legs: [{leg_number:1, position:'BUY', market_type:'Futures', leverage:'10x', entry_trigger:'Market Price', timeframe:'5m', sl_type:'SL%', stop_loss:1.5, tp_type:'TP%', take_profit:3, qty:100}], risk_config: {max_loss:200, max_daily_trades:20}, description: 'Fast scalping on SOL momentum moves' },
+        'DCA Bitcoin Weekly': { instruments: ['BTC/USDT'], strategy_type: 'time_based', order_type: 'market', legs: [{leg_number:1, position:'BUY', market_type:'Spot', leverage:'1x', entry_trigger:'Market Price', timeframe:'1d', sl_type:'SL%', stop_loss:0, tp_type:'TP%', take_profit:0, qty:50}], risk_config: {max_daily_trades:1, active_days:['MON']}, description: 'Dollar cost average into BTC every week' },
+        'Altcoin Breakout Hunter': { instruments: ['SOL/USDT','AVAX/USDT','LINK/USDT','ARB/USDT'], strategy_type: 'price_action', order_type: 'stop-limit', legs: [{leg_number:1, position:'BUY', market_type:'Spot', leverage:'3x', entry_trigger:'% Above Market', timeframe:'1h', sl_type:'SL%', stop_loss:5, tp_type:'TP%', take_profit:15, qty:100}], risk_config: {max_loss:400, max_daily_trades:10}, description: 'Catch breakouts on promising altcoins' },
+        'Grid Trading BTC/USDT': { instruments: ['BTC/USDT'], strategy_type: 'time_based,price_action', order_type: 'limit', legs: [{leg_number:1, position:'BUY', market_type:'Spot', leverage:'1x', entry_trigger:'% Below Market', timeframe:'15m', sl_type:'SL%', stop_loss:2, tp_type:'TP%', take_profit:2, qty:50},{leg_number:2, position:'SELL', market_type:'Spot', leverage:'1x', entry_trigger:'% Above Market', timeframe:'15m', sl_type:'SL%', stop_loss:2, tp_type:'TP%', take_profit:2, qty:50}], risk_config: {max_loss:300, max_daily_trades:50}, description: 'Grid bot placing buy/sell orders in a range' },
     };
-    state.strategies.push(strategy);
-    localStorage.setItem('piq_strategies', JSON.stringify(state.strategies));
-    renderStrategies();
-    updateBtSelect();
-    toast(`"${name}" added to your strategies!`, 'success');
+    const tmpl = templates[name] || { instruments: ['BTC/USDT'], legs: [], description: 'Template strategy' };
+    const body = {
+        name, description: tmpl.description || 'Template strategy',
+        instruments: tmpl.instruments, legs: tmpl.legs || [],
+        strategy_type: tmpl.strategy_type || 'time_based',
+        order_type: tmpl.order_type || 'market',
+        risk_config: tmpl.risk_config || {},
+        advanced_config: {},
+    };
+    try {
+        const res = await fetch('/api/algo/strategies', {
+            method: 'POST', headers: authHeaders(), body: JSON.stringify(body),
+        });
+        if (!res.ok) { toast('Failed to add template', 'error'); return; }
+        toast(`"${name}" added to your strategies!`, 'success');
+        await loadStrategiesFromAPI();
+        renderStrategies();
+        updateBtSelect();
+        updateDashboardStats();
+    } catch (e) { toast('Failed to add template', 'error'); }
 }
 
 // ── Strategies Page ──
@@ -2762,27 +3105,46 @@ function renderStrategies() {
     `).join('');
 }
 
-function toggleStratStatus(id) {
+async function toggleStratStatus(id) {
     const s = state.strategies.find(x => x.id === id);
     if (!s) return;
-    if (s.status === 'running') s.status = 'stopped';
-    else {
-        if (state.exchanges.length === 0) { toast('Connect an exchange first!', 'error'); return; }
-        s.status = 'running';
+    const newStatus = s.status === 'running' ? 'stopped' : 'running';
+    if (newStatus === 'running' && state.exchanges.length === 0) {
+        toast('Connect an exchange first!', 'error'); return;
     }
-    localStorage.setItem('piq_strategies', JSON.stringify(state.strategies));
-    renderStrategies();
-    toast(`Strategy ${s.status === 'running' ? 'started' : 'stopped'}`, s.status === 'running' ? 'success' : 'info');
-    updateDashboardStats();
+    try {
+        if (newStatus === 'running') {
+            const res = await fetch(`/api/algo/strategies/${id}/deploy`, {
+                method: 'POST', headers: authHeaders(),
+            });
+            if (!res.ok) { const err = await res.json().catch(() => ({})); toast(err.detail || 'Failed to start', 'error'); return; }
+        } else {
+            const res = await fetch(`/api/algo/strategies/${id}`, {
+                method: 'PUT', headers: authHeaders(),
+                body: JSON.stringify({ status: 'stopped' }),
+            });
+            if (!res.ok) { toast('Failed to stop', 'error'); return; }
+        }
+        toast(`Strategy ${newStatus === 'running' ? 'started' : 'stopped'}`, newStatus === 'running' ? 'success' : 'info');
+        await loadStrategiesFromAPI();
+        renderStrategies();
+        updateDashboardStats();
+    } catch (e) { toast('Failed to update strategy', 'error'); }
 }
 
-function deleteStrategy(id) {
-    state.strategies = state.strategies.filter(x => x.id !== id);
-    localStorage.setItem('piq_strategies', JSON.stringify(state.strategies));
-    renderStrategies();
-    updateBtSelect();
-    updateDashboardStats();
-    toast('Strategy deleted', 'info');
+async function deleteStrategy(id) {
+    if (!confirm('Delete this strategy?')) return;
+    try {
+        const res = await fetch(`/api/algo/strategies/${id}`, {
+            method: 'DELETE', headers: authHeaders(),
+        });
+        if (!res.ok) { toast('Failed to delete', 'error'); return; }
+        toast('Strategy deleted', 'info');
+        await loadStrategiesFromAPI();
+        renderStrategies();
+        updateBtSelect();
+        updateDashboardStats();
+    } catch (e) { toast('Failed to delete strategy', 'error'); }
 }
 
 function switchStratTab(el, tab) {
@@ -2841,33 +3203,31 @@ function selectExchange(el, name) {
     state.selectedExchange = name;
 }
 
-function connectExchange() {
+async function connectExchange() {
     if (!state.selectedExchange) { toast('Select an exchange first', 'error'); return; }
     const apiKey = document.getElementById('exApiKey').value.trim();
     const apiSecret = document.getElementById('exApiSecret').value.trim();
+    const passphrase = document.getElementById('exPassphrase')?.value?.trim() || '';
     if (!apiKey || !apiSecret) { toast('Enter API credentials', 'error'); return; }
 
-    const exchange = {
-        id: Date.now(),
-        name: state.selectedExchange,
-        apiKeyLast4: apiKey.slice(-4),
-        connected: true,
-        connectedAt: new Date().toISOString(),
-    };
-
-    state.exchanges.push(exchange);
-    localStorage.setItem('piq_exchanges', JSON.stringify(state.exchanges));
-
-    closeModal('exchangeModal');
-    renderExchanges();
-    toast(`${state.selectedExchange} connected!`, 'success');
-
-    // Clear form
-    document.getElementById('exApiKey').value = '';
-    document.getElementById('exApiSecret').value = '';
-    document.getElementById('exPassphrase').value = '';
-    state.selectedExchange = null;
-    document.querySelectorAll('.exchange-option').forEach(o => o.classList.remove('selected'));
+    try {
+        const res = await fetch('/api/algo/exchanges', {
+            method: 'POST', headers: authHeaders(),
+            body: JSON.stringify({ name: state.selectedExchange, api_key: apiKey, api_secret: apiSecret, passphrase }),
+        });
+        if (!res.ok) { const err = await res.json().catch(() => ({})); toast(err.detail || 'Failed to connect', 'error'); return; }
+        toast(`${state.selectedExchange} connected!`, 'success');
+        closeModal('exchangeModal');
+        await loadExchangesFromAPI();
+        renderExchanges();
+        updateDashboardStats();
+        // Clear form
+        document.getElementById('exApiKey').value = '';
+        document.getElementById('exApiSecret').value = '';
+        if (document.getElementById('exPassphrase')) document.getElementById('exPassphrase').value = '';
+        state.selectedExchange = null;
+        document.querySelectorAll('.exchange-option').forEach(o => o.classList.remove('selected'));
+    } catch (e) { toast('Failed to connect exchange', 'error'); }
 }
 
 function renderExchanges() {
@@ -2906,11 +3266,18 @@ function renderExchanges() {
     `).join('') + '</div>';
 }
 
-function disconnectExchange(id) {
-    state.exchanges = state.exchanges.filter(x => x.id !== id);
-    localStorage.setItem('piq_exchanges', JSON.stringify(state.exchanges));
-    renderExchanges();
-    toast('Exchange disconnected', 'info');
+async function disconnectExchange(id) {
+    if (!confirm('Disconnect this exchange?')) return;
+    try {
+        const res = await fetch(`/api/algo/exchanges/${id}`, {
+            method: 'DELETE', headers: authHeaders(),
+        });
+        if (!res.ok) { toast('Failed to disconnect', 'error'); return; }
+        toast('Exchange disconnected', 'info');
+        await loadExchangesFromAPI();
+        renderExchanges();
+        updateDashboardStats();
+    } catch (e) { toast('Failed to disconnect exchange', 'error'); }
 }
 
 // ── Backtesting ──
