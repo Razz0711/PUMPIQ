@@ -331,6 +331,20 @@ class BacktestEngine:
             symbol, len(closes), result.days_covered, result.start_date, result.end_date,
         )
 
+        # Data pipeline diagnostic: log first and last 3 prices for verification
+        if closes:
+            first_prices = closes[:3]
+            last_prices = closes[-3:]
+            price_range = (min(closes), max(closes))
+            logger.info(
+                "Backtest [%s] DATA CHECK: first_3_prices=%s, last_3_prices=%s, "
+                "price_range=$%.6f-$%.6f, price_change=%.1f%%",
+                symbol, [f"${p:.6f}" for p in first_prices],
+                [f"${p:.6f}" for p in last_prices],
+                price_range[0], price_range[1],
+                ((closes[-1] - closes[0]) / closes[0] * 100) if closes[0] > 0 else 0,
+            )
+
         # ── Step 2: Detect Trend (EMA50/EMA200) ──
         detected_trend = self._detect_trend(closes)
         result.detected_trend = detected_trend
@@ -575,6 +589,38 @@ class BacktestEngine:
         trial.trades = trades
         trial.total_trades = len(trades)
 
+        # Diagnostic logging
+        ind_start = max(self.rsi_period + 1, self.macd_slow + self.macd_signal_period, self.bb_period)
+        rsi_slice = rsi[ind_start:] if ind_start < len(rsi) else rsi
+        bb_u_valid = [v for v in bb_upper[ind_start:] if v > 0] if ind_start < len(bb_upper) else []
+        bb_l_valid = [v for v in bb_lower[ind_start:] if v > 0] if ind_start < len(bb_lower) else []
+        logger.info(
+            "Strategy [%s] %s: %d trades generated (closes=%d, indicators: RSI range=%.0f-%.0f, "
+            "BB_upper range=%.2f-%.2f, BB_lower range=%.2f-%.2f)",
+            trial.symbol, strategy, len(trades), len(closes),
+            min(rsi_slice) if rsi_slice else 0,
+            max(rsi_slice) if rsi_slice else 0,
+            min(bb_u_valid) if bb_u_valid else 0,
+            max(bb_u_valid) if bb_u_valid else 0,
+            min(bb_l_valid) if bb_l_valid else 0,
+            max(bb_l_valid) if bb_l_valid else 0,
+        )
+        if trades:
+            wins = sum(1 for t in trades if t.pnl > 0)
+            logger.info(
+                "  Trade details: %d wins / %d losses, total PnL $%.2f, "
+                "trades: %s",
+                wins, len(trades) - wins,
+                sum(t.pnl for t in trades),
+                [(t.direction, t.entry_date, f"${t.entry_price:.4f}", f"${t.exit_price:.4f}",
+                  f"{t.pnl_pct:+.2f}%", t.exit_reason) for t in trades[:5]],
+            )
+        else:
+            logger.warning(
+                "  ZERO trades for %s on %s — entry conditions never triggered",
+                strategy, trial.symbol,
+            )
+
         if trial.total_trades > 0:
             self._calculate_stats(trial, trades)
 
@@ -614,10 +660,20 @@ class BacktestEngine:
         quantity = 0.0
         pending_signal: Optional[Tuple[int, str]] = None
 
+        # Diagnostic counters
+        sig_rsi_oversold = 0
+        sig_macd_bullish = 0
+        sig_price_at_lower_bb = 0
+        total_entry_signals = 0
+        entries_opened = 0
+
         atr_series = self._compute_atr(closes, self.atr_period)
         start_idx = max(self.rsi_period + 1, self.macd_slow + self.macd_signal_period, self.bb_period)
         if start_idx >= n:
+            logger.warning("LONG: start_idx=%d >= n=%d — not enough data", start_idx, n)
             return trades
+
+        logger.info("LONG simulate: n=%d, start_idx=%d, iterating %d candles", n, start_idx, n - start_idx)
 
         for i in range(start_idx, n):
             price = closes[i]
@@ -632,6 +688,7 @@ class BacktestEngine:
                         entry_idx = i
                         entry_signal = signal_desc
                         in_position = True
+                        entries_opened += 1
                     pending_signal = None
                     continue
 
@@ -642,20 +699,25 @@ class BacktestEngine:
                 if rsi[i] < self.rsi_oversold:
                     buy_signals += 1
                     reasons.append(f"RSI={rsi[i]:.0f} (oversold)")
+                    sig_rsi_oversold += 1
 
                 if (macd_line[i] > signal_line[i] and
                         i > 0 and macd_line[i - 1] <= signal_line[i - 1]):
                     buy_signals += 1
                     reasons.append("MACD bullish crossover")
+                    sig_macd_bullish += 1
                 elif histogram[i] > 0 and i > 0 and histogram[i - 1] <= 0:
                     buy_signals += 1
                     reasons.append("MACD histogram positive")
+                    sig_macd_bullish += 1
 
                 if price <= bb_lower[i] and bb_lower[i] > 0:
                     buy_signals += 1
                     reasons.append("Price at lower BB")
+                    sig_price_at_lower_bb += 1
 
                 if buy_signals >= 2:
+                    total_entry_signals += 1
                     signal_desc = " + ".join(reasons)
                     if self.execution_delay > 0:
                         pending_signal = (i, signal_desc)
@@ -665,6 +727,7 @@ class BacktestEngine:
                             entry_idx = i
                             entry_signal = signal_desc
                             in_position = True
+                            entries_opened += 1
             else:
                 pnl_pct = ((price - entry_price) / entry_price) * 100
 
@@ -707,6 +770,13 @@ class BacktestEngine:
                                      timestamps, entry_signal, "period_end")
             trades.append(trade)
 
+        logger.info(
+            "LONG simulate DONE: %d entry signals, %d entries opened, %d final trades | "
+            "Signal counts: RSI_oversold=%d, MACD_bullish=%d, Price_at_lowerBB=%d",
+            total_entry_signals, entries_opened, len(trades),
+            sig_rsi_oversold, sig_macd_bullish, sig_price_at_lower_bb,
+        )
+
         return trades
 
     # ══════════════════════════════════════════════════════════════
@@ -728,8 +798,18 @@ class BacktestEngine:
         """
         Simulate SHORT trades: sell high (open short), buy back low (cover).
 
-        Entry: >= 2 of 3 sell signals (RSI overbought, MACD bearish crossover, price at upper BB)
-        Exit:  >= 2 of 3 buy signals OR stop-loss (+8%) OR take-profit (-15%)
+        In a downtrend, RSI rarely hits 70 and price rarely touches upper BB.
+        So we use *rally-exhaustion* signals tuned for downtrend conditions:
+
+        Entry signals (>= 2 of 5):
+          1. RSI > 50 AND turning down (rally fading — "overbought" relative to trend)
+          2. MACD bearish crossover (macd_line crosses below signal_line)
+          3. MACD line below signal line (sustained bearish momentum)
+          4. Histogram negative AND declining (momentum accelerating down)
+          5. Price above middle BB (rallied to mean — fade opportunity)
+
+        Exit signals (>= 2 of 3, same as before):
+          RSI < 30 (oversold), MACD bullish crossover, price at lower BB
 
         P&L is inverted: profit when price drops, loss when price rises.
         """
@@ -743,15 +823,34 @@ class BacktestEngine:
         quantity = 0.0
         pending_signal: Optional[Tuple[int, str]] = None
 
+        # Diagnostic counters
+        sig_rsi_turning = 0
+        sig_macd_xover = 0
+        sig_macd_below = 0
+        sig_hist_accel = 0
+        sig_price_above_mid = 0
+        total_entry_signals = 0
+        entries_opened = 0
+        trades_closed = 0
+
         atr_series = self._compute_atr(closes, self.atr_period)
         start_idx = max(self.rsi_period + 1, self.macd_slow + self.macd_signal_period, self.bb_period)
         if start_idx >= n:
+            logger.warning(
+                "SHORT [%s]: start_idx=%d >= n=%d — not enough data for indicators",
+                "?", start_idx, n,
+            )
             return trades
+
+        logger.info(
+            "SHORT simulate: n=%d, start_idx=%d, iterating %d candles",
+            n, start_idx, n - start_idx,
+        )
 
         for i in range(start_idx, n):
             price = closes[i]
-            ts = timestamps[i]
 
+            # ── Check for pending short entry (execution delay) ──
             if pending_signal is not None and not in_position:
                 signal_idx, signal_desc = pending_signal
                 if i >= signal_idx + self.execution_delay:
@@ -760,6 +859,7 @@ class BacktestEngine:
                         entry_idx = i
                         entry_signal = signal_desc
                         in_position = True
+                        entries_opened += 1
                     pending_signal = None
                     continue
 
@@ -767,23 +867,39 @@ class BacktestEngine:
                 sell_signals = 0
                 reasons = []
 
-                if rsi[i] > self.rsi_overbought:
+                # Signal 1: RSI above 50 AND turning down (rally exhaustion)
+                if i > 0 and rsi[i] > 50 and rsi[i] < rsi[i - 1]:
                     sell_signals += 1
-                    reasons.append(f"RSI={rsi[i]:.0f} (overbought)")
+                    reasons.append(f"RSI={rsi[i]:.0f} turning down from {rsi[i-1]:.0f}")
+                    sig_rsi_turning += 1
 
-                if (macd_line[i] < signal_line[i] and
-                        i > 0 and macd_line[i - 1] >= signal_line[i - 1]):
+                # Signal 2: Classic MACD bearish crossover (strongest signal)
+                if (i > 0 and macd_line[i] < signal_line[i] and
+                        macd_line[i - 1] >= signal_line[i - 1]):
                     sell_signals += 1
                     reasons.append("MACD bearish crossover")
-                elif histogram[i] < 0 and i > 0 and histogram[i - 1] >= 0:
-                    sell_signals += 1
-                    reasons.append("MACD histogram negative")
+                    sig_macd_xover += 1
 
-                if price >= bb_upper[i] and bb_upper[i] > 0:
+                # Signal 3: MACD line below signal line (sustained bearish)
+                elif macd_line[i] < signal_line[i]:
                     sell_signals += 1
-                    reasons.append("Price at upper BB")
+                    reasons.append("MACD below signal (bearish)")
+                    sig_macd_below += 1
+
+                # Signal 4: Histogram negative AND declining (accelerating down)
+                if i > 0 and histogram[i] < 0 and histogram[i] < histogram[i - 1]:
+                    sell_signals += 1
+                    reasons.append("Histogram accelerating down")
+                    sig_hist_accel += 1
+
+                # Signal 5: Price above middle BB (rallied to mean — fade)
+                if bb_middle[i] > 0 and price > bb_middle[i]:
+                    sell_signals += 1
+                    reasons.append("Price above middle BB")
+                    sig_price_above_mid += 1
 
                 if sell_signals >= 2:
+                    total_entry_signals += 1
                     signal_desc = " + ".join(reasons)
                     if self.execution_delay > 0:
                         pending_signal = (i, signal_desc)
@@ -793,7 +909,9 @@ class BacktestEngine:
                             entry_idx = i
                             entry_signal = signal_desc
                             in_position = True
+                            entries_opened += 1
             else:
+                # ── In SHORT position — check exit ──
                 pnl_pct = ((entry_price - price) / entry_price) * 100
 
                 if pnl_pct <= -self.stop_loss_pct:
@@ -802,6 +920,7 @@ class BacktestEngine:
                     trades.append(trade)
                     equity += trade.pnl
                     in_position = False
+                    trades_closed += 1
                     continue
 
                 if pnl_pct >= self.take_profit_pct:
@@ -810,13 +929,15 @@ class BacktestEngine:
                     trades.append(trade)
                     equity += trade.pnl
                     in_position = False
+                    trades_closed += 1
                     continue
 
+                # Signal-based exit (cover short)
                 buy_signals = 0
                 if rsi[i] < self.rsi_oversold:
                     buy_signals += 1
-                if (macd_line[i] > signal_line[i] and
-                        i > 0 and macd_line[i - 1] <= signal_line[i - 1]):
+                if (i > 0 and macd_line[i] > signal_line[i] and
+                        macd_line[i - 1] <= signal_line[i - 1]):
                     buy_signals += 1
                 elif histogram[i] > 0 and i > 0 and histogram[i - 1] <= 0:
                     buy_signals += 1
@@ -829,11 +950,23 @@ class BacktestEngine:
                     trades.append(trade)
                     equity += trade.pnl
                     in_position = False
+                    trades_closed += 1
 
+        # Close any open position at period end
         if in_position and n > 0:
             trade = self._close_short(entry_price, closes[-1], quantity, entry_idx, n - 1,
                                       timestamps, entry_signal, "period_end")
             trades.append(trade)
+            trades_closed += 1
+
+        logger.info(
+            "SHORT simulate DONE: %d entry signals, %d entries opened, %d trades closed, "
+            "%d final trades | Signal counts: RSI_turn=%d, MACD_xover=%d, MACD_below=%d, "
+            "Hist_accel=%d, Price>midBB=%d",
+            total_entry_signals, entries_opened, trades_closed, len(trades),
+            sig_rsi_turning, sig_macd_xover, sig_macd_below,
+            sig_hist_accel, sig_price_above_mid,
+        )
 
         return trades
 
@@ -885,8 +1018,9 @@ class BacktestEngine:
             ts = timestamps[i]
 
             if not in_position:
-                if price <= bb_lower[i] * 1.005 and bb_lower[i] > 0 and rsi[i] < 40:
-                    signal_desc = f"Range BUY: Price at lower BB + RSI={rsi[i]:.0f}"
+                # RANGE LONG: price near lower BB (within 1.5%) + RSI < 45
+                if price <= bb_lower[i] * 1.015 and bb_lower[i] > 0 and rsi[i] < 45:
+                    signal_desc = f"Range BUY: Price near lower BB + RSI={rsi[i]:.0f}"
                     quantity, entry_price = self._execute_entry(equity, price, atr_series, i)
                     if quantity > 0:
                         entry_idx = i
@@ -894,8 +1028,9 @@ class BacktestEngine:
                         in_position = True
                         position_type = "RANGE_LONG"
 
-                elif price >= bb_upper[i] * 0.995 and bb_upper[i] > 0 and rsi[i] > 60:
-                    signal_desc = f"Range SHORT: Price at upper BB + RSI={rsi[i]:.0f}"
+                # RANGE SHORT: price near upper BB (within 1.5%) + RSI > 55
+                elif price >= bb_upper[i] * 0.985 and bb_upper[i] > 0 and rsi[i] > 55:
+                    signal_desc = f"Range SHORT: Price near upper BB + RSI={rsi[i]:.0f}"
                     quantity, entry_price = self._execute_entry(equity, price, atr_series, i)
                     if quantity > 0:
                         entry_idx = i
@@ -1032,8 +1167,11 @@ class BacktestEngine:
         total_fee = fee + entry_fee
         total_slippage = exit_slippage
         pnl = (entry_price - exit_price) * quantity - total_fee - total_slippage
-        net_pnl_pct = ((entry_price * (1 - self.fee_pct) - exit_slippage / max(quantity, 1e-9))
-                       / exit_price - 1) * 100
+        # SHORT PnL%: profit when price drops → (entry - exit) / entry
+        net_pnl_pct = ((entry_price - exit_price) / entry_price * 100) if entry_price > 0 else 0.0
+        # Subtract fee impact
+        fee_impact_pct = (total_fee + total_slippage) / (quantity * entry_price) * 100 if entry_price > 0 and quantity > 0 else 0
+        net_pnl_pct -= fee_impact_pct
 
         return BacktestTrade(
             entry_date=self._ts_to_date(timestamps[entry_idx]),

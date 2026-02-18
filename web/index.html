@@ -4827,7 +4827,7 @@ async function loadInsightAnalysis() {
             const ret = d.backtest_total_return != null ? (d.backtest_total_return >= 0 ? '+' : '') + d.backtest_total_return.toFixed(2) + '%' : '--';
             const dd = d.backtest_max_drawdown != null ? d.backtest_max_drawdown.toFixed(1) + '%' : '--';
             const sr = d.backtest_sharpe_ratio != null ? d.backtest_sharpe_ratio.toFixed(2) : '--';
-            const trades = d.backtest_total_trades || '--';
+            const trades = d.backtest_total_trades != null ? d.backtest_total_trades : '--';
 
             btHtml += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(80px,1fr));gap:8px;margin-bottom:14px">
                 ${[
