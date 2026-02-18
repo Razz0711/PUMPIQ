@@ -1,0 +1,13 @@
+# NexYpher — ML/AI dependencies (local only, NOT for Vercel)
+# Install with: pip install -r requirements-ml.txt
+
+-r requirements.txt
+
+# ML / AI Algorithms
+xgboost>=2.0.0
+scikit-learn>=1.3.0
+optuna>=3.4.0
+pandas-ta>=0.3.14b1
+
+# Deep Learning (optional)
+# tensorflow>=2.15.0
