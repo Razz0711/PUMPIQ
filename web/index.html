@@ -2204,6 +2204,12 @@ a:hover { text-decoration: underline; }
             <div class="insight-panel-header">💰 Market Data</div>
             <div class="insight-panel-body" id="insightMarketContent"></div>
         </div>
+
+        <!-- Backtest Strategy Analysis -->
+        <div class="insight-panel" id="insightBacktestPanel" style="display:none">
+            <div class="insight-panel-header">🧪 Backtest Strategy Analysis</div>
+            <div class="insight-panel-body" id="insightBacktestContent"></div>
+        </div>
     </div>
 
     <!-- Empty state -->
@@ -2304,6 +2310,14 @@ a:hover { text-decoration: underline; }
     <div class="learning-panel">
         <div class="learning-panel-header">📊 Accuracy by Market Regime</div>
         <div class="learning-panel-body padded" id="learningRegimeStats">
+            <div class="empty-state"><p>Click "Refresh Stats" to load data</p></div>
+        </div>
+    </div>
+
+    <!-- Direction Accuracy -->
+    <div class="learning-panel">
+        <div class="learning-panel-header">🧭 Accuracy by Strategy Direction</div>
+        <div class="learning-panel-body padded" id="learningDirectionStats">
             <div class="empty-state"><p>Click "Refresh Stats" to load data</p></div>
         </div>
     </div>
@@ -4770,6 +4784,77 @@ async function loadInsightAnalysis() {
             </div>
         `).join('');
 
+        // Backtest Strategy Analysis
+        const btPanel = document.getElementById('insightBacktestPanel');
+        if (d.backtest_strategy_direction || d.backtest_detected_trend) {
+            btPanel.style.display = 'block';
+            const trend = d.backtest_detected_trend || 'unknown';
+            const dir = d.backtest_strategy_direction || 'N/A';
+            const tier = d.backtest_token_tier || 'unknown';
+            const tested = d.backtest_strategies_tested || [];
+            const verified = d.backtest_verified;
+
+            const trendColors = { uptrend: 'var(--green)', downtrend: 'var(--red)', sideways: 'var(--accent)' };
+            const trendIcons = { uptrend: '📈', downtrend: '📉', sideways: '↔️' };
+            const dirColors = { LONG: '#22c55e', SHORT: '#ef4444', RANGE: '#f59e0b' };
+            const tierIcons = { major: '🏛️', mid: '🏢', micro: '🧬' };
+
+            let btHtml = '';
+            // Status badge
+            btHtml += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <span style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;font-weight:700;font-size:13px;background:${verified ? 'rgba(34,197,94,0.15)' : 'rgba(251,191,36,0.15)'};color:${verified ? 'var(--green)' : '#fbbf24'}">
+                    ${verified ? '✅ BACKTEST VERIFIED' : '⚠️ BACKTEST WARNING'}
+                </span>
+                <span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:12px;font-size:12px;background:rgba(255,255,255,0.05);color:var(--text-muted)">
+                    ${tierIcons[tier] || '📊'} ${tier.charAt(0).toUpperCase() + tier.slice(1)} Cap
+                </span>
+            </div>`;
+
+            // Trend + Direction badges
+            btHtml += `<div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+                <div style="flex:1;min-width:120px;background:rgba(255,255,255,0.03);border-radius:12px;padding:12px;text-align:center;border:1px solid rgba(255,255,255,0.06)">
+                    <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">Detected Trend</div>
+                    <div style="font-size:18px;font-weight:800;color:${trendColors[trend] || 'var(--text-secondary)'}">${trendIcons[trend] || '❓'} ${trend.toUpperCase()}</div>
+                </div>
+                <div style="flex:1;min-width:120px;background:rgba(255,255,255,0.03);border-radius:12px;padding:12px;text-align:center;border:1px solid rgba(255,255,255,0.06)">
+                    <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">Best Strategy</div>
+                    <div style="font-size:18px;font-weight:800;color:${dirColors[dir] || 'var(--text-secondary)'}">${dir === 'LONG' ? '🟢' : dir === 'SHORT' ? '🔴' : '🟡'} ${dir}</div>
+                </div>
+            </div>`;
+
+            // Backtest stats row
+            const wr = d.backtest_win_rate != null ? d.backtest_win_rate.toFixed(1) + '%' : '--';
+            const ret = d.backtest_total_return != null ? (d.backtest_total_return >= 0 ? '+' : '') + d.backtest_total_return.toFixed(2) + '%' : '--';
+            const dd = d.backtest_max_drawdown != null ? d.backtest_max_drawdown.toFixed(1) + '%' : '--';
+            const sr = d.backtest_sharpe_ratio != null ? d.backtest_sharpe_ratio.toFixed(2) : '--';
+            const trades = d.backtest_total_trades || '--';
+
+            btHtml += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(80px,1fr));gap:8px;margin-bottom:14px">
+                ${[
+                    { label: 'Win Rate', val: wr, color: d.backtest_win_rate >= 50 ? 'var(--green)' : 'var(--red)' },
+                    { label: 'Return', val: ret, color: d.backtest_total_return >= 0 ? 'var(--green)' : 'var(--red)' },
+                    { label: 'Max DD', val: dd, color: 'var(--red)' },
+                    { label: 'Sharpe', val: sr, color: d.backtest_sharpe_ratio >= 1 ? 'var(--green)' : 'var(--text-muted)' },
+                    { label: 'Trades', val: trades, color: 'var(--text-secondary)' },
+                ].map(s => `<div style="background:rgba(255,255,255,0.03);border-radius:10px;padding:10px 6px;text-align:center;border:1px solid rgba(255,255,255,0.05)">
+                    <div style="font-size:10px;color:var(--text-muted);margin-bottom:3px">${s.label}</div>
+                    <div style="font-size:14px;font-weight:700;color:${s.color}">${s.val}</div>
+                </div>`).join('')}
+            </div>`;
+
+            // Strategies tested
+            if (tested.length > 0) {
+                btHtml += `<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">Strategies Tested:</div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap">
+                    ${tested.map(s => `<span style="padding:4px 10px;border-radius:12px;font-size:11px;font-weight:600;background:${s === dir ? (dirColors[s] || 'var(--accent)') + '22' : 'rgba(255,255,255,0.05)'};color:${s === dir ? dirColors[s] || 'var(--accent)' : 'var(--text-muted)'};border:1px solid ${s === dir ? (dirColors[s] || 'var(--accent)') + '44' : 'rgba(255,255,255,0.08)'}">${s}${s === dir ? ' ✓' : ''}</span>`).join('')}
+                </div>`;
+            }
+
+            document.getElementById('insightBacktestContent').innerHTML = btHtml;
+        } else {
+            btPanel.style.display = 'none';
+        }
+
         // Hide loading
         const overlay = document.getElementById('insightLoading');
         if (overlay) overlay.style.display = 'none';
@@ -4845,6 +4930,31 @@ async function loadLearningStats() {
                             <div class="regime-detail">${data.correct}/${data.total} correct predictions</div>
                             <div class="regime-bar">
                                 <div class="regime-bar-fill" style="width:${data.accuracy}%;background:${color}"></div>
+                            </div>
+                        </div>
+                    `;
+                }).join('') + '</div>';
+        }
+
+        // Direction accuracy cards
+        const dirDiv = document.getElementById('learningDirectionStats');
+        const directions = stats.direction_accuracy || {};
+        if (Object.keys(directions).length === 0) {
+            dirDiv.innerHTML = '<div class="empty-state"><p>No direction data yet. The AI needs evaluated predictions to track per-direction accuracy.</p></div>';
+        } else {
+            const dirColors = { LONG: '#22c55e', SHORT: '#ef4444', RANGE: '#f59e0b' };
+            const dirIcons = { LONG: '🟢', SHORT: '🔴', RANGE: '🟡' };
+            dirDiv.innerHTML = '<div class="regime-grid">' +
+                Object.entries(directions).map(([dir, data]) => {
+                    const color = data.accuracy >= 55 ? 'var(--green)' : data.accuracy >= 45 ? 'var(--yellow)' : 'var(--red)';
+                    const pnlColor = data.avg_pnl >= 0 ? 'var(--green)' : 'var(--red)';
+                    return `
+                        <div class="regime-card">
+                            <div class="regime-name">${dirIcons[dir] || '📊'} ${dir}</div>
+                            <div class="regime-pct" style="color:${color}">${data.accuracy}%</div>
+                            <div class="regime-detail">${data.correct}/${data.total} correct | Avg P&L: <span style="color:${pnlColor}">${data.avg_pnl >= 0 ? '+' : ''}${data.avg_pnl}%</span></div>
+                            <div class="regime-bar">
+                                <div class="regime-bar-fill" style="width:${data.accuracy}%;background:${dirColors[dir] || color}"></div>
                             </div>
                         </div>
                     `;

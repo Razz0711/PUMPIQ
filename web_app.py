@@ -103,6 +103,10 @@ class TokenDetail(BaseModel):
     backtest_sharpe_ratio: float = 0.0
     backtest_total_trades: int = 0
     backtest_period: str = ""
+    backtest_strategy_direction: str = ""   # LONG, SHORT, RANGE
+    backtest_detected_trend: str = ""       # uptrend, downtrend, sideways
+    backtest_token_tier: str = ""           # major, mid, micro
+    backtest_strategies_tested: List[str] = []
 
 
 class DexToken(BaseModel):
@@ -814,32 +818,36 @@ async def get_token_detail(coin_id: str):
             symbol=coin.symbol,
             cg_collector=cg,
             days=180,
+            market_cap=coin.market_cap or 0,
         )
     except Exception as e:
         logger.warning("Backtest failed for %s: %s", coin.coin_id, e)
 
     # If backtest fails thresholds, override AI recommendation with warning
     if bt_result and not bt_result.passed_all_thresholds:
-        ai_text = (
-            f"⚠️ BACKTEST WARNING: This token FAILED profitability verification. "
-            f"{bt_result.recommendation_detail}\n\n"
-            f"Backtest Stats: {bt_result.total_trades} trades | "
-            f"Win Rate: {bt_result.win_rate:.1f}% | Return: {bt_result.total_return:.1f}% | "
-            f"Max Drawdown: {bt_result.max_drawdown:.1f}% | Sharpe: {bt_result.sharpe_ratio:.2f}\n\n"
-            f"Original AI Analysis: {ai_text}" if ai_text else
-            f"⚠️ BACKTEST WARNING: This token FAILED profitability verification. "
-            f"{bt_result.recommendation_detail}\n\n"
-            f"Backtest Stats: {bt_result.total_trades} trades | "
-            f"Win Rate: {bt_result.win_rate:.1f}% | Return: {bt_result.total_return:.1f}% | "
-            f"Max Drawdown: {bt_result.max_drawdown:.1f}% | Sharpe: {bt_result.sharpe_ratio:.2f}"
+        strategies_str = ", ".join(bt_result.strategies_tested) if bt_result.strategies_tested else "LONG"
+        bt_warning = (
+            f"⚠️ BACKTEST WARNING: All strategies ({strategies_str}) failed for this token. "
+            f"Detected trend: {bt_result.detected_trend.upper()}. "
+            f"Best result ({bt_result.strategy_direction}): "
+            f"{bt_result.total_trades} trades | Win Rate: {bt_result.win_rate:.1f}% | "
+            f"Return: {bt_result.total_return:.1f}% | Max DD: {bt_result.max_drawdown:.1f}% | "
+            f"Sharpe: {bt_result.sharpe_ratio:.2f}. "
+            f"Tier: {bt_result.token_tier}."
         )
+        if ai_text:
+            ai_text = bt_warning + "\n\nOriginal AI Analysis: " + ai_text
+        else:
+            ai_text = bt_warning
         ai_avail = True
     elif bt_result and bt_result.passed_all_thresholds:
         bt_prefix = (
-            f"✅ BACKTEST VERIFIED ({bt_result.recommendation}): "
+            f"✅ BACKTEST VERIFIED — {bt_result.strategy_direction} Strategy ({bt_result.recommendation}): "
+            f"Trend: {bt_result.detected_trend.upper()} | "
             f"Win Rate {bt_result.win_rate:.1f}% | Return {bt_result.total_return:.1f}% | "
             f"Max DD {bt_result.max_drawdown:.1f}% | Sharpe {bt_result.sharpe_ratio:.2f} | "
-            f"{bt_result.total_trades} trades over {bt_result.days_covered} days.\n\n"
+            f"{bt_result.total_trades} trades over {bt_result.days_covered} days | "
+            f"Tier: {bt_result.token_tier}.\n\n"
         )
         ai_text = bt_prefix + ai_text if ai_text else bt_prefix + bt_result.recommendation_detail
         ai_avail = True
@@ -880,6 +888,10 @@ async def get_token_detail(coin_id: str):
         backtest_sharpe_ratio=round(bt_result.sharpe_ratio, 2) if bt_result else 0,
         backtest_total_trades=bt_result.total_trades if bt_result else 0,
         backtest_period=f"{bt_result.start_date} to {bt_result.end_date}" if bt_result else "",
+        backtest_strategy_direction=bt_result.strategy_direction if bt_result else "",
+        backtest_detected_trend=bt_result.detected_trend if bt_result else "",
+        backtest_token_tier=bt_result.token_tier if bt_result else "",
+        backtest_strategies_tested=bt_result.strategies_tested if bt_result else [],
     )
 
 
@@ -1059,6 +1071,7 @@ async def batch_backtest(
                 symbol=coin.symbol,
                 cg_collector=cg,
                 days=max(days, 180),
+                market_cap=coin.market_cap or 0,
             )
 
             results.append({
@@ -1125,6 +1138,7 @@ async def run_backtest(
         symbol=coin.symbol,
         cg_collector=cg,
         days=max(days, 180),
+        market_cap=coin.market_cap or 0,
     )
 
     return {

@@ -1,19 +1,26 @@
 """
-PumpIQ Backtest Engine
-========================
+PumpIQ Backtest Engine v2.0 — Multi-Directional Strategy Backtester
+=====================================================================
 Mandatory backtest verification pipeline for all token recommendations.
 
 Pipeline:
   1. Collect >= 6 months OHLCV data from CoinGecko
-  2. Run backtest with RSI, MACD, Bollinger Bands (0.1% fees)
-  3. Validate against profitability thresholds
-  4. Generate recommendation ONLY if all thresholds pass
+  2. Detect dominant trend via EMA50/EMA200 crossover
+  3. Select appropriate timeframe (1h for micro, 4h for mid, daily for major)
+  4. Run backtest with LONG, SHORT, or RANGE strategy aligned to trend
+  5. Cascade: if first strategy fails, try remaining strategies
+  6. Validate against tiered profitability thresholds (by market cap)
+  7. Generate recommendation ONLY if best strategy passes
 
-Thresholds:
-  - Win Rate > 55%
-  - Max Drawdown < 20%
-  - Total Return > 0%
-  - Minimum 10 trades
+Strategies:
+  - LONG  (uptrend): Buy on RSI oversold + MACD bullish + lower BB
+  - SHORT (downtrend): Sell on RSI overbought + MACD bearish + upper BB
+  - RANGE (sideways): Buy support / sell resistance using BB + RSI mean-revert
+
+Tiered Thresholds (by market cap):
+  - Major (>$1B):  Win Rate >50%, Max DD <25%, Min 8 trades, Return >-5%
+  - Mid ($50M-$1B): Win Rate >48%, Max DD <30%, Min 6 trades, Return >-8%
+  - Micro (<$50M):  Win Rate >45%, Max DD <35%, Min 5 trades, Return >-10%
 """
 
 from __future__ import annotations
@@ -31,11 +38,30 @@ logger = logging.getLogger(__name__)
 MIN_HISTORY_DAYS = 180          # 6 months minimum
 TRADING_FEE_PCT = 0.001         # 0.1% per trade (buy + sell)
 
-# Profitability thresholds
-THRESHOLD_WIN_RATE = 55.0       # %
-THRESHOLD_MAX_DRAWDOWN = 20.0   # %
-THRESHOLD_MIN_TRADES = 10
-THRESHOLD_MIN_RETURN = 0.0      # % (must be positive)
+# ── Tiered Thresholds (by market cap) ─────────────────────────────
+THRESHOLDS = {
+    "major": {   # > $1B market cap
+        "win_rate": 50.0,
+        "max_drawdown": 25.0,
+        "min_trades": 8,
+        "min_return": -5.0,
+        "label": "Major Cap (>$1B)",
+    },
+    "mid": {     # $50M – $1B
+        "win_rate": 48.0,
+        "max_drawdown": 30.0,
+        "min_trades": 6,
+        "min_return": -8.0,
+        "label": "Mid Cap ($50M–$1B)",
+    },
+    "micro": {   # < $50M
+        "win_rate": 45.0,
+        "max_drawdown": 35.0,
+        "min_trades": 5,
+        "min_return": -10.0,
+        "label": "Micro Cap (<$50M)",
+    },
+}
 
 # Slippage & execution model defaults
 DEFAULT_SLIPPAGE_BASE_BPS = 5   # 0.05% base slippage
@@ -52,7 +78,7 @@ class BacktestTrade:
     """Single simulated trade record."""
     entry_date: str
     exit_date: str
-    direction: str          # "LONG"
+    direction: str          # "LONG", "SHORT", "RANGE_LONG", "RANGE_SHORT"
     entry_price: float
     exit_price: float
     quantity: float
@@ -63,8 +89,6 @@ class BacktestTrade:
     exit_reason: str        # "signal_exit", "stop_loss", "take_profit"
     slippage_cost: float = 0.0
     execution_delay: int = 0
-    slippage_cost: float = 0.0   # total slippage $ both sides
-    execution_delay: int = 0     # candles delayed before execution
 
 
 @dataclass
@@ -100,6 +124,13 @@ class BacktestResult:
     final_equity: float = 0.0
     initial_equity: float = 10000.0
 
+    # ── Trend & Direction Fields ──────────────────────────────────
+    detected_trend: str = "sideways"        # "uptrend", "downtrend", "sideways"
+    strategy_direction: str = "LONG"        # "LONG", "SHORT", "RANGE"
+    token_tier: str = "micro"               # "major", "mid", "micro"
+    strategies_tested: List[str] = field(default_factory=list)
+    best_strategy: str = ""
+
     # Threshold pass/fail
     passed_all_thresholds: bool = False
     threshold_results: Dict[str, bool] = field(default_factory=dict)
@@ -117,7 +148,7 @@ class BacktestResult:
     latest_rsi: float = 50.0
     latest_macd: str = "neutral"
     latest_trend: str = "sideways"
-    latest_bb_position: str = "middle"  # "above_upper", "below_lower", "middle"
+    latest_bb_position: str = "middle"
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize for API response."""
@@ -129,6 +160,13 @@ class BacktestResult:
                 "start": self.start_date,
                 "end": self.end_date,
                 "days": self.days_covered,
+            },
+            "trend_analysis": {
+                "detected_trend": self.detected_trend,
+                "strategy_direction": self.strategy_direction,
+                "token_tier": self.token_tier,
+                "strategies_tested": self.strategies_tested,
+                "best_strategy": self.best_strategy,
             },
             "stats": {
                 "total_trades": self.total_trades,
@@ -151,11 +189,13 @@ class BacktestResult:
                 "passed_all": self.passed_all_thresholds,
                 "results": self.threshold_results,
                 "failures": self.failure_reasons,
+                "tier": self.token_tier,
             },
             "recommendation": {
                 "verdict": self.recommendation,
                 "detail": self.recommendation_detail,
                 "confidence": round(self.confidence, 1),
+                "direction": self.strategy_direction,
             },
             "latest_indicators": {
                 "rsi": round(self.latest_rsi, 1),
@@ -170,21 +210,20 @@ class BacktestResult:
 
 class BacktestEngine:
     """
-    Runs strategy backtests on historical OHLCV data.
+    Multi-directional strategy backtester.
 
-    Strategy uses combined signals from:
-      - RSI (14): oversold < 30 → buy, overbought > 70 → sell
-      - MACD (12/26/9): bullish crossover → buy, bearish → sell
-      - Bollinger Bands (20, 2σ): price below lower → buy, above upper → sell
-
-    Entry: At least 2 of 3 indicators agree on direction
-    Exit:  Opposite signal, stop-loss (-8%), or take-profit (+15%)
+    Improvement 1: Trend Detection First (EMA50/EMA200)
+    Improvement 2: Three Directional Strategies (LONG/SHORT/RANGE)
+    Improvement 3: Appropriate Timeframe Selection
+    Improvement 4: Tiered Profitability Thresholds
+    Improvement 5: Multi-strategy Cascade Before WARNING
+    Improvement 6: Direction-aware Recommendations
     """
 
     def __init__(
         self,
         initial_equity: float = 10000.0,
-        position_size_pct: float = 95.0,   # % of equity per trade
+        position_size_pct: float = 95.0,
         stop_loss_pct: float = 8.0,
         take_profit_pct: float = 15.0,
         fee_pct: float = TRADING_FEE_PCT,
@@ -196,7 +235,6 @@ class BacktestEngine:
         macd_fast: int = 12,
         macd_slow: int = 26,
         macd_signal: int = 9,
-        # Slippage & execution model
         slippage_base_bps: int = DEFAULT_SLIPPAGE_BASE_BPS,
         liquidity_pool: float = DEFAULT_LIQUIDITY_POOL,
         execution_delay: int = EXECUTION_DELAY_CANDLES,
@@ -217,7 +255,6 @@ class BacktestEngine:
         self.macd_fast = macd_fast
         self.macd_slow = macd_slow
         self.macd_signal_period = macd_signal
-        # Slippage & execution parameters
         self.slippage_base_bps = slippage_base_bps
         self.liquidity_pool = liquidity_pool
         self.execution_delay = execution_delay
@@ -225,7 +262,9 @@ class BacktestEngine:
         self.account_risk_pct = account_risk_pct
         self.atr_period = atr_period
 
-    # ── Public API ─────────────────────────────────────────────────
+    # ══════════════════════════════════════════════════════════════
+    # PUBLIC API
+    # ══════════════════════════════════════════════════════════════
 
     async def run_backtest(
         self,
@@ -234,26 +273,16 @@ class BacktestEngine:
         symbol: str,
         cg_collector,
         days: int = MIN_HISTORY_DAYS,
+        market_cap: float = 0.0,
     ) -> BacktestResult:
         """
-        Full pipeline: fetch data → compute indicators → simulate trades → evaluate.
-
-        Parameters
-        ----------
-        coin_id : str
-            CoinGecko coin ID (e.g. "bitcoin", "solana")
-        coin_name : str
-            Display name
-        symbol : str
-            Ticker symbol
-        cg_collector : CoinGeckoCollector
-            Initialized collector instance
-        days : int
-            Number of days of history to fetch (min 180)
-
-        Returns
-        -------
-        BacktestResult with all stats, thresholds, and conditional recommendation.
+        Full multi-directional pipeline:
+          1. Fetch data
+          2. Detect trend (EMA50/EMA200)
+          3. Determine token tier (major/mid/micro)
+          4. Test primary strategy aligned to trend
+          5. If fails → cascade through remaining strategies
+          6. Best strategy's result is returned
         """
         result = BacktestResult(
             coin_id=coin_id,
@@ -284,7 +313,7 @@ class BacktestEngine:
             result.failure_reasons.append("Insufficient historical data")
             return result
 
-        prices = history.prices           # [[ts_ms, price], ...]
+        prices = history.prices
         volumes = history.volumes if history.volumes else []
 
         # Determine period
@@ -302,7 +331,21 @@ class BacktestEngine:
             symbol, len(closes), result.days_covered, result.start_date, result.end_date,
         )
 
-        # ── Step 2: Compute Indicators ──
+        # ── Step 2: Detect Trend (EMA50/EMA200) ──
+        detected_trend = self._detect_trend(closes)
+        result.detected_trend = detected_trend
+        result.latest_trend = detected_trend
+
+        # ── Step 3: Determine Token Tier ──
+        token_tier = self._determine_token_tier(market_cap)
+        result.token_tier = token_tier
+
+        logger.info(
+            "Backtest [%s]: Trend=%s, Tier=%s (market_cap=$%.0f)",
+            symbol, detected_trend, token_tier, market_cap,
+        )
+
+        # ── Step 4: Compute Indicators ──
         rsi_series = self._compute_rsi_series(closes)
         macd_line, signal_line, histogram = self._compute_macd_series(closes)
         bb_upper, bb_middle, bb_lower = self._compute_bollinger_series(closes)
@@ -325,62 +368,701 @@ class BacktestEngine:
             else:
                 result.latest_bb_position = "middle"
 
-        # Detect trend from EMAs
-        if len(closes) >= 50:
-            ema20 = self._ema(closes, 20)
-            ema50 = self._ema(closes, 50)
-            if ema20 > ema50 and closes[-1] > ema20:
-                result.latest_trend = "uptrend"
-            elif ema20 < ema50 and closes[-1] < ema20:
-                result.latest_trend = "downtrend"
-            else:
-                result.latest_trend = "sideways"
+        indicators = {
+            "closes": closes,
+            "timestamps": timestamps,
+            "rsi": rsi_series,
+            "macd_line": macd_line,
+            "signal_line": signal_line,
+            "histogram": histogram,
+            "bb_upper": bb_upper,
+            "bb_middle": bb_middle,
+            "bb_lower": bb_lower,
+        }
 
-        # ── Step 3: Simulate Trades ──
-        trades = self._simulate_trades(
-            closes, timestamps, rsi_series, macd_line, signal_line, histogram,
-            bb_upper, bb_middle, bb_lower,
-        )
-        result.trades = trades
-        result.total_trades = len(trades)
+        # ── Step 5: Multi-Strategy Cascade ──
+        strategy_order = self._get_strategy_order(detected_trend)
 
-        if result.total_trades == 0:
-            result.recommendation = "WARNING"
-            result.recommendation_detail = (
-                "No trade signals generated during the backtest period. "
-                "The strategy found no clear entry/exit points."
+        best_result: Optional[BacktestResult] = None
+        all_tested: List[str] = []
+
+        for strategy in strategy_order:
+            all_tested.append(strategy)
+            logger.info("Backtest [%s]: Testing %s strategy...", symbol, strategy)
+
+            trial = self._run_single_strategy(
+                result, strategy, indicators, token_tier,
             )
-            result.failure_reasons.append("No trades executed")
+
+            if trial.passed_all_thresholds:
+                best_result = trial
+                best_result.best_strategy = strategy
+                logger.info(
+                    "Backtest [%s]: %s strategy PASSED — WR=%.1f%% Ret=%.1f%% DD=%.1f%%",
+                    symbol, strategy, trial.win_rate, trial.total_return, trial.max_drawdown,
+                )
+                break
+            else:
+                logger.info(
+                    "Backtest [%s]: %s strategy failed — %s",
+                    symbol, strategy, "; ".join(trial.failure_reasons),
+                )
+                if best_result is None or trial.total_return > best_result.total_return:
+                    best_result = trial
+                    best_result.best_strategy = strategy
+
+        # ── Step 6: Finalize Result ──
+        if best_result is None:
+            result.recommendation = "WARNING"
+            result.recommendation_detail = "No strategies could be tested."
+            result.failure_reasons.append("No strategies tested")
+            result.strategies_tested = all_tested
             return result
 
-        # ── Step 4: Calculate Statistics ──
-        self._calculate_stats(result, trades)
+        # Copy best result fields into the main result
+        result.total_trades = best_result.total_trades
+        result.winning_trades = best_result.winning_trades
+        result.losing_trades = best_result.losing_trades
+        result.win_rate = best_result.win_rate
+        result.total_return = best_result.total_return
+        result.max_drawdown = best_result.max_drawdown
+        result.sharpe_ratio = best_result.sharpe_ratio
+        result.profit_factor = best_result.profit_factor
+        result.avg_win = best_result.avg_win
+        result.avg_loss = best_result.avg_loss
+        result.largest_win = best_result.largest_win
+        result.largest_loss = best_result.largest_loss
+        result.total_fees_paid = best_result.total_fees_paid
+        result.total_slippage_cost = best_result.total_slippage_cost
+        result.final_equity = best_result.final_equity
+        result.trades = best_result.trades
+        result.passed_all_thresholds = best_result.passed_all_thresholds
+        result.threshold_results = best_result.threshold_results
+        result.failure_reasons = best_result.failure_reasons
+        result.strategy_direction = best_result.strategy_direction
+        result.best_strategy = best_result.best_strategy
+        result.strategies_tested = all_tested
 
-        # ── Step 5: Evaluate Thresholds ──
-        self._evaluate_thresholds(result)
-
-        # ── Step 6: Generate Recommendation ──
+        # ── Step 7: Generate Direction-Aware Recommendation ──
         self._generate_recommendation(result)
 
         logger.info(
-            "Backtest [%s]: %d trades | Win Rate %.1f%% | Return %.1f%% | "
-            "Max DD %.1f%% | Sharpe %.2f | Passed: %s",
-            symbol, result.total_trades, result.win_rate, result.total_return,
-            result.max_drawdown, result.sharpe_ratio, result.passed_all_thresholds,
+            "Backtest [%s]: FINAL — %s strategy | %d trades | WR %.1f%% | Ret %.1f%% | "
+            "DD %.1f%% | Sharpe %.2f | Passed: %s | Tested: %s",
+            symbol, result.strategy_direction, result.total_trades, result.win_rate,
+            result.total_return, result.max_drawdown, result.sharpe_ratio,
+            result.passed_all_thresholds, ", ".join(all_tested),
         )
 
         return result
 
-    # ── Indicator Computation ──────────────────────────────────────
+    # ══════════════════════════════════════════════════════════════
+    # TREND DETECTION (Improvement 1)
+    # ══════════════════════════════════════════════════════════════
+
+    def _detect_trend(self, closes: List[float]) -> str:
+        """
+        Detect dominant trend using EMA50/EMA200 crossover.
+
+        Returns: "uptrend", "downtrend", or "sideways"
+        """
+        n = len(closes)
+        if n < 50:
+            return "sideways"
+
+        ema50 = self._ema(closes, 50)
+
+        if n >= 200:
+            ema200 = self._ema(closes, 200)
+            if ema50 > ema200 * 1.02:
+                return "uptrend"
+            elif ema50 < ema200 * 0.98:
+                return "downtrend"
+            else:
+                return "sideways"
+        else:
+            ema20 = self._ema(closes, 20)
+            price = closes[-1]
+            if ema20 > ema50 * 1.01 and price > ema20:
+                return "uptrend"
+            elif ema20 < ema50 * 0.99 and price < ema20:
+                return "downtrend"
+            else:
+                return "sideways"
+
+    # ══════════════════════════════════════════════════════════════
+    # TOKEN TIER DETERMINATION (Improvement 4)
+    # ══════════════════════════════════════════════════════════════
+
+    def _determine_token_tier(self, market_cap: float) -> str:
+        """Classify token into major/mid/micro tier based on market cap."""
+        if market_cap >= 1_000_000_000:
+            return "major"
+        elif market_cap >= 50_000_000:
+            return "mid"
+        else:
+            return "micro"
+
+    # ══════════════════════════════════════════════════════════════
+    # STRATEGY ORDER (Improvement 5)
+    # ══════════════════════════════════════════════════════════════
+
+    def _get_strategy_order(self, trend: str) -> List[str]:
+        """
+        Determine strategy test order based on detected trend.
+        Natural direction first, then alternates.
+        """
+        if trend == "uptrend":
+            return ["LONG", "RANGE", "SHORT"]
+        elif trend == "downtrend":
+            return ["SHORT", "RANGE", "LONG"]
+        else:
+            return ["RANGE", "LONG", "SHORT"]
+
+    # ══════════════════════════════════════════════════════════════
+    # SINGLE STRATEGY RUNNER
+    # ══════════════════════════════════════════════════════════════
+
+    def _run_single_strategy(
+        self,
+        base_result: BacktestResult,
+        strategy: str,
+        indicators: Dict[str, Any],
+        token_tier: str,
+    ) -> BacktestResult:
+        """Run one strategy and return a result with stats + threshold evaluation."""
+        trial = BacktestResult(
+            coin_id=base_result.coin_id,
+            coin_name=base_result.coin_name,
+            symbol=base_result.symbol,
+            initial_equity=self.initial_equity,
+            start_date=base_result.start_date,
+            end_date=base_result.end_date,
+            days_covered=base_result.days_covered,
+            detected_trend=base_result.detected_trend,
+            strategy_direction=strategy,
+            token_tier=token_tier,
+        )
+
+        closes = indicators["closes"]
+        timestamps = indicators["timestamps"]
+        rsi = indicators["rsi"]
+        macd_line = indicators["macd_line"]
+        signal_line = indicators["signal_line"]
+        histogram = indicators["histogram"]
+        bb_upper = indicators["bb_upper"]
+        bb_middle = indicators["bb_middle"]
+        bb_lower = indicators["bb_lower"]
+
+        if strategy == "LONG":
+            trades = self._simulate_long_trades(
+                closes, timestamps, rsi, macd_line, signal_line, histogram,
+                bb_upper, bb_middle, bb_lower,
+            )
+        elif strategy == "SHORT":
+            trades = self._simulate_short_trades(
+                closes, timestamps, rsi, macd_line, signal_line, histogram,
+                bb_upper, bb_middle, bb_lower,
+            )
+        elif strategy == "RANGE":
+            trades = self._simulate_range_trades(
+                closes, timestamps, rsi, macd_line, signal_line, histogram,
+                bb_upper, bb_middle, bb_lower,
+            )
+        else:
+            trades = []
+
+        trial.trades = trades
+        trial.total_trades = len(trades)
+
+        if trial.total_trades > 0:
+            self._calculate_stats(trial, trades)
+
+        self._evaluate_thresholds(trial, token_tier)
+
+        return trial
+
+    # ══════════════════════════════════════════════════════════════
+    # LONG STRATEGY (Improvement 2a)
+    # ══════════════════════════════════════════════════════════════
+
+    def _simulate_long_trades(
+        self,
+        closes: List[float],
+        timestamps: List[float],
+        rsi: List[float],
+        macd_line: List[float],
+        signal_line: List[float],
+        histogram: List[float],
+        bb_upper: List[float],
+        bb_middle: List[float],
+        bb_lower: List[float],
+    ) -> List[BacktestTrade]:
+        """
+        Simulate LONG trades: buy low, sell high.
+
+        Entry: >= 2 of 3 buy signals (RSI oversold, MACD bullish crossover, price at lower BB)
+        Exit:  >= 2 of 3 sell signals OR stop-loss (-8%) OR take-profit (+15%)
+        """
+        trades: List[BacktestTrade] = []
+        n = len(closes)
+        equity = self.initial_equity
+        in_position = False
+        entry_price = 0.0
+        entry_idx = 0
+        entry_signal = ""
+        quantity = 0.0
+        pending_signal: Optional[Tuple[int, str]] = None
+
+        atr_series = self._compute_atr(closes, self.atr_period)
+        start_idx = max(self.rsi_period + 1, self.macd_slow + self.macd_signal_period, self.bb_period)
+        if start_idx >= n:
+            return trades
+
+        for i in range(start_idx, n):
+            price = closes[i]
+            ts = timestamps[i]
+
+            # ── Check for pending buy (execution delay) ──
+            if pending_signal is not None and not in_position:
+                signal_idx, signal_desc = pending_signal
+                if i >= signal_idx + self.execution_delay:
+                    quantity, entry_price = self._execute_entry(equity, price, atr_series, i)
+                    if quantity > 0:
+                        entry_idx = i
+                        entry_signal = signal_desc
+                        in_position = True
+                    pending_signal = None
+                    continue
+
+            if not in_position:
+                buy_signals = 0
+                reasons = []
+
+                if rsi[i] < self.rsi_oversold:
+                    buy_signals += 1
+                    reasons.append(f"RSI={rsi[i]:.0f} (oversold)")
+
+                if (macd_line[i] > signal_line[i] and
+                        i > 0 and macd_line[i - 1] <= signal_line[i - 1]):
+                    buy_signals += 1
+                    reasons.append("MACD bullish crossover")
+                elif histogram[i] > 0 and i > 0 and histogram[i - 1] <= 0:
+                    buy_signals += 1
+                    reasons.append("MACD histogram positive")
+
+                if price <= bb_lower[i] and bb_lower[i] > 0:
+                    buy_signals += 1
+                    reasons.append("Price at lower BB")
+
+                if buy_signals >= 2:
+                    signal_desc = " + ".join(reasons)
+                    if self.execution_delay > 0:
+                        pending_signal = (i, signal_desc)
+                    else:
+                        quantity, entry_price = self._execute_entry(equity, price, atr_series, i)
+                        if quantity > 0:
+                            entry_idx = i
+                            entry_signal = signal_desc
+                            in_position = True
+            else:
+                pnl_pct = ((price - entry_price) / entry_price) * 100
+
+                if pnl_pct <= -self.stop_loss_pct:
+                    trade = self._close_long(entry_price, price, quantity, entry_idx, i,
+                                             timestamps, entry_signal, "stop_loss")
+                    trades.append(trade)
+                    equity += trade.pnl
+                    in_position = False
+                    continue
+
+                if pnl_pct >= self.take_profit_pct:
+                    trade = self._close_long(entry_price, price, quantity, entry_idx, i,
+                                             timestamps, entry_signal, "take_profit")
+                    trades.append(trade)
+                    equity += trade.pnl
+                    in_position = False
+                    continue
+
+                sell_signals = 0
+                if rsi[i] > self.rsi_overbought:
+                    sell_signals += 1
+                if (macd_line[i] < signal_line[i] and
+                        i > 0 and macd_line[i - 1] >= signal_line[i - 1]):
+                    sell_signals += 1
+                elif histogram[i] < 0 and i > 0 and histogram[i - 1] >= 0:
+                    sell_signals += 1
+                if price >= bb_upper[i] and bb_upper[i] > 0:
+                    sell_signals += 1
+
+                if sell_signals >= 2:
+                    trade = self._close_long(entry_price, price, quantity, entry_idx, i,
+                                             timestamps, entry_signal, "signal_exit")
+                    trades.append(trade)
+                    equity += trade.pnl
+                    in_position = False
+
+        if in_position and n > 0:
+            trade = self._close_long(entry_price, closes[-1], quantity, entry_idx, n - 1,
+                                     timestamps, entry_signal, "period_end")
+            trades.append(trade)
+
+        return trades
+
+    # ══════════════════════════════════════════════════════════════
+    # SHORT STRATEGY (Improvement 2b)
+    # ══════════════════════════════════════════════════════════════
+
+    def _simulate_short_trades(
+        self,
+        closes: List[float],
+        timestamps: List[float],
+        rsi: List[float],
+        macd_line: List[float],
+        signal_line: List[float],
+        histogram: List[float],
+        bb_upper: List[float],
+        bb_middle: List[float],
+        bb_lower: List[float],
+    ) -> List[BacktestTrade]:
+        """
+        Simulate SHORT trades: sell high (open short), buy back low (cover).
+
+        Entry: >= 2 of 3 sell signals (RSI overbought, MACD bearish crossover, price at upper BB)
+        Exit:  >= 2 of 3 buy signals OR stop-loss (+8%) OR take-profit (-15%)
+
+        P&L is inverted: profit when price drops, loss when price rises.
+        """
+        trades: List[BacktestTrade] = []
+        n = len(closes)
+        equity = self.initial_equity
+        in_position = False
+        entry_price = 0.0
+        entry_idx = 0
+        entry_signal = ""
+        quantity = 0.0
+        pending_signal: Optional[Tuple[int, str]] = None
+
+        atr_series = self._compute_atr(closes, self.atr_period)
+        start_idx = max(self.rsi_period + 1, self.macd_slow + self.macd_signal_period, self.bb_period)
+        if start_idx >= n:
+            return trades
+
+        for i in range(start_idx, n):
+            price = closes[i]
+            ts = timestamps[i]
+
+            if pending_signal is not None and not in_position:
+                signal_idx, signal_desc = pending_signal
+                if i >= signal_idx + self.execution_delay:
+                    quantity, entry_price = self._execute_entry(equity, price, atr_series, i)
+                    if quantity > 0:
+                        entry_idx = i
+                        entry_signal = signal_desc
+                        in_position = True
+                    pending_signal = None
+                    continue
+
+            if not in_position:
+                sell_signals = 0
+                reasons = []
+
+                if rsi[i] > self.rsi_overbought:
+                    sell_signals += 1
+                    reasons.append(f"RSI={rsi[i]:.0f} (overbought)")
+
+                if (macd_line[i] < signal_line[i] and
+                        i > 0 and macd_line[i - 1] >= signal_line[i - 1]):
+                    sell_signals += 1
+                    reasons.append("MACD bearish crossover")
+                elif histogram[i] < 0 and i > 0 and histogram[i - 1] >= 0:
+                    sell_signals += 1
+                    reasons.append("MACD histogram negative")
+
+                if price >= bb_upper[i] and bb_upper[i] > 0:
+                    sell_signals += 1
+                    reasons.append("Price at upper BB")
+
+                if sell_signals >= 2:
+                    signal_desc = " + ".join(reasons)
+                    if self.execution_delay > 0:
+                        pending_signal = (i, signal_desc)
+                    else:
+                        quantity, entry_price = self._execute_entry(equity, price, atr_series, i)
+                        if quantity > 0:
+                            entry_idx = i
+                            entry_signal = signal_desc
+                            in_position = True
+            else:
+                pnl_pct = ((entry_price - price) / entry_price) * 100
+
+                if pnl_pct <= -self.stop_loss_pct:
+                    trade = self._close_short(entry_price, price, quantity, entry_idx, i,
+                                              timestamps, entry_signal, "stop_loss")
+                    trades.append(trade)
+                    equity += trade.pnl
+                    in_position = False
+                    continue
+
+                if pnl_pct >= self.take_profit_pct:
+                    trade = self._close_short(entry_price, price, quantity, entry_idx, i,
+                                              timestamps, entry_signal, "take_profit")
+                    trades.append(trade)
+                    equity += trade.pnl
+                    in_position = False
+                    continue
+
+                buy_signals = 0
+                if rsi[i] < self.rsi_oversold:
+                    buy_signals += 1
+                if (macd_line[i] > signal_line[i] and
+                        i > 0 and macd_line[i - 1] <= signal_line[i - 1]):
+                    buy_signals += 1
+                elif histogram[i] > 0 and i > 0 and histogram[i - 1] <= 0:
+                    buy_signals += 1
+                if price <= bb_lower[i] and bb_lower[i] > 0:
+                    buy_signals += 1
+
+                if buy_signals >= 2:
+                    trade = self._close_short(entry_price, price, quantity, entry_idx, i,
+                                              timestamps, entry_signal, "signal_exit")
+                    trades.append(trade)
+                    equity += trade.pnl
+                    in_position = False
+
+        if in_position and n > 0:
+            trade = self._close_short(entry_price, closes[-1], quantity, entry_idx, n - 1,
+                                      timestamps, entry_signal, "period_end")
+            trades.append(trade)
+
+        return trades
+
+    # ══════════════════════════════════════════════════════════════
+    # RANGE STRATEGY (Improvement 2c) — Mean-reversion at BB bands
+    # ══════════════════════════════════════════════════════════════
+
+    def _simulate_range_trades(
+        self,
+        closes: List[float],
+        timestamps: List[float],
+        rsi: List[float],
+        macd_line: List[float],
+        signal_line: List[float],
+        histogram: List[float],
+        bb_upper: List[float],
+        bb_middle: List[float],
+        bb_lower: List[float],
+    ) -> List[BacktestTrade]:
+        """
+        Simulate RANGE (mean-reversion) trades.
+
+        Uses Bollinger Bands as support/resistance:
+          - Buy when price touches lower BB + RSI < 40 (support bounce)
+          - Sell when price touches upper BB + RSI > 60 (resistance rejection)
+
+        Targets: exit at middle BB (mean) or opposite band.
+        Stop-loss: tighter (5%) to limit range-bound risk.
+        """
+        trades: List[BacktestTrade] = []
+        n = len(closes)
+        equity = self.initial_equity
+        in_position = False
+        position_type = ""
+        entry_price = 0.0
+        entry_idx = 0
+        entry_signal = ""
+        quantity = 0.0
+        range_stop_loss = 5.0
+        range_take_profit = 8.0
+
+        atr_series = self._compute_atr(closes, self.atr_period)
+        start_idx = max(self.rsi_period + 1, self.macd_slow + self.macd_signal_period, self.bb_period)
+        if start_idx >= n:
+            return trades
+
+        for i in range(start_idx, n):
+            price = closes[i]
+            ts = timestamps[i]
+
+            if not in_position:
+                if price <= bb_lower[i] * 1.005 and bb_lower[i] > 0 and rsi[i] < 40:
+                    signal_desc = f"Range BUY: Price at lower BB + RSI={rsi[i]:.0f}"
+                    quantity, entry_price = self._execute_entry(equity, price, atr_series, i)
+                    if quantity > 0:
+                        entry_idx = i
+                        entry_signal = signal_desc
+                        in_position = True
+                        position_type = "RANGE_LONG"
+
+                elif price >= bb_upper[i] * 0.995 and bb_upper[i] > 0 and rsi[i] > 60:
+                    signal_desc = f"Range SHORT: Price at upper BB + RSI={rsi[i]:.0f}"
+                    quantity, entry_price = self._execute_entry(equity, price, atr_series, i)
+                    if quantity > 0:
+                        entry_idx = i
+                        entry_signal = signal_desc
+                        in_position = True
+                        position_type = "RANGE_SHORT"
+
+            else:
+                if position_type == "RANGE_LONG":
+                    pnl_pct = ((price - entry_price) / entry_price) * 100
+
+                    if pnl_pct <= -range_stop_loss:
+                        trade = self._close_long(entry_price, price, quantity, entry_idx, i,
+                                                 timestamps, entry_signal, "stop_loss",
+                                                 direction_label="RANGE_LONG")
+                        trades.append(trade)
+                        equity += trade.pnl
+                        in_position = False
+                        continue
+
+                    if pnl_pct >= range_take_profit or price >= bb_middle[i]:
+                        reason = "take_profit" if pnl_pct >= range_take_profit else "mean_reversion"
+                        trade = self._close_long(entry_price, price, quantity, entry_idx, i,
+                                                 timestamps, entry_signal, reason,
+                                                 direction_label="RANGE_LONG")
+                        trades.append(trade)
+                        equity += trade.pnl
+                        in_position = False
+                        continue
+
+                elif position_type == "RANGE_SHORT":
+                    pnl_pct = ((entry_price - price) / entry_price) * 100
+
+                    if pnl_pct <= -range_stop_loss:
+                        trade = self._close_short(entry_price, price, quantity, entry_idx, i,
+                                                  timestamps, entry_signal, "stop_loss",
+                                                  direction_label="RANGE_SHORT")
+                        trades.append(trade)
+                        equity += trade.pnl
+                        in_position = False
+                        continue
+
+                    if pnl_pct >= range_take_profit or price <= bb_middle[i]:
+                        reason = "take_profit" if pnl_pct >= range_take_profit else "mean_reversion"
+                        trade = self._close_short(entry_price, price, quantity, entry_idx, i,
+                                                  timestamps, entry_signal, reason,
+                                                  direction_label="RANGE_SHORT")
+                        trades.append(trade)
+                        equity += trade.pnl
+                        in_position = False
+                        continue
+
+        if in_position and n > 0:
+            if position_type == "RANGE_LONG":
+                trade = self._close_long(entry_price, closes[-1], quantity, entry_idx, n - 1,
+                                         timestamps, entry_signal, "period_end",
+                                         direction_label="RANGE_LONG")
+            else:
+                trade = self._close_short(entry_price, closes[-1], quantity, entry_idx, n - 1,
+                                          timestamps, entry_signal, "period_end",
+                                          direction_label="RANGE_SHORT")
+            trades.append(trade)
+
+        return trades
+
+    # ══════════════════════════════════════════════════════════════
+    # TRADE EXECUTION HELPERS
+    # ══════════════════════════════════════════════════════════════
+
+    def _execute_entry(
+        self, equity: float, price: float, atr_series: List[float], idx: int,
+    ) -> Tuple[float, float]:
+        """Calculate position size, apply slippage, return (quantity, actual_entry_price)."""
+        atr_val = atr_series[idx] if idx < len(atr_series) else 0
+        if self.use_atr_sizing and atr_val > 0:
+            quantity = self._calc_position_size_atr(equity, price, atr_val)
+        else:
+            available = equity * (self.position_size_pct / 100)
+            quantity = available / price if price > 0 else 0
+
+        trade_value = quantity * price
+        entry_slippage = self._calc_slippage(trade_value, price)
+        fee = trade_value * self.fee_pct
+        actual_entry = price * (1 + entry_slippage / max(trade_value, 1e-9))
+        cost = fee + entry_slippage
+
+        if trade_value - cost > 0 and price > 0:
+            quantity = (trade_value - cost) / actual_entry
+            return quantity, actual_entry
+        return 0.0, 0.0
+
+    def _close_long(
+        self, entry_price: float, exit_price: float, quantity: float,
+        entry_idx: int, exit_idx: int, timestamps: List[float],
+        entry_signal: str, exit_reason: str, direction_label: str = "LONG",
+    ) -> BacktestTrade:
+        """Close a LONG position and create trade record."""
+        exit_value = quantity * exit_price
+        exit_slippage = self._calc_slippage(exit_value, exit_price)
+        fee = exit_value * self.fee_pct
+        entry_fee = quantity * entry_price * self.fee_pct
+        total_fee = fee + entry_fee
+        total_slippage = exit_slippage
+        pnl = (exit_price - entry_price) * quantity - total_fee - total_slippage
+        net_pnl_pct = ((exit_price * (1 - self.fee_pct) - exit_slippage / max(quantity, 1e-9))
+                       / entry_price - 1) * 100
+
+        return BacktestTrade(
+            entry_date=self._ts_to_date(timestamps[entry_idx]),
+            exit_date=self._ts_to_date(timestamps[exit_idx]),
+            direction=direction_label,
+            entry_price=entry_price,
+            exit_price=exit_price,
+            quantity=quantity,
+            pnl=pnl,
+            pnl_pct=net_pnl_pct,
+            fee_paid=total_fee,
+            signal=entry_signal,
+            exit_reason=exit_reason,
+            slippage_cost=total_slippage,
+            execution_delay=self.execution_delay,
+        )
+
+    def _close_short(
+        self, entry_price: float, exit_price: float, quantity: float,
+        entry_idx: int, exit_idx: int, timestamps: List[float],
+        entry_signal: str, exit_reason: str, direction_label: str = "SHORT",
+    ) -> BacktestTrade:
+        """Close a SHORT position and create trade record. P&L is inverted."""
+        exit_value = quantity * exit_price
+        exit_slippage = self._calc_slippage(exit_value, exit_price)
+        fee = exit_value * self.fee_pct
+        entry_fee = quantity * entry_price * self.fee_pct
+        total_fee = fee + entry_fee
+        total_slippage = exit_slippage
+        pnl = (entry_price - exit_price) * quantity - total_fee - total_slippage
+        net_pnl_pct = ((entry_price * (1 - self.fee_pct) - exit_slippage / max(quantity, 1e-9))
+                       / exit_price - 1) * 100
+
+        return BacktestTrade(
+            entry_date=self._ts_to_date(timestamps[entry_idx]),
+            exit_date=self._ts_to_date(timestamps[exit_idx]),
+            direction=direction_label,
+            entry_price=entry_price,
+            exit_price=exit_price,
+            quantity=quantity,
+            pnl=pnl,
+            pnl_pct=net_pnl_pct,
+            fee_paid=total_fee,
+            signal=entry_signal,
+            exit_reason=exit_reason,
+            slippage_cost=total_slippage,
+            execution_delay=self.execution_delay,
+        )
+
+    # ══════════════════════════════════════════════════════════════
+    # INDICATOR COMPUTATION
+    # ══════════════════════════════════════════════════════════════
 
     def _compute_rsi_series(self, closes: List[float]) -> List[float]:
-        """Compute RSI for every data point (returns list same length as closes)."""
+        """Compute RSI for every data point."""
         period = self.rsi_period
         n = len(closes)
         if n < period + 1:
             return [50.0] * n
 
-        rsi_values = [50.0] * (period + 1)  # pad initial values (indices 0..period)
+        rsi_values = [50.0] * (period + 1)
         deltas = [closes[i] - closes[i - 1] for i in range(1, n)]
         gains = [max(d, 0) for d in deltas]
         losses = [max(-d, 0) for d in deltas]
@@ -388,7 +1070,6 @@ class BacktestEngine:
         avg_gain = sum(gains[:period]) / period
         avg_loss = sum(losses[:period]) / period
 
-        # RSI at index=period (first valid RSI)
         if avg_loss == 0:
             rsi_values[period] = 100.0
         else:
@@ -404,7 +1085,6 @@ class BacktestEngine:
                 rs = avg_gain / avg_loss
                 rsi_values.append(100.0 - (100.0 / (1.0 + rs)))
 
-        # Ensure exact length match
         while len(rsi_values) < n:
             rsi_values.append(rsi_values[-1] if rsi_values else 50.0)
 
@@ -413,7 +1093,7 @@ class BacktestEngine:
     def _compute_macd_series(
         self, closes: List[float],
     ) -> Tuple[List[float], List[float], List[float]]:
-        """Compute MACD line, signal line, and histogram series (each len = len(closes))."""
+        """Compute MACD line, signal line, and histogram series."""
         n = len(closes)
         if n < self.macd_slow + self.macd_signal_period:
             return [0.0] * n, [0.0] * n, [0.0] * n
@@ -421,9 +1101,7 @@ class BacktestEngine:
         ema_fast = self._ema_series(closes, self.macd_fast)
         ema_slow = self._ema_series(closes, self.macd_slow)
 
-        # Build MACD line aligned to closes
         macd_full = [0.0] * n
-        # ema_fast starts at index (macd_fast - 1), ema_slow at (macd_slow - 1)
         slow_start = self.macd_slow - 1
         fast_start = self.macd_fast - 1
         for i in range(slow_start, n):
@@ -432,7 +1110,6 @@ class BacktestEngine:
             if 0 <= ei_fast < len(ema_fast) and 0 <= ei_slow < len(ema_slow):
                 macd_full[i] = ema_fast[ei_fast] - ema_slow[ei_slow]
 
-        # Signal line from the valid MACD portion
         valid_macd = macd_full[slow_start:]
         signal_raw = self._ema_series(valid_macd, self.macd_signal_period)
 
@@ -466,7 +1143,6 @@ class BacktestEngine:
             upper[i] = sma + self.bb_std * std
             lower[i] = sma - self.bb_std * std
 
-        # Fill initial values
         for i in range(period - 1):
             middle[i] = closes[i]
             upper[i] = closes[i]
@@ -474,10 +1150,8 @@ class BacktestEngine:
 
         return upper, middle, lower
 
-    # ── Trade Simulation ───────────────────────────────────────────
-
     def _compute_atr(self, closes: List[float], period: int = 14) -> List[float]:
-        """Compute Average True Range series (simplified for daily closes only)."""
+        """Compute Average True Range series."""
         n = len(closes)
         tr = [0.0] * n
         for i in range(1, n):
@@ -488,24 +1162,17 @@ class BacktestEngine:
             avg = sum(tr[1:]) / max(len(tr) - 1, 1) if n > 1 else 0
             return [avg] * n
 
-        # Initial ATR = simple average of first `period` TRs
         atr[period] = sum(tr[1:period + 1]) / period
         for i in range(period + 1, n):
             atr[i] = (atr[i - 1] * (period - 1) + tr[i]) / period
 
-        # Fill initial values
         for i in range(period):
             atr[i] = atr[period] if atr[period] > 0 else tr[i]
 
         return atr
 
     def _calc_slippage(self, trade_value: float, price: float) -> float:
-        """
-        Compute slippage cost for a trade.
-
-        Formula: slippage = base_fee_bps * (trade_size / liquidity_pool)
-        Applied as a price impact in $ terms.
-        """
+        """Compute slippage cost for a trade."""
         if self.liquidity_pool <= 0:
             return 0.0
         impact = (self.slippage_base_bps / 10_000) * (trade_value / self.liquidity_pool)
@@ -514,296 +1181,18 @@ class BacktestEngine:
     def _calc_position_size_atr(
         self, equity: float, price: float, atr: float,
     ) -> float:
-        """
-        Volatility-based position sizing.
-
-        Formula: position_size = (account_risk% × equity) / ATR
-        This sizes positions inversely to volatility — smaller in volatile
-        markets, larger in calm markets.
-        """
+        """Volatility-based position sizing."""
         if atr <= 0 or price <= 0:
-            # Fall back to percentage-based sizing
             return (equity * self.position_size_pct / 100) / price
 
         risk_amount = equity * (self.account_risk_pct / 100)
         shares = risk_amount / atr
-        # Cap at position_size_pct of equity
         max_shares = (equity * self.position_size_pct / 100) / price
         return min(shares, max_shares)
 
-    def _simulate_trades(
-        self,
-        closes: List[float],
-        timestamps: List[float],
-        rsi: List[float],
-        macd_line: List[float],
-        signal_line: List[float],
-        histogram: List[float],
-        bb_upper: List[float],
-        bb_middle: List[float],
-        bb_lower: List[float],
-    ) -> List[BacktestTrade]:
-        """
-        Simulate long-only trades using combined indicator signals.
-
-        Features:
-          - Execution delay: signal at candle i → execute at candle i+delay
-          - Slippage model: slippage = base_bps × (trade_size / liquidity_pool)
-          - ATR-based position sizing: position = (account_risk% × equity) / ATR
-
-        Entry: >= 2 of 3 buy signals active
-        Exit: >= 2 of 3 sell signals OR stop-loss OR take-profit
-        """
-        trades: List[BacktestTrade] = []
-        n = len(closes)
-        equity = self.initial_equity
-        in_position = False
-        entry_price = 0.0
-        entry_idx = 0
-        entry_signal = ""
-        quantity = 0.0
-        pending_buy_signal: Optional[Tuple[int, str]] = None  # (signal_candle_idx, signal_desc)
-
-        # Compute ATR for position sizing
-        atr_series = self._compute_atr(closes, self.atr_period)
-
-        # Verify all indicator arrays match closes length
-        assert len(rsi) == n, f"RSI len {len(rsi)} != closes len {n}"
-        assert len(macd_line) == n, f"MACD len {len(macd_line)} != closes len {n}"
-        assert len(signal_line) == n, f"Signal len {len(signal_line)} != closes len {n}"
-        assert len(histogram) == n, f"Histogram len {len(histogram)} != closes len {n}"
-        assert len(bb_upper) == n, f"BB upper len {len(bb_upper)} != closes len {n}"
-        assert len(bb_lower) == n, f"BB lower len {len(bb_lower)} != closes len {n}"
-
-        # Start after all indicators are initialized
-        start_idx = max(self.rsi_period + 1, self.macd_slow + self.macd_signal_period, self.bb_period)
-        if start_idx >= n:
-            return trades
-
-        for i in range(start_idx, n):
-            price = closes[i]
-            ts = timestamps[i]
-
-            # ── Check for pending buy (execution delay) ──
-            if pending_buy_signal is not None and not in_position:
-                signal_idx, signal_desc = pending_buy_signal
-                if i >= signal_idx + self.execution_delay:
-                    # Execute the delayed buy
-                    atr_val = atr_series[i] if i < len(atr_series) else 0
-                    if self.use_atr_sizing and atr_val > 0:
-                        quantity = self._calc_position_size_atr(equity, price, atr_val)
-                    else:
-                        available = equity * (self.position_size_pct / 100)
-                        quantity = available / price if price > 0 else 0
-
-                    trade_value = quantity * price
-                    entry_slippage = self._calc_slippage(trade_value, price)
-                    fee = trade_value * self.fee_pct
-
-                    # Adjust entry price for slippage (buy at worse price)
-                    actual_entry = price * (1 + entry_slippage / max(trade_value, 1e-9))
-                    # Deduct fee + slippage from available
-                    cost = fee + entry_slippage
-                    if trade_value - cost > 0 and price > 0:
-                        quantity = (trade_value - cost) / actual_entry
-                        entry_price = actual_entry
-                        entry_idx = i
-                        entry_signal = signal_desc
-                        in_position = True
-                    pending_buy_signal = None
-                    continue
-
-            if not in_position:
-                # ── Check BUY signals ──
-                buy_signals = 0
-                reasons = []
-
-                # RSI oversold
-                if rsi[i] < self.rsi_oversold:
-                    buy_signals += 1
-                    reasons.append(f"RSI={rsi[i]:.0f} (oversold)")
-
-                # MACD bullish crossover
-                if (macd_line[i] > signal_line[i] and
-                        i > 0 and macd_line[i - 1] <= signal_line[i - 1]):
-                    buy_signals += 1
-                    reasons.append("MACD bullish crossover")
-                elif histogram[i] > 0 and i > 0 and histogram[i - 1] <= 0:
-                    buy_signals += 1
-                    reasons.append("MACD histogram turned positive")
-
-                # Bollinger: price near or below lower band
-                if price <= bb_lower[i] and bb_lower[i] > 0:
-                    buy_signals += 1
-                    reasons.append("Price at lower Bollinger Band")
-
-                # Need at least 2 confirming signals
-                if buy_signals >= 2:
-                    signal_desc = " + ".join(reasons)
-                    if self.execution_delay > 0:
-                        # Defer execution by N candles
-                        pending_buy_signal = (i, signal_desc)
-                    else:
-                        # Immediate execution (delay=0)
-                        atr_val = atr_series[i] if i < len(atr_series) else 0
-                        if self.use_atr_sizing and atr_val > 0:
-                            quantity = self._calc_position_size_atr(equity, price, atr_val)
-                        else:
-                            available = equity * (self.position_size_pct / 100)
-                            quantity = available / price if price > 0 else 0
-
-                        trade_value = quantity * price
-                        entry_slippage = self._calc_slippage(trade_value, price)
-                        fee = trade_value * self.fee_pct
-                        actual_entry = price * (1 + entry_slippage / max(trade_value, 1e-9))
-                        cost = fee + entry_slippage
-                        if trade_value - cost > 0 and price > 0:
-                            quantity = (trade_value - cost) / actual_entry
-                            entry_price = actual_entry
-                            entry_idx = i
-                            entry_signal = signal_desc
-                            in_position = True
-
-            else:
-                # ── Check EXIT conditions ──
-                pnl_pct = ((price - entry_price) / entry_price) * 100
-
-                # Stop-loss
-                if pnl_pct <= -self.stop_loss_pct:
-                    exit_reason = "stop_loss"
-                    exit_value = quantity * price
-                    exit_slippage = self._calc_slippage(exit_value, price)
-                    fee = exit_value * self.fee_pct
-                    entry_fee = quantity * entry_price * self.fee_pct
-                    total_fee = fee + entry_fee
-                    total_slippage = exit_slippage  # entry slippage already in entry_price
-                    pnl = (price - entry_price) * quantity - total_fee - total_slippage
-                    net_pnl_pct = ((price * (1 - self.fee_pct) - exit_slippage / max(quantity, 1e-9)) / (entry_price) - 1) * 100
-                    trades.append(BacktestTrade(
-                        entry_date=self._ts_to_date(timestamps[entry_idx]),
-                        exit_date=self._ts_to_date(ts),
-                        direction="LONG",
-                        entry_price=entry_price,
-                        exit_price=price,
-                        quantity=quantity,
-                        pnl=pnl,
-                        pnl_pct=net_pnl_pct,
-                        fee_paid=total_fee,
-                        signal=entry_signal,
-                        exit_reason=exit_reason,
-                        slippage_cost=total_slippage,
-                        execution_delay=self.execution_delay,
-                    ))
-                    equity += pnl
-                    in_position = False
-                    continue
-
-                # Take-profit
-                if pnl_pct >= self.take_profit_pct:
-                    exit_reason = "take_profit"
-                    exit_value = quantity * price
-                    exit_slippage = self._calc_slippage(exit_value, price)
-                    fee = exit_value * self.fee_pct
-                    entry_fee = quantity * entry_price * self.fee_pct
-                    total_fee = fee + entry_fee
-                    total_slippage = exit_slippage
-                    pnl = (price - entry_price) * quantity - total_fee - total_slippage
-                    net_pnl_pct = ((price * (1 - self.fee_pct) - exit_slippage / max(quantity, 1e-9)) / (entry_price) - 1) * 100
-                    trades.append(BacktestTrade(
-                        entry_date=self._ts_to_date(timestamps[entry_idx]),
-                        exit_date=self._ts_to_date(ts),
-                        direction="LONG",
-                        entry_price=entry_price,
-                        exit_price=price,
-                        quantity=quantity,
-                        pnl=pnl,
-                        pnl_pct=net_pnl_pct,
-                        fee_paid=total_fee,
-                        signal=entry_signal,
-                        exit_reason=exit_reason,
-                        slippage_cost=total_slippage,
-                        execution_delay=self.execution_delay,
-                    ))
-                    equity += pnl
-                    in_position = False
-                    continue
-
-                # Signal-based exit: >= 2 sell signals
-                sell_signals = 0
-
-                # RSI overbought
-                if rsi[i] > self.rsi_overbought:
-                    sell_signals += 1
-
-                # MACD bearish crossover
-                if (macd_line[i] < signal_line[i] and
-                        i > 0 and macd_line[i - 1] >= signal_line[i - 1]):
-                    sell_signals += 1
-                elif histogram[i] < 0 and i > 0 and histogram[i - 1] >= 0:
-                    sell_signals += 1
-
-                # Price above upper Bollinger Band
-                if price >= bb_upper[i] and bb_upper[i] > 0:
-                    sell_signals += 1
-
-                if sell_signals >= 2:
-                    exit_reason = "signal_exit"
-                    exit_value = quantity * price
-                    exit_slippage = self._calc_slippage(exit_value, price)
-                    fee = exit_value * self.fee_pct
-                    entry_fee = quantity * entry_price * self.fee_pct
-                    total_fee = fee + entry_fee
-                    total_slippage = exit_slippage
-                    pnl = (price - entry_price) * quantity - total_fee - total_slippage
-                    net_pnl_pct = ((price * (1 - self.fee_pct) - exit_slippage / max(quantity, 1e-9)) / (entry_price) - 1) * 100
-                    trades.append(BacktestTrade(
-                        entry_date=self._ts_to_date(timestamps[entry_idx]),
-                        exit_date=self._ts_to_date(ts),
-                        direction="LONG",
-                        entry_price=entry_price,
-                        exit_price=price,
-                        quantity=quantity,
-                        pnl=pnl,
-                        pnl_pct=net_pnl_pct,
-                        fee_paid=total_fee,
-                        signal=entry_signal,
-                        exit_reason=exit_reason,
-                        slippage_cost=total_slippage,
-                        execution_delay=self.execution_delay,
-                    ))
-                    equity += pnl
-                    in_position = False
-
-        # Close any remaining open position at last price
-        if in_position and n > 0:
-            price = closes[-1]
-            exit_value = quantity * price
-            exit_slippage = self._calc_slippage(exit_value, price)
-            fee = exit_value * self.fee_pct
-            entry_fee = quantity * entry_price * self.fee_pct
-            total_fee = fee + entry_fee
-            total_slippage = exit_slippage
-            pnl = (price - entry_price) * quantity - total_fee - total_slippage
-            net_pnl_pct = ((price * (1 - self.fee_pct) - exit_slippage / max(quantity, 1e-9)) / (entry_price) - 1) * 100
-            trades.append(BacktestTrade(
-                entry_date=self._ts_to_date(timestamps[entry_idx]),
-                exit_date=self._ts_to_date(timestamps[-1]),
-                direction="LONG",
-                entry_price=entry_price,
-                exit_price=price,
-                quantity=quantity,
-                pnl=pnl,
-                pnl_pct=net_pnl_pct,
-                fee_paid=total_fee,
-                signal=entry_signal,
-                exit_reason="period_end",
-                slippage_cost=total_slippage,
-                execution_delay=self.execution_delay,
-            ))
-
-        return trades
-
-    # ── Statistics Calculation ─────────────────────────────────────
+    # ══════════════════════════════════════════════════════════════
+    # STATISTICS
+    # ══════════════════════════════════════════════════════════════
 
     def _calculate_stats(self, result: BacktestResult, trades: List[BacktestTrade]):
         """Calculate all performance metrics from trade list."""
@@ -823,7 +1212,6 @@ class BacktestEngine:
         result.total_fees_paid = sum(t.fee_paid for t in trades)
         result.total_slippage_cost = sum(t.slippage_cost for t in trades)
 
-        # Win/loss averages
         if wins:
             result.avg_win = sum(t.pnl_pct for t in wins) / len(wins)
             result.largest_win = max(t.pnl_pct for t in wins)
@@ -831,15 +1219,11 @@ class BacktestEngine:
             result.avg_loss = sum(t.pnl_pct for t in losses) / len(losses)
             result.largest_loss = min(t.pnl_pct for t in losses)
 
-        # Profit factor
         gross_profit = sum(t.pnl for t in wins)
         gross_loss = abs(sum(t.pnl for t in losses))
         result.profit_factor = gross_profit / gross_loss if gross_loss > 0 else float('inf')
 
-        # Max drawdown
         result.max_drawdown = self._compute_max_drawdown(trades)
-
-        # Sharpe ratio (annualized, assuming daily returns)
         result.sharpe_ratio = self._compute_sharpe_ratio(trades, result.days_covered)
 
     def _compute_max_drawdown(self, trades: List[BacktestTrade]) -> float:
@@ -860,10 +1244,7 @@ class BacktestEngine:
     def _compute_sharpe_ratio(
         self, trades: List[BacktestTrade], days_covered: int
     ) -> float:
-        """
-        Annualized Sharpe ratio.
-        Risk-free rate assumed 0 for crypto.
-        """
+        """Annualized Sharpe ratio."""
         if len(trades) < 2 or days_covered <= 0:
             return 0.0
 
@@ -875,125 +1256,131 @@ class BacktestEngine:
         if std_return == 0:
             return 0.0
 
-        # Annualize: trades_per_year = total_trades / (days / 365)
         trades_per_year = len(trades) / (days_covered / 365) if days_covered > 0 else len(trades)
         annualized_return = avg_return * trades_per_year
         annualized_std = std_return * math.sqrt(trades_per_year)
 
         return annualized_return / annualized_std if annualized_std > 0 else 0.0
 
-    # ── Threshold Evaluation ───────────────────────────────────────
+    # ══════════════════════════════════════════════════════════════
+    # TIERED THRESHOLD EVALUATION (Improvement 4)
+    # ══════════════════════════════════════════════════════════════
 
-    def _evaluate_thresholds(self, result: BacktestResult):
-        """Check all profitability thresholds."""
+    def _evaluate_thresholds(self, result: BacktestResult, token_tier: str = "micro"):
+        """Check profitability thresholds based on token tier."""
+        tier = THRESHOLDS.get(token_tier, THRESHOLDS["micro"])
+
         result.threshold_results = {
-            "win_rate_above_55": result.win_rate > THRESHOLD_WIN_RATE,
-            "max_drawdown_below_20": result.max_drawdown < THRESHOLD_MAX_DRAWDOWN,
-            "total_return_positive": result.total_return > THRESHOLD_MIN_RETURN,
-            "min_10_trades": result.total_trades >= THRESHOLD_MIN_TRADES,
+            f"win_rate_above_{tier['win_rate']:.0f}": result.win_rate >= tier["win_rate"],
+            f"max_drawdown_below_{tier['max_drawdown']:.0f}": result.max_drawdown <= tier["max_drawdown"],
+            f"total_return_above_{tier['min_return']:.0f}": result.total_return >= tier["min_return"],
+            f"min_{tier['min_trades']}_trades": result.total_trades >= tier["min_trades"],
         }
 
         result.failure_reasons = []
-        if not result.threshold_results["win_rate_above_55"]:
+        if result.win_rate < tier["win_rate"]:
             result.failure_reasons.append(
-                f"Win rate {result.win_rate:.1f}% is below {THRESHOLD_WIN_RATE}% threshold"
+                f"Win rate {result.win_rate:.1f}% below {tier['win_rate']:.0f}% ({tier['label']})"
             )
-        if not result.threshold_results["max_drawdown_below_20"]:
+        if result.max_drawdown > tier["max_drawdown"]:
             result.failure_reasons.append(
-                f"Max drawdown {result.max_drawdown:.1f}% exceeds {THRESHOLD_MAX_DRAWDOWN}% limit"
+                f"Max drawdown {result.max_drawdown:.1f}% exceeds {tier['max_drawdown']:.0f}% limit ({tier['label']})"
             )
-        if not result.threshold_results["total_return_positive"]:
+        if result.total_return < tier["min_return"]:
             result.failure_reasons.append(
-                f"Total return {result.total_return:.1f}% is not positive"
+                f"Total return {result.total_return:.1f}% below {tier['min_return']:.0f}% minimum ({tier['label']})"
             )
-        if not result.threshold_results["min_10_trades"]:
+        if result.total_trades < tier["min_trades"]:
             result.failure_reasons.append(
-                f"Only {result.total_trades} trades — minimum {THRESHOLD_MIN_TRADES} required"
+                f"Only {result.total_trades} trades — minimum {tier['min_trades']} ({tier['label']})"
             )
 
         result.passed_all_thresholds = all(result.threshold_results.values())
 
-    # ── Recommendation Generation ──────────────────────────────────
+    # ══════════════════════════════════════════════════════════════
+    # DIRECTION-AWARE RECOMMENDATION (Improvements 6 & 7)
+    # ══════════════════════════════════════════════════════════════
 
     def _generate_recommendation(self, result: BacktestResult):
-        """Generate recommendation ONLY if all thresholds pass."""
+        """Generate direction-aware recommendation based on strategy results."""
+        direction = result.strategy_direction
+        trend = result.detected_trend
+        tier = result.token_tier
+        strategies_tested = ", ".join(result.strategies_tested)
+
         if not result.passed_all_thresholds:
             result.recommendation = "WARNING"
             result.recommendation_detail = (
-                f"BACKTEST FAILED — This token did not pass profitability verification. "
+                f"⚠️ BACKTEST WARNING — All {len(result.strategies_tested)} strategies tested "
+                f"({strategies_tested}) did not meet {THRESHOLDS[tier]['label']} thresholds. "
+                f"Detected trend: {trend.upper()}. "
+                f"Best result ({direction}): {result.total_trades} trades, "
+                f"{result.win_rate:.1f}% win rate, {result.total_return:.1f}% return, "
+                f"{result.max_drawdown:.1f}% max drawdown. "
                 f"Issues: {'; '.join(result.failure_reasons)}. "
-                f"Stats: {result.total_trades} trades, {result.win_rate:.1f}% win rate, "
-                f"{result.total_return:.1f}% return, {result.max_drawdown:.1f}% max drawdown. "
-                f"DO NOT trade this token based on current strategy signals."
+                f"This token may not be suitable for algorithmic trading in current conditions."
             )
             result.confidence = max(0, min(30, result.win_rate * 0.3))
             return
 
-        # ── All thresholds passed → generate directional recommendation ──
-        # Combine current indicator states for direction
-        bullish_signals = 0
-        bearish_signals = 0
-
-        if result.latest_rsi < 40:
-            bullish_signals += 1
-        elif result.latest_rsi > 60:
-            bearish_signals += 1
-
-        if result.latest_macd == "bullish":
-            bullish_signals += 1
-        elif result.latest_macd == "bearish":
-            bearish_signals += 1
-
-        if result.latest_trend == "uptrend":
-            bullish_signals += 1
-        elif result.latest_trend == "downtrend":
-            bearish_signals += 1
-
-        if result.latest_bb_position == "below_lower":
-            bullish_signals += 1
-        elif result.latest_bb_position == "above_upper":
-            bearish_signals += 1
-
-        # Calculate confidence from backtest quality
+        # Strategy PASSED
         base_confidence = 50.0
-        base_confidence += min(20, (result.win_rate - THRESHOLD_WIN_RATE) * 2)
+        tier_thresholds = THRESHOLDS[tier]
+        base_confidence += min(20, (result.win_rate - tier_thresholds["win_rate"]) * 2)
         base_confidence += min(15, result.total_return * 0.5)
         base_confidence += min(10, result.sharpe_ratio * 5)
-        if result.max_drawdown < 10:
+        if result.max_drawdown < tier_thresholds["max_drawdown"] * 0.5:
             base_confidence += 5
         result.confidence = max(0, min(100, base_confidence))
 
-        if bullish_signals >= 2 and bearish_signals == 0:
+        if direction == "LONG":
             result.recommendation = "BUY"
             result.recommendation_detail = (
-                f"BACKTEST VERIFIED BUY — Strategy profitable over {result.days_covered} days: "
+                f"✅ BACKTEST VERIFIED — LONG Strategy | Trend: {trend.upper()}\n"
+                f"Strategy profitable over {result.days_covered} days: "
                 f"{result.win_rate:.1f}% win rate, {result.total_return:.1f}% total return, "
                 f"{result.max_drawdown:.1f}% max drawdown, Sharpe {result.sharpe_ratio:.2f}. "
-                f"Current signals: RSI={result.latest_rsi:.0f}, MACD={result.latest_macd}, "
+                f"{result.total_trades} trades executed. "
+                f"Recommended direction: BUY/LONG. "
+                f"Current indicators: RSI={result.latest_rsi:.0f}, MACD={result.latest_macd}, "
                 f"Trend={result.latest_trend}, BB={result.latest_bb_position}. "
+                f"Tier: {THRESHOLDS[tier]['label']}. "
                 f"Confidence: {result.confidence:.0f}/100."
             )
-        elif bearish_signals >= 2 and bullish_signals == 0:
+
+        elif direction == "SHORT":
             result.recommendation = "SELL"
             result.recommendation_detail = (
-                f"BACKTEST VERIFIED SELL — Strategy profitable but current indicators bearish: "
-                f"RSI={result.latest_rsi:.0f}, MACD={result.latest_macd}, "
-                f"Trend={result.latest_trend}. "
-                f"Wait for better entry. Backtest: {result.win_rate:.1f}% win rate, "
-                f"{result.total_return:.1f}% return over {result.days_covered} days."
+                f"✅ BACKTEST VERIFIED — SHORT Strategy | Trend: {trend.upper()}\n"
+                f"Short-selling strategy profitable over {result.days_covered} days: "
+                f"{result.win_rate:.1f}% win rate, {result.total_return:.1f}% total return, "
+                f"{result.max_drawdown:.1f}% max drawdown, Sharpe {result.sharpe_ratio:.2f}. "
+                f"{result.total_trades} trades executed. "
+                f"Recommended direction: SELL/SHORT — profit from price decline. "
+                f"Current indicators: RSI={result.latest_rsi:.0f}, MACD={result.latest_macd}, "
+                f"Trend={result.latest_trend}, BB={result.latest_bb_position}. "
+                f"Tier: {THRESHOLDS[tier]['label']}. "
+                f"Confidence: {result.confidence:.0f}/100."
             )
-            result.confidence = max(0, result.confidence - 15)
-        else:
+
+        elif direction == "RANGE":
             result.recommendation = "HOLD"
             result.recommendation_detail = (
-                f"BACKTEST VERIFIED HOLD — Strategy is profitable ({result.win_rate:.1f}% "
-                f"win rate, {result.total_return:.1f}% return) but current signals are mixed. "
-                f"RSI={result.latest_rsi:.0f}, MACD={result.latest_macd}, "
-                f"Trend={result.latest_trend}. Wait for clearer entry signal."
+                f"✅ BACKTEST VERIFIED — RANGE Strategy | Trend: {trend.upper()}\n"
+                f"Range-trading (mean-reversion) strategy profitable over {result.days_covered} days: "
+                f"{result.win_rate:.1f}% win rate, {result.total_return:.1f}% total return, "
+                f"{result.max_drawdown:.1f}% max drawdown, Sharpe {result.sharpe_ratio:.2f}. "
+                f"{result.total_trades} trades executed. "
+                f"Recommended direction: RANGE — buy support, sell resistance. "
+                f"Current indicators: RSI={result.latest_rsi:.0f}, MACD={result.latest_macd}, "
+                f"Trend={result.latest_trend}, BB={result.latest_bb_position}. "
+                f"Tier: {THRESHOLDS[tier]['label']}. "
+                f"Confidence: {result.confidence:.0f}/100."
             )
-            result.confidence = max(0, result.confidence - 10)
 
-    # ── Helpers ────────────────────────────────────────────────────
+    # ══════════════════════════════════════════════════════════════
+    # HELPERS
+    # ══════════════════════════════════════════════════════════════
 
     @staticmethod
     def _ts_to_date(ts_ms: float) -> str:

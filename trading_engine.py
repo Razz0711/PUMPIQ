@@ -520,6 +520,7 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
                     symbol=opp["symbol"],
                     cg_collector=cg_collector,
                     days=180,
+                    market_cap=opp.get("market_cap", 0),
                 )
                 _cache_backtest(coin_id, bt_result)
             except Exception as e:
@@ -545,20 +546,27 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
         opp["backtest_recommendation"] = bt_result.recommendation
         opp["backtest_detail"] = bt_result.recommendation_detail
         opp["backtest_confidence"] = bt_result.confidence
+        opp["backtest_strategy_direction"] = getattr(bt_result, 'strategy_direction', 'LONG')
+        opp["backtest_detected_trend"] = getattr(bt_result, 'detected_trend', 'unknown')
+        opp["backtest_token_tier"] = getattr(bt_result, 'token_tier', 'unknown')
+        opp["backtest_strategies_tested"] = getattr(bt_result, 'strategies_tested', [])
 
         if bt_result.passed_all_thresholds:
             # Boost score for verified tokens
+            direction = opp["backtest_strategy_direction"]
             opp["score"] = min(100, opp["score"] + 10)
             opp["reasons"].append(
-                f"✅ Backtest verified: {bt_result.win_rate:.0f}% win rate, "
+                f"✅ Backtest verified ({direction}): {bt_result.win_rate:.0f}% win rate, "
                 f"{bt_result.total_return:.1f}% return, Sharpe {bt_result.sharpe_ratio:.2f}"
             )
             opp["reasoning"] = " | ".join(opp["reasons"])
         else:
             # Penalize and flag
+            tested = opp.get("backtest_strategies_tested", [])
             opp["score"] = max(0, opp["score"] - 20)
             opp["reasons"].append(
-                f"⚠️ Backtest FAILED: {'; '.join(bt_result.failure_reasons)}"
+                f"⚠️ Backtest WARNING (tested {', '.join(tested) if tested else 'LONG'}): "
+                f"{'; '.join(bt_result.failure_reasons)}"
             )
             opp["reasoning"] = " | ".join(opp["reasons"])
 
@@ -705,10 +713,13 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
 
             # Build detailed AI reasoning for the buy (includes backtest verification)
             bt_stats = opp.get("backtest_stats", {})
+            bt_direction = opp.get("backtest_strategy_direction", "LONG")
+            bt_trend = opp.get("backtest_detected_trend", "unknown")
             bt_summary = ""
             if bt_stats:
                 bt_summary = (
-                    f"BACKTEST VERIFIED: {bt_stats.get('win_rate', 0):.1f}% win rate, "
+                    f"BACKTEST VERIFIED ({bt_direction} strategy, {bt_trend} trend): "
+                    f"{bt_stats.get('win_rate', 0):.1f}% win rate, "
                     f"{bt_stats.get('total_return', 0):.1f}% return, "
                     f"{bt_stats.get('max_drawdown', 0):.1f}% max DD, "
                     f"Sharpe {bt_stats.get('sharpe_ratio', 0):.2f}, "
@@ -742,7 +753,8 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
                 balance -= trade_amount
                 results["actions"].append(
                     f"Bought {opp['symbol']} at ${opp['price']:,.2f} (${trade_amount:,.0f}) "
-                    f"| Score: {opp['score']}/100 | Profile: {risk_profile} "
+                    f"| Score: {opp['score']}/100 | Strategy: {bt_direction} "
+                    f"| Profile: {risk_profile} "
                     f"| TX: {buy_result['tx_hash'][:16]}..."
                 )
 

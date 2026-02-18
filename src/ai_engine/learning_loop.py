@@ -406,6 +406,29 @@ class LearningLoop:
                 (cutoff,)
             ).fetchone()["avg"] or 0
 
+            # Per-direction accuracy (LONG=up, SHORT=down, RANGE=flat)
+            direction_stats = {}
+            direction_map = {"up": "LONG", "down": "SHORT", "flat": "RANGE"}
+            for db_dir, label in direction_map.items():
+                d_total = conn.execute(
+                    "SELECT COUNT(*) as cnt FROM predictions WHERE predicted_direction = ? AND evaluated_24h_at IS NOT NULL AND created_at > ?",
+                    (db_dir, cutoff)
+                ).fetchone()["cnt"]
+                d_correct = conn.execute(
+                    "SELECT COUNT(*) as cnt FROM predictions WHERE predicted_direction = ? AND direction_correct_24h = 1 AND created_at > ?",
+                    (db_dir, cutoff)
+                ).fetchone()["cnt"]
+                d_pnl = conn.execute(
+                    "SELECT AVG(pnl_pct_24h) as avg FROM predictions WHERE predicted_direction = ? AND pnl_pct_24h IS NOT NULL AND created_at > ?",
+                    (db_dir, cutoff)
+                ).fetchone()["avg"] or 0
+                direction_stats[label] = {
+                    "total": d_total,
+                    "correct": d_correct,
+                    "accuracy": round(d_correct / max(d_total, 1) * 100, 1),
+                    "avg_pnl": round(d_pnl, 2),
+                }
+
             # Best / worst predictions
             best = conn.execute(
                 "SELECT token_ticker, verdict, pnl_pct_7d FROM predictions WHERE pnl_pct_7d IS NOT NULL AND created_at > ? ORDER BY pnl_pct_7d DESC LIMIT 3",
@@ -428,6 +451,7 @@ class LearningLoop:
                 "avg_confidence_incorrect": round(avg_conf_incorrect, 1),
                 "avg_pnl_24h": round(avg_pnl, 2),
                 "regime_accuracy": regime_stats,
+                "direction_accuracy": direction_stats,
                 "best_predictions": [dict(b) for b in best],
                 "worst_predictions": [dict(w) for w in worst],
             }
