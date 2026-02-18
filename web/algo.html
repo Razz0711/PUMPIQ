@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PumpIQ AlgoTrader — Crypto Algorithmic Trading Platform</title>
+<title>NexYpher AlgoTrader — Crypto Algorithmic Trading Platform</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -1429,7 +1429,7 @@ a:hover { text-decoration: underline; }
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
         <div class="sidebar-logo">P</div>
-        <span class="sidebar-brand">PumpIQ</span>
+        <span class="sidebar-brand">NexYpher</span>
         <button class="sidebar-toggle" onclick="toggleSidebar()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
         </button>
@@ -2369,7 +2369,7 @@ a:hover { text-decoration: underline; }
     <div class="page" id="page-subscription">
         <div style="text-align:center;margin-bottom:32px;">
             <div class="section-heading" style="margin-bottom:4px;">Choose Your Plan</div>
-            <p style="color:var(--text-secondary);font-size:14px;">Unlock the full power of PumpIQ AlgoTrader</p>
+            <p style="color:var(--text-secondary);font-size:14px;">Unlock the full power of NexYpher AlgoTrader</p>
             <!-- Billing Period Toggle -->
             <div class="billing-toggle" style="margin-top:16px;">
                 <button class="billing-btn active" onclick="switchBilling(this,'monthly')">Monthly</button>
@@ -2471,10 +2471,10 @@ a:hover { text-decoration: underline; }
             <div class="faq-list">
                 <div class="faq-item">
                     <div class="faq-question" onclick="toggleFaq(this)">
-                        <span>What is PumpIQ AlgoTrader?</span>
+                        <span>What is NexYpher AlgoTrader?</span>
                         <span class="faq-arrow">▼</span>
                     </div>
-                    <div class="faq-answer">PumpIQ AlgoTrader is a professional crypto algorithmic trading platform that lets you build, backtest, and deploy automated trading strategies across multiple exchanges — all without coding.</div>
+                    <div class="faq-answer">NexYpher AlgoTrader is a professional crypto algorithmic trading platform that lets you build, backtest, and deploy automated trading strategies across multiple exchanges — all without coding.</div>
                 </div>
                 <div class="faq-item">
                     <div class="faq-question" onclick="toggleFaq(this)">
@@ -2615,7 +2615,7 @@ const state = {
 };
 
 function authHeaders() {
-    const token = localStorage.getItem('pumpiq_token');
+    const token = localStorage.getItem('nexypher_token');
     return token ? { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
 }
 
@@ -2679,7 +2679,7 @@ function applyTheme() {
 
 // ── User Info ──
 function loadUserInfo() {
-    const token = localStorage.getItem('pumpiq_token');
+    const token = localStorage.getItem('nexypher_token');
     if (!token) return;
     fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } })
         .then(r => r.ok ? r.json() : null)
@@ -3755,7 +3755,7 @@ function exportReports() {
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = 'pumpiq_report.csv'; a.click();
+    a.href = url; a.download = 'nexypher_report.csv'; a.click();
     URL.revokeObjectURL(url);
     toast('Report exported!', 'success');
 }
@@ -3809,7 +3809,7 @@ function exportLogs() {
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = 'pumpiq_engine_logs.csv'; a.click();
+    a.href = url; a.download = 'nexypher_engine_logs.csv'; a.click();
     URL.revokeObjectURL(url);
     toast('Logs exported!', 'success');
 }

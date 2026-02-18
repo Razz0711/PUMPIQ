@@ -395,7 +395,7 @@ class NLGEngine:
         modes_str = ", ".join(m.value.title() for m in rs.enabled_modes)
         return (
             f"{'═' * 62}\n"
-            f"  PUMPIQ ANALYSIS REPORT\n"
+            f"  NEXYPHER ANALYSIS REPORT\n"
             f"  Generated: {rs.generated_at.strftime('%Y-%m-%d %H:%M UTC') if rs.generated_at else 'N/A'}\n"
             f"  Market: {rs.market_condition.value.title()}\n"
             f"  Active Modes: {modes_str}\n"

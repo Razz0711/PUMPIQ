@@ -1,5 +1,5 @@
 """
-Configuration Manager for PumpIQ
+Configuration Manager for NexYpher
 Handles loading, validation, and merging of user configurations
 """
 

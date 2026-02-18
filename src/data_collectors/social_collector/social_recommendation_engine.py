@@ -369,7 +369,7 @@ class SocialRecommendationEngine:
 
         lines = [
             "═" * 60,
-            f"  PUMPIQ SOCIAL-ONLY ANALYSIS",
+            f"  NEXYPHER SOCIAL-ONLY ANALYSIS",
             f"  Token: ${rec.token_ticker}" + (f" ({rec.token_name})" if rec.token_name else ""),
             f"  Generated: {rec.generated_at.strftime('%Y-%m-%d %H:%M UTC') if rec.generated_at else 'N/A'}",
             "═" * 60,

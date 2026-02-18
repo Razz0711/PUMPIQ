@@ -1,4 +1,4 @@
-# PumpIQ - Setup Guide
+# NexYpher - Setup Guide
 
 ## Prerequisites
 
@@ -13,7 +13,7 @@
 ### 1. Clone the Repository
 
 ```bash
-cd "C:\Users\RAJ\OneDrive\Documents\Desktop\PumpIQ"
+cd "C:\Users\RAJ\OneDrive\Documents\Desktop\NexYpher"
 ```
 
 ### 2. Create Virtual Environment
@@ -42,8 +42,8 @@ pip install -r requirements.txt
 ```bash
 psql -U postgres
 
-CREATE DATABASE pumpiq;
-\c pumpiq
+CREATE DATABASE nexypher;
+\c nexypher
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "timescaledb";
@@ -54,7 +54,7 @@ CREATE EXTENSION IF NOT EXISTS "timescaledb";
 #### Run Schema
 
 ```bash
-psql -U postgres -d pumpiq -f database/schemas/postgresql_schema.sql
+psql -U postgres -d nexypher -f database/schemas/postgresql_schema.sql
 ```
 
 ### 5. Set Up Redis
@@ -83,7 +83,7 @@ Create a `.env` file in the project root:
 
 ```bash
 # Database
-DATABASE_URL=postgresql://postgres:password@localhost:5432/pumpiq
+DATABASE_URL=postgresql://postgres:password@localhost:5432/nexypher
 REDIS_URL=redis://localhost:6379/0
 
 # OpenAI API
@@ -162,7 +162,7 @@ celery -A src.orchestrator.celery_app beat --loglevel=info
 ## Project Structure
 
 ```
-PumpIQ/
+NexYpher/
 ├── src/
 │   ├── api/                    # FastAPI application
 │   │   ├── __init__.py
@@ -227,7 +227,7 @@ pytest tests/test_config.py
 #### Build Docker Image
 
 ```bash
-docker build -t pumpiq:latest .
+docker build -t nexypher:latest .
 ```
 
 #### Run with Docker Compose
@@ -256,10 +256,10 @@ kubectl apply -f k8s/
 
 ```bash
 # Test PostgreSQL connection
-psql -U postgres -d pumpiq -c "SELECT version();"
+psql -U postgres -d nexypher -c "SELECT version();"
 
 # Check if TimescaleDB is loaded
-psql -U postgres -d pumpiq -c "SELECT default_version FROM pg_available_extensions WHERE name='timescaledb';"
+psql -U postgres -d nexypher -c "SELECT default_version FROM pg_available_extensions WHERE name='timescaledb';"
 ```
 
 ### Redis Connection Issues

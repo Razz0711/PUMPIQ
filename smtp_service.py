@@ -1,5 +1,5 @@
 """
-PumpIQ SMTP Email Service
+NEXYPHER SMTP Email Service
 ============================
 Handles email verification, password reset, and notifications via SMTP.
 Supports Gmail, Outlook, SendGrid, or any SMTP server.
@@ -10,10 +10,10 @@ Required env vars:
     SMTP_EMAIL         – sender email address
     SMTP_PASSWORD      – sender password or app password
     SMTP_USE_TLS       – true/false (default true)
-    APP_BASE_URL       – e.g. https://pumpiq.vercel.app
+    APP_BASE_URL       – e.g. https://NEXYPHER.vercel.app
 
 Optional:
-    SMTP_FROM_NAME     – display name (default "PumpIQ")
+    SMTP_FROM_NAME     – display name (default "NEXYPHER")
 """
 
 from __future__ import annotations
@@ -51,7 +51,7 @@ def _send_email(to_email: str, subject: str, html_body: str) -> bool:
     smtp_port = int(_cfg("SMTP_PORT", "587"))
     smtp_email = _cfg("SMTP_EMAIL")
     smtp_password = _cfg("SMTP_PASSWORD")
-    smtp_from_name = _cfg("SMTP_FROM_NAME", "PumpIQ")
+    smtp_from_name = _cfg("SMTP_FROM_NAME", "NEXYPHER")
     use_tls = _cfg("SMTP_USE_TLS", "true").lower() == "true"
 
     msg = MIMEMultipart("alternative")
@@ -109,14 +109,14 @@ def _base_template(title: str, content: str) -> str:
         <div style="max-width: 500px; margin: 0 auto; background: #14141f; border-radius: 16px;
                     padding: 40px; border: 1px solid #2a2a3a;">
             <div style="text-align: center; margin-bottom: 30px;">
-                <h1 style="color: #7c5cff; font-size: 28px; margin: 0;">🚀 PumpIQ</h1>
+                <h1 style="color: #7c5cff; font-size: 28px; margin: 0;">🚀 NEXYPHER</h1>
                 <p style="color: #888; font-size: 14px; margin-top: 4px;">Smart Crypto Intelligence</p>
             </div>
             <h2 style="color: #fff; font-size: 20px; margin-bottom: 16px;">{title}</h2>
             {content}
             <hr style="border: none; border-top: 1px solid #2a2a3a; margin: 30px 0 16px;">
             <p style="color: #666; font-size: 11px; text-align: center;">
-                &copy; PumpIQ — This is an automated email. Do not reply.
+                &copy; NEXYPHER — This is an automated email. Do not reply.
             </p>
         </div>
     </body>
@@ -126,12 +126,12 @@ def _base_template(title: str, content: str) -> str:
 
 def send_verification_email(to_email: str, username: str, token: str) -> bool:
     """Send email verification link."""
-    base_url = _cfg("APP_BASE_URL", "https://pumpiq.vercel.app")
+    base_url = _cfg("APP_BASE_URL", "https://NEXYPHER.vercel.app")
     verify_url = f"{base_url}/verify-email?token={token}"
     content = f"""
     <p style="color: #ccc; line-height: 1.6;">
         Hey <strong>{username}</strong>,<br><br>
-        Welcome to PumpIQ! Please verify your email address to activate your account.
+        Welcome to NEXYPHER! Please verify your email address to activate your account.
     </p>
     <div style="text-align: center; margin: 28px 0;">
         <a href="{verify_url}"
@@ -147,17 +147,17 @@ def send_verification_email(to_email: str, username: str, token: str) -> bool:
     </p>
     <p style="color: #888; font-size: 12px;">This link expires in 24 hours.</p>
     """
-    return _send_email(to_email, "Verify your PumpIQ email", _base_template("Verify Your Email", content))
+    return _send_email(to_email, "Verify your NEXYPHER email", _base_template("Verify Your Email", content))
 
 
 def send_registration_email(to_email: str, username: str, password: str) -> bool:
     """Send professional registration confirmation with credentials."""
-    base_url = _cfg("APP_BASE_URL", "https://pumpiq.vercel.app")
+    base_url = _cfg("APP_BASE_URL", "https://NEXYPHER.vercel.app")
     masked_pw = password[:2] + "*" * (len(password) - 3) + password[-1] if len(password) > 3 else "***"
     content = f"""
     <p style="color: #ccc; line-height: 1.6;">
         Dear <strong>{username}</strong>,<br><br>
-        Thank you for registering with <strong>PumpIQ</strong> &mdash; your smart crypto intelligence platform.
+        Thank you for registering with <strong>NEXYPHER</strong> &mdash; your smart crypto intelligence platform.
         Your account has been successfully created.
     </p>
 
@@ -188,7 +188,7 @@ def send_registration_email(to_email: str, username: str, password: str) -> bool
            style="display: inline-block; background: linear-gradient(135deg, #7c5cff, #00d4aa);
                   color: #fff; text-decoration: none; padding: 14px 36px; border-radius: 10px;
                   font-weight: 600; font-size: 15px;">
-            Go to PumpIQ
+            Go to NEXYPHER
         </a>
     </div>
 
@@ -199,14 +199,14 @@ def send_registration_email(to_email: str, username: str, password: str) -> bool
     """
     return _send_email(
         to_email,
-        "Welcome to PumpIQ \u2014 Registration Successful \U0001f680",
+        "Welcome to NEXYPHER \u2014 Registration Successful \U0001f680",
         _base_template("Registration Successful", content),
     )
 
 
 def send_password_reset_email(to_email: str, username: str, token: str) -> bool:
     """Send password reset link."""
-    base_url = _cfg("APP_BASE_URL", "https://pumpiq.vercel.app")
+    base_url = _cfg("APP_BASE_URL", "https://NEXYPHER.vercel.app")
     reset_url = f"{base_url}/reset-password?token={token}"
     content = f"""
     <p style="color: #ccc; line-height: 1.6;">
@@ -227,16 +227,16 @@ def send_password_reset_email(to_email: str, username: str, token: str) -> bool:
     </p>
     <p style="color: #888; font-size: 12px;">This link expires in 1 hour. If you didn't request this, ignore this email.</p>
     """
-    return _send_email(to_email, "Reset your PumpIQ password", _base_template("Reset Your Password", content))
+    return _send_email(to_email, "Reset your NEXYPHER password", _base_template("Reset Your Password", content))
 
 
 def send_welcome_email(to_email: str, username: str) -> bool:
     """Send welcome email after verification."""
-    base_url = _cfg("APP_BASE_URL", "https://pumpiq.vercel.app")
+    base_url = _cfg("APP_BASE_URL", "https://NEXYPHER.vercel.app")
     content = f"""
     <p style="color: #ccc; line-height: 1.6;">
         Hey <strong>{username}</strong>,<br><br>
-        Your email is verified and your PumpIQ account is fully active! 🎉
+        Your email is verified and your NEXYPHER account is fully active! 🎉
     </p>
     <div style="background: #1a1a2e; border-radius: 10px; padding: 20px; margin: 20px 0;">
         <p style="color: #aaa; margin: 0 0 10px;">Here's what you can do now:</p>
@@ -252,17 +252,17 @@ def send_welcome_email(to_email: str, username: str) -> bool:
            style="display: inline-block; background: linear-gradient(135deg, #7c5cff, #00d4aa);
                   color: #fff; text-decoration: none; padding: 14px 36px; border-radius: 10px;
                   font-weight: 600; font-size: 15px;">
-            Go to PumpIQ
+            Go to NEXYPHER
         </a>
     </div>
     """
-    return _send_email(to_email, "Welcome to PumpIQ! 🚀", _base_template("Welcome to PumpIQ!", content))
+    return _send_email(to_email, "Welcome to NEXYPHER! 🚀", _base_template("Welcome to NEXYPHER!", content))
 
 
 def send_price_alert_email(to_email: str, username: str, coin_name: str, symbol: str,
                            price: float, alert_type: str, threshold: float) -> bool:
     """Send a price alert notification."""
-    base_url = _cfg("APP_BASE_URL", "https://pumpiq.vercel.app")
+    base_url = _cfg("APP_BASE_URL", "https://NEXYPHER.vercel.app")
     direction = "above" if alert_type == "above" else "below"
     content = f"""
     <p style="color: #ccc; line-height: 1.6;">
@@ -281,7 +281,7 @@ def send_price_alert_email(to_email: str, username: str, coin_name: str, symbol:
            style="display: inline-block; background: linear-gradient(135deg, #7c5cff, #00d4aa);
                   color: #fff; text-decoration: none; padding: 14px 36px; border-radius: 10px;
                   font-weight: 600; font-size: 15px;">
-            View on PumpIQ
+            View on NEXYPHER
         </a>
     </div>
     """
@@ -300,7 +300,7 @@ def _get_ip_geolocation(ip_address: str) -> dict:
         if ip_address in ("127.0.0.1", "localhost", "::1", "unknown") or ip_address.startswith(("192.168.", "10.", "172.")):
             return {"city": "Local Network", "region": "", "country": "India", "isp": "Local", "query": ip_address, "lat": 0, "lon": 0, "offset": 19800, "timezone": "Asia/Kolkata"}
         url = f"http://ip-api.com/json/{ip_address}?fields=status,message,country,regionName,city,isp,query,lat,lon,timezone,offset"
-        req = urllib.request.Request(url, headers={"User-Agent": "PumpIQ/3.0"})
+        req = urllib.request.Request(url, headers={"User-Agent": "NEXYPHER/3.0"})
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read().decode())
             if data.get("status") == "success":
@@ -377,7 +377,7 @@ def send_login_alert_email(to_email: str, username: str, ip_address: str, user_a
     content = f"""
     <p style="color: #ccc; line-height: 1.6;">
         Dear <strong>{username}</strong>,<br><br>
-        We detected a new login to your PumpIQ account. If this was you, no action is needed.
+        We detected a new login to your NEXYPHER account. If this was you, no action is needed.
     </p>
 
     <div style="background: #1a1a2e; border-radius: 12px; padding: 24px; margin: 24px 0; border: 1px solid #2a2a3a;">
@@ -425,7 +425,7 @@ def send_login_alert_email(to_email: str, username: str, ip_address: str, user_a
     """
     return _send_email(
         to_email,
-        f"\U0001F6E1 PumpIQ Security Alert — New Login from {location_str}",
+        f"\U0001F6E1 NEXYPHER Security Alert — New Login from {location_str}",
         _base_template("New Login Detected", content),
     )
 
@@ -451,7 +451,7 @@ def send_trade_email(
     """Send a detailed trade notification email for every BUY or SELL."""
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc).strftime("%B %d, %Y at %I:%M %p UTC")
-    base_url = _cfg("APP_BASE_URL", "https://pumpiq.vercel.app")
+    base_url = _cfg("APP_BASE_URL", "https://NEXYPHER.vercel.app")
 
     is_buy = action.upper() == "BUY"
     action_label = "BUY" if is_buy else "SELL"
@@ -547,7 +547,7 @@ def send_trade_email(
     content = f"""
     <p style="color: #ccc; line-height: 1.6;">
         Hey <strong>{username}</strong>,<br><br>
-        Your PumpIQ Auto Trader has executed a <strong style="color:{action_color}">{action_label}</strong> order.
+        Your NEXYPHER Auto Trader has executed a <strong style="color:{action_color}">{action_label}</strong> order.
         Here are the details:
     </p>
 
@@ -579,12 +579,12 @@ def send_trade_email(
     </div>
 
     <p style="color: #888; font-size: 12px; line-height: 1.6; text-align: center;">
-        This trade was executed automatically by PumpIQ Auto Trader.<br>
+        This trade was executed automatically by NEXYPHER Auto Trader.<br>
         You can manage your settings or turn off auto-trading from your dashboard.
     </p>
     """
 
     pnl_str = f" | P&L: {'+' if pnl >= 0 else ''}{pnl_pct:.1f}%" if not is_buy else ""
-    subject = f"{action_emoji} PumpIQ Auto Trade: {action_label} {symbol.upper()} @ ${price:,.4f}{pnl_str}"
+    subject = f"{action_emoji} NEXYPHER Auto Trade: {action_label} {symbol.upper()} @ ${price:,.4f}{pnl_str}"
 
     return _send_email(to_email, subject, _base_template(f"Trade Executed — {action_label} {symbol.upper()}", content))

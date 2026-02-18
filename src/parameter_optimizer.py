@@ -51,8 +51,8 @@ N_TRIALS = 50             # Optuna trials per optimisation run
 ACCURACY_REFRESH = 0.50   # retrain if accuracy drops below this
 
 IS_VERCEL = bool(os.getenv("VERCEL"))
-DB_PATH = "/tmp/pumpiq_params.db" if IS_VERCEL else os.path.join(
-    os.path.dirname(os.path.dirname(__file__)), "pumpiq_params.db"
+DB_PATH = "/tmp/nexypher_params.db" if IS_VERCEL else os.path.join(
+    os.path.dirname(os.path.dirname(__file__)), "nexypher_params.db"
 )
 
 

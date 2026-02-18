@@ -1,5 +1,5 @@
 """
-PumpIQ SMS Service — Twilio Verify Integration
+NEXYPHER SMS Service — Twilio Verify Integration
 ================================================
 Sends real OTP SMS to phone numbers via Twilio Verify API.
 Twilio Verify handles OTP generation, delivery, and verification.

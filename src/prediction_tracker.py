@@ -30,8 +30,8 @@ logger = logging.getLogger(__name__)
 # ── Database ──────────────────────────────────────────────────────
 
 IS_VERCEL = bool(os.getenv("VERCEL"))
-DB_PATH = "/tmp/pumpiq_learning.db" if IS_VERCEL else os.path.join(
-    os.path.dirname(os.path.dirname(__file__)), "pumpiq_learning.db"
+DB_PATH = "/tmp/nexypher_learning.db" if IS_VERCEL else os.path.join(
+    os.path.dirname(os.path.dirname(__file__)), "nexypher_learning.db"
 )
 
 

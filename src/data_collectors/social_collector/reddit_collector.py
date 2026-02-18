@@ -116,7 +116,7 @@ class RedditCollector:
         self,
         client_id: str = "",
         client_secret: str = "",
-        user_agent: str = "PumpIQ/1.0",
+        user_agent: str = "NexYpher/1.0",
         analyzer: Optional[CryptoSentimentAnalyzer] = None,
     ):
         self.client_id = client_id

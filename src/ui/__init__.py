@@ -1,5 +1,5 @@
 """
-PumpIQ – User Interface & Experience Layer
+NexYpher – User Interface & Experience Layer
 =============================================
 Phase 4: Query Intent Recognition, Response Formatting,
 and User Configuration & Personalization.

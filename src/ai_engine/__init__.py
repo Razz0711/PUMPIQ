@@ -1,5 +1,5 @@
 """
-PumpIQ – AI Synthesis Engine
+NexYpher – AI Synthesis Engine
 ===============================
 Phase 3: AI Orchestration, Confidence Scoring, Prompt Engineering,
 and Natural Language Generation.

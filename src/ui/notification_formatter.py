@@ -173,7 +173,7 @@ class NotificationFormatter:
         short_body = f"{token} T{target_num} hit! +{pct:.0f}%"
 
         html_body = (
-            f"<h2>🎯 PumpIQ Alert: {token} hit Target {target_num}</h2>"
+            f"<h2>🎯 NexYpher Alert: {token} hit Target {target_num}</h2>"
             f"<p>Entry: ${entry_price:.8g} &rarr; Current: ${current_price:.8g} (<strong>+{pct:.0f}%</strong>)</p>"
         )
         if next_target:
@@ -252,7 +252,7 @@ class NotificationFormatter:
         short_body = f"NEW: {token} {verdict} ({confidence:.0f}/10)"
 
         html_body = (
-            f"<h2>🆕 New PumpIQ Pick: {token}</h2>"
+            f"<h2>🆕 New NexYpher Pick: {token}</h2>"
             f"<p><strong>{verdict}</strong> | Confidence: {confidence:.1f}/10 | Risk: {risk}</p>"
             f"<p>Entry: ${entry_low:.8g} | Upside: +{target_1_pct:.0f}%</p>"
             f'<p><a href="{{action_url}}">View Full Recommendation</a></p>'

@@ -1,4 +1,4 @@
-# PumpIQ Data Flow Diagram
+# NexYpher Data Flow Diagram
 
 ## High-Level Data Flow
 

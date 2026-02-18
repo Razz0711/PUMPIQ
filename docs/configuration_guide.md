@@ -2,7 +2,7 @@
 
 ## Overview
 
-PumpIQ uses a flexible configuration system that allows users to customize their trading recommendations by enabling/disabling data sources and adjusting various parameters.
+NexYpher uses a flexible configuration system that allows users to customize their trading recommendations by enabling/disabling data sources and adjusting various parameters.
 
 ## Configuration Files
 
@@ -353,7 +353,7 @@ def collect_data_for_token(token_id, config):
 ### Example: Update User Configuration
 
 ```bash
-curl -X PUT https://api.pumpiq.com/v1/user/preferences \
+curl -X PUT https://api.nexypher.com/v1/user/preferences \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{

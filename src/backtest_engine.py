@@ -1,5 +1,5 @@
 """
-PumpIQ Backtest Engine v2.0 — Multi-Directional Strategy Backtester
+NexYpher Backtest Engine v2.0 — Multi-Directional Strategy Backtester
 =====================================================================
 Mandatory backtest verification pipeline for all token recommendations.
 

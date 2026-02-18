@@ -1,5 +1,5 @@
 """
-PumpIQ In-Memory Cache Layer
+NEXYPHER In-Memory Cache Layer
 ============================
 Thread-safe TTL-based caching to reduce external API calls
 (CoinGecko, DexScreener, Gemini) and improve response times.

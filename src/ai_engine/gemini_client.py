@@ -62,7 +62,7 @@ class GeminiClient:
 
         client = GeminiClient(api_key="AIza...")
         resp = await client.chat(
-            system_prompt="You are PumpIQ …",
+            system_prompt="You are NexYpher …",
             user_prompt="Analyze $BONK …",
         )
         print(resp.content)

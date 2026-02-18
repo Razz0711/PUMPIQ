@@ -1,5 +1,5 @@
 """
-PumpIQ – Data Collectors
+NexYpher – Data Collectors
 ==========================
 Modules that pull live data from external APIs.
 

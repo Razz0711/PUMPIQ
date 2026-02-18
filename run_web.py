@@ -1,10 +1,10 @@
 """
-PumpIQ – Launch the web application.
+NEXYPHER – Launch the web application.
 
 Usage:
     python run_web.py
 
-Live:    https://pumpiq.vercel.app
+Live:    https://NEXYPHER.vercel.app
 Local:   http://localhost:8000
 """
 
@@ -12,8 +12,8 @@ import uvicorn
 
 if __name__ == "__main__":
     print("\n" + "=" * 50)
-    print("  PumpIQ – AI Crypto Intelligence")
-    print("  Live:  https://pumpiq.vercel.app")
+    print("  NEXYPHER – AI Crypto Intelligence")
+    print("  Live:  https://NEXYPHER.vercel.app")
     print("  Local: http://localhost:8000")
     print("=" * 50 + "\n")
 

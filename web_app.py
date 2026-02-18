@@ -1,5 +1,5 @@
 """
-PumpIQ Web Application — Full Platform
+NEXYPHER Web Application — Full Platform
 =========================================
 Self-contained web server: auth, wallet connect, token feed, AI recs, leaderboard.
 
@@ -211,7 +211,7 @@ async def require_user(authorization: Optional[str] = Header(None)):
 # APP SETUP
 # ══════════════════════════════════════════════════════════════════
 
-app = FastAPI(title="PumpIQ", version="2.0.0")
+app = FastAPI(title="NEXYPHER", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -253,7 +253,7 @@ def _ensure_initialized():
 
     auth.init_db()
     trading_engine.init_trading_tables()
-    logger.info("PumpIQ v2 initialized")
+    logger.info("NEXYPHER v2 initialized")
 
 
 @app.on_event("startup")
@@ -286,7 +286,7 @@ async def index():
 
 @app.get("/algo", response_class=HTMLResponse)
 async def algo_trader():
-    """Serve the PumpIQ AlgoTrader — crypto algorithmic trading platform."""
+    """Serve the NEXYPHER AlgoTrader — crypto algorithmic trading platform."""
     html_path = Path(__file__).parent / "web" / "algo.html"
     return HTMLResponse(html_path.read_text(encoding="utf-8"))
 
@@ -352,22 +352,22 @@ async def verify_email_page(token: str = Query(...)):
     error = auth.verify_email(token)
     if error:
         html = f"""
-        <html><head><meta charset="utf-8"><title>PumpIQ</title></head>
+        <html><head><meta charset="utf-8"><title>NEXYPHER</title></head>
         <body style="background:#0a0a0f;color:#e0e0e0;font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;">
             <div style="text-align:center;">
                 <h1 style="color:#ff4d4d;">Verification Failed</h1>
                 <p>{error}</p>
-                <a href="/" style="color:#7c5cff;">Back to PumpIQ</a>
+                <a href="/" style="color:#7c5cff;">Back to NEXYPHER</a>
             </div>
         </body></html>"""
     else:
         html = """
-        <html><head><meta charset="utf-8"><title>PumpIQ</title></head>
+        <html><head><meta charset="utf-8"><title>NEXYPHER</title></head>
         <body style="background:#0a0a0f;color:#e0e0e0;font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;">
             <div style="text-align:center;">
                 <h1 style="color:#00d4aa;">\u2705 Email Verified!</h1>
                 <p>Your account is now fully active.</p>
-                <a href="/" style="color:#7c5cff;">Go to PumpIQ</a>
+                <a href="/" style="color:#7c5cff;">Go to NEXYPHER</a>
             </div>
         </body></html>"""
     return HTMLResponse(html)
@@ -423,7 +423,7 @@ async def forgot_password(body: ForgotPasswordRequest):
 @app.get("/reset-password")
 async def reset_password_page(token: str = Query(...)):
     html = f"""
-    <html><head><meta charset="utf-8"><title>PumpIQ — Reset Password</title></head>
+    <html><head><meta charset="utf-8"><title>NEXYPHER — Reset Password</title></head>
     <body style="background:#0a0a0f;color:#e0e0e0;font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;">
         <div style="max-width:400px;width:100%;background:#14141f;border-radius:16px;padding:40px;border:1px solid #2a2a3a;">
             <h1 style="color:#7c5cff;text-align:center;">Reset Password</h1>
@@ -776,7 +776,7 @@ async def get_token_detail(coin_id: str):
     if gemini_client:
         try:
             prompt = (
-                f"You are PumpIQ, an expert crypto analyst AI. Analyze {coin.name} ({coin.symbol.upper()}):\n"
+                f"You are NEXYPHER, an expert crypto analyst AI. Analyze {coin.name} ({coin.symbol.upper()}):\n"
                 f"- Price: ${coin.current_price:,.6f}\n"
                 f"- 24h Change: {coin.price_change_pct_24h:+.2f}%\n"
                 f"- Market Cap: ${coin.market_cap:,.0f}\n"
@@ -795,7 +795,7 @@ async def get_token_detail(coin_id: str):
             )
             resp = await asyncio.wait_for(
                 gemini_client.chat(
-                    "You are PumpIQ, an expert cryptocurrency analyst.",
+                    "You are NEXYPHER, an expert cryptocurrency analyst.",
                     prompt,
                 ),
                 timeout=10,
@@ -1004,7 +1004,7 @@ async def get_ai_recommendations(
         try:
             top3 = tokens_scored[:3]
             prompt = (
-                "You are PumpIQ market analyst. Summarize this DexScreener market in 2-3 sentences:\n"
+                "You are NEXYPHER market analyst. Summarize this DexScreener market in 2-3 sentences:\n"
                 + "\n".join(f"- {t.name} ({t.symbol}): Score {t.score}/100, {t.verdict}" for t in top3)
                 + f"\nAverage score: {avg_score:.0f}/100"
             )
@@ -1697,7 +1697,7 @@ async def blockchain_verify_on_chain(tx_hash: str, user=Depends(require_user)):
 
 
 # ══════════════════════════════════════════════════════════════════
-# PUMPIQ WEB INSIGHT BOT
+# NEXYPHER WEB INSIGHT BOT
 # ══════════════════════════════════════════════════════════════════
 
 class BotAskRequest(BaseModel):
@@ -1865,7 +1865,7 @@ async def bot_ask(body: BotAskRequest, user=Depends(require_user)):
     # Try AI-powered answer
     if gemini_client:
         system_prompt = (
-            "You are PumpIQ Bot — an expert crypto intelligence assistant embedded in the PumpIQ platform. "
+            "You are NEXYPHER Bot — an expert crypto intelligence assistant embedded in the NEXYPHER platform. "
             "You answer questions ONLY about cryptocurrency, blockchain, DeFi, trading, and the crypto market. "
             "You ALWAYS ground your answers in the LIVE DATA provided below. "
             "If the user asks something outside of crypto/blockchain, politely decline and redirect to crypto topics.\n\n"
@@ -2613,6 +2613,205 @@ async def get_token_track_record(token_id: str, user=Depends(require_user)):
         raise HTTPException(503, "Learning loop not available")
     record = ll.get_token_track_record(token_id)
     return {"token_id": token_id, "track_record": record}
+
+
+# ══════════════════════════════════════════════════════════════════
+# ML CONTINUOUS LEARNING (Paper Trading + Feedback Loop)
+# ══════════════════════════════════════════════════════════════════
+
+def _get_continuous_learner():
+    """Lazy import of the ML continuous learner."""
+    try:
+        import sys, os, importlib.util
+        from importlib.machinery import SourceFileLoader
+        ml_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ml")
+        cl_path = os.path.join(ml_dir, "continuous_learner.py")
+        if not os.path.exists(cl_path):
+            return None
+        loader = SourceFileLoader("continuous_learner", cl_path)
+        spec = importlib.util.spec_from_loader("continuous_learner", loader, origin=cl_path)
+        mod = importlib.util.module_from_spec(spec)
+        mod.__file__ = cl_path
+        spec.loader.exec_module(mod)
+        return mod
+    except Exception:
+        return None
+
+
+@app.get("/api/ml/status")
+async def ml_continuous_learning_status(user=Depends(require_user)):
+    """Get ML continuous learning dashboard: wallet, trades, feedback, model info."""
+    cl = _get_continuous_learner()
+    if not cl:
+        raise HTTPException(503, "Continuous learner not available")
+    import sqlite3, json
+    result = {}
+    try:
+        conn = sqlite3.connect(cl.PAPER_TRADE_DB)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+
+        # Wallet
+        c.execute("SELECT * FROM paper_wallet WHERE id=1")
+        w = c.fetchone()
+        if w:
+            result["wallet"] = {
+                "balance": w["balance"],
+                "total_invested": w["total_invested"],
+                "total_returned": w["total_returned"],
+                "pnl": round(w["balance"] - cl.PAPER_WALLET_INITIAL, 2),
+                "pnl_pct": round((w["balance"] - cl.PAPER_WALLET_INITIAL) / cl.PAPER_WALLET_INITIAL * 100, 2),
+                "total_trades": w["total_trades"],
+                "winning_trades": w["winning_trades"],
+                "losing_trades": w["losing_trades"],
+                "win_rate": round(w["winning_trades"] / w["total_trades"] * 100, 1) if w["total_trades"] > 0 else 0,
+            }
+
+        # Open trades
+        c.execute("SELECT token_id, entry_price, invested_amount, prob_up_7d, predicted_direction, entry_time FROM paper_trades WHERE status='OPEN' ORDER BY entry_time DESC")
+        result["open_trades"] = [dict(r) for r in c.fetchall()]
+
+        # Recent closed trades
+        c.execute("SELECT token_id, outcome, pnl_pct, exit_reason, pnl_amount, evaluated_at FROM paper_trades WHERE status='CLOSED' ORDER BY evaluated_at DESC LIMIT 20")
+        result["recent_trades"] = [dict(r) for r in c.fetchall()]
+
+        # Feedback stats
+        c.execute("SELECT COUNT(*) as total, SUM(CASE WHEN sample_weight > 1 THEN 1 ELSE 0 END) as reinforced, SUM(CASE WHEN sample_weight < 1 THEN 1 ELSE 0 END) as penalized FROM feedback_labels")
+        fb = c.fetchone()
+        result["feedback"] = {"total": fb["total"], "reinforced": fb["reinforced"] or 0, "penalized": fb["penalized"] or 0}
+
+        # Learning log
+        c.execute("SELECT event_type, description, accuracy_before, accuracy_after, created_at FROM learning_log ORDER BY created_at DESC LIMIT 10")
+        result["learning_history"] = [dict(r) for r in c.fetchall()]
+
+        conn.close()
+    except Exception as e:
+        logger.error("ML status error: %s", e)
+
+    # Model metadata
+    try:
+        import os as _os
+        meta_path = _os.path.join(cl.MODELS_DIR, "model_metadata.json")
+        if _os.path.exists(meta_path):
+            with open(meta_path) as f:
+                meta = json.load(f)
+            result["model"] = {
+                "version": meta.get("version"),
+                "trained_at": meta.get("trained_at"),
+                "training_mode": meta.get("training_mode", "initial_train"),
+                "n_features": meta.get("n_features"),
+                "accuracy_24h": meta.get("model_24h", {}).get("cv_mean"),
+                "accuracy_7d": meta.get("model_7d", {}).get("cv_mean"),
+                "accuracy_dir": meta.get("model_dir", {}).get("cv_mean"),
+            }
+    except Exception:
+        pass
+
+    return result
+
+
+@app.post("/api/ml/paper-trade")
+async def ml_execute_paper_trades(user=Depends(require_user)):
+    """Execute paper trades based on current ML model predictions."""
+    cl = _get_continuous_learner()
+    if not cl:
+        raise HTTPException(503, "Continuous learner not available")
+    try:
+        trades = cl.execute_paper_trades("1d")
+        return {"trades_executed": trades, "wallet_balance": cl.get_wallet_balance()}
+    except Exception as e:
+        raise HTTPException(500, f"Paper trade error: {e}")
+
+
+@app.post("/api/ml/evaluate")
+async def ml_evaluate_trades(user=Depends(require_user)):
+    """Evaluate outcomes of open paper trades."""
+    cl = _get_continuous_learner()
+    if not cl:
+        raise HTTPException(503, "Continuous learner not available")
+    try:
+        closed = cl.evaluate_paper_trades()
+        return {"trades_closed": closed, "wallet_balance": cl.get_wallet_balance()}
+    except Exception as e:
+        raise HTTPException(500, f"Evaluate error: {e}")
+
+
+@app.post("/api/ml/feedback")
+async def ml_generate_feedback(user=Depends(require_user)):
+    """Generate feedback labels from closed paper trades."""
+    cl = _get_continuous_learner()
+    if not cl:
+        raise HTTPException(503, "Continuous learner not available")
+    try:
+        count = cl.generate_feedback_labels()
+        return {"feedback_generated": count}
+    except Exception as e:
+        raise HTTPException(500, f"Feedback error: {e}")
+
+
+@app.post("/api/ml/retrain")
+async def ml_retrain_with_feedback(user=Depends(require_user)):
+    """Retrain ML models using feedback-weighted samples."""
+    cl = _get_continuous_learner()
+    if not cl:
+        raise HTTPException(503, "Continuous learner not available")
+    try:
+        result = cl.retrain_with_feedback("1d", min_feedback=5)
+        if result:
+            return {"retrained": True, "version": result.get("version"), "accuracy_24h": result.get("model_24h", {}).get("cv_mean"), "accuracy_7d": result.get("model_7d", {}).get("cv_mean")}
+        return {"retrained": False, "reason": "Not enough feedback labels yet"}
+    except Exception as e:
+        raise HTTPException(500, f"Retrain error: {e}")
+
+
+@app.post("/api/ml/loop")
+async def ml_run_learning_loop(user=Depends(require_user)):
+    """Run one full iteration of the continuous learning loop."""
+    cl = _get_continuous_learner()
+    if not cl:
+        raise HTTPException(503, "Continuous learner not available")
+    try:
+        result = cl.run_learning_loop("1d")
+        return result
+    except Exception as e:
+        raise HTTPException(500, f"Loop error: {e}")
+
+
+@app.post("/api/ml/import-real")
+async def ml_import_real_trades(user=Depends(require_user)):
+    """Import real trade outcomes from Supabase into ML feedback loop."""
+    cl = _get_continuous_learner()
+    if not cl:
+        raise HTTPException(503, "Continuous learner not available")
+    try:
+        imported = cl.import_real_trade_outcomes()
+        return {"imported": imported}
+    except Exception as e:
+        raise HTTPException(500, f"Import error: {e}")
+
+
+@app.get("/api/ml/predict/{token_id}")
+async def ml_predict_token(token_id: str, user=Depends(require_user)):
+    """Get ML model prediction for a specific token."""
+    try:
+        import importlib.util
+        from importlib.machinery import SourceFileLoader
+        import os as _os
+        ml_dir = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "ml")
+        trainer_path = _os.path.join(ml_dir, "NEXYPHER model trainer \u00b7 py")
+        loader = SourceFileLoader("NEXYPHER_trainer", trainer_path)
+        spec = importlib.util.spec_from_loader("NEXYPHER_trainer", loader, origin=trainer_path)
+        trainer = importlib.util.module_from_spec(spec)
+        trainer.__file__ = trainer_path
+        spec.loader.exec_module(trainer)
+        result = trainer.predict_from_db(token_id, "1d")
+        if result:
+            return result
+        raise HTTPException(404, f"No data for {token_id}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Prediction error: {e}")
 
 
 # ══════════════════════════════════════════════════════════════════

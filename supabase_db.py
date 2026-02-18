@@ -1,5 +1,5 @@
 """
-PumpIQ — Supabase Database Client
+NEXYPHER — Supabase Database Client
 ====================================
 Configures and exports a Supabase client singleton.
 

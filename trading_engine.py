@@ -1,5 +1,5 @@
-﻿"""
-PumpIQ Autonomous Trading Engine
+"""
+NEXYPHER Autonomous Trading Engine
 ============================================================
 AI-powered autonomous crypto trading bot that:
 1. Checks REAL wallet balance (deposited from bank account)
@@ -379,6 +379,40 @@ def execute_sell(user_id, position_id, current_price, reason="manual"):
         # Record on blockchain (async, non-blocking)
         blockchain.record_transaction_async(tx_hash, "SELL", pos["symbol"], current_value)
 
+        # Feed outcome back to AI learning loop (evaluate prediction)
+        ll = _get_learning_loop()
+        if ll:
+            try:
+                ll.evaluate_predictions_with_price(
+                    token_ticker=pos["coin_id"],
+                    actual_price=current_price,
+                )
+            except Exception:
+                # Fallback: try direct DB update if method doesn't exist
+                try:
+                    import sqlite3 as _sq
+                    _ldb = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                        "NEXYPHER_learning.db")
+                    if os.path.exists(_ldb):
+                        _lconn = _sq.connect(_ldb)
+                        _lconn.execute("""
+                            UPDATE predictions SET
+                                actual_price_7d = ?,
+                                direction_correct_7d = CASE
+                                    WHEN predicted_direction = 'up' AND ? > price_at_prediction THEN 1
+                                    WHEN predicted_direction = 'down' AND ? < price_at_prediction THEN 1
+                                    ELSE 0 END,
+                                pnl_pct_7d = ?,
+                                evaluated_7d_at = datetime('now')
+                            WHERE token_ticker = ?
+                              AND evaluated_7d_at IS NULL
+                        """, (current_price, current_price, current_price,
+                              round(pnl_pct, 2), pos["coin_id"]))
+                        _lconn.commit()
+                        _lconn.close()
+                except Exception:
+                    pass
+
         return {"success": True, "pnl": round(pnl, 2), "pnl_pct": round(pnl_pct, 2), "amount": round(current_value, 2), "tx_hash": tx_hash}
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -464,7 +498,7 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
         try:
             top5 = sorted(opportunities, key=lambda x: x["score"], reverse=True)[:5]
             prompt = (
-                "You are PumpIQ, an expert crypto trading AI. For each coin below, write a detailed 2-3 sentence analysis explaining:\n"
+                "You are NEXYPHER, an expert crypto trading AI. For each coin below, write a detailed 2-3 sentence analysis explaining:\n"
                 "1. WHY you would buy it right now (momentum, volume, trend signals)\n"
                 "2. What RISKS exist (volatility, market cap, recent dumps)\n"
                 "3. Your RECOMMENDATION (Strong Buy, Buy, Hold, or Avoid) with a target % gain\n\n"
@@ -472,7 +506,7 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
                 + "\n".join(
                     f"- {t['name']} ({t['symbol']}): Price ${t['price']:,.6f}, "
                     f"24h Change: {t['change_24h']:+.1f}%, Market Cap: ${t['market_cap']:,.0f}, "
-                    f"Volume: ${t['volume_24h']:,.0f}, PumpIQ Score: {t['score']}/100"
+                    f"Volume: ${t['volume_24h']:,.0f}, NEXYPHER Score: {t['score']}/100"
                     for t in top5
                 )
                 + "\n\nFormat: COIN_SYMBOL: [Recommendation] - Detailed reasoning..."
@@ -763,12 +797,12 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
                 if ll:
                     try:
                         ll.record_prediction(
-                            token_id=opp["coin_id"],
+                            token_ticker=opp["coin_id"],
                             token_name=opp["name"],
-                            predicted_direction="bullish",
+                            verdict=bt_direction or "bullish",
                             confidence=opp["score"] / 10.0,
+                            composite_score=opp["score"],
                             price_at_prediction=opp["price"],
-                            reasoning=detailed_reasoning[:500],
                             market_regime="unknown",
                         )
                     except Exception:

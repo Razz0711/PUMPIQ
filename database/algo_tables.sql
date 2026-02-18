@@ -1,5 +1,5 @@
 -- ═══════════════════════════════════════════════════════════════
--- PumpIQ AlgoTrader Tables — Supabase (PostgreSQL)
+-- NexYpher AlgoTrader Tables — Supabase (PostgreSQL)
 -- Run this in Supabase SQL Editor
 -- ═══════════════════════════════════════════════════════════════
 

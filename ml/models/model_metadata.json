@@ -1,0 +1,178 @@
+{
+  "version": "20260218_171936",
+  "timeframe": "1d",
+  "trained_at": "2026-02-18T17:19:36.750983",
+  "feature_columns": [
+    "rsi_7",
+    "rsi_14",
+    "rsi_21",
+    "macd_line",
+    "macd_signal",
+    "macd_histogram",
+    "macd_crossover",
+    "bb_width",
+    "bb_position",
+    "ema_9_21_cross",
+    "ema_50_200_cross",
+    "price_above_ema200",
+    "volume_ratio",
+    "volume_spike",
+    "price_momentum_5d",
+    "price_momentum_10d",
+    "price_momentum_30d",
+    "rate_of_change_14",
+    "atr_14",
+    "volatility_10d",
+    "volatility_30d",
+    "dist_to_support_pct",
+    "dist_to_resist_pct",
+    "price_change_24h",
+    "price_change_7d",
+    "price_change_30d",
+    "volume_mcap_ratio",
+    "ath_change_pct",
+    "rsi_14_ma_diff",
+    "rsi_oversold",
+    "rsi_overbought",
+    "price_vs_sma20_pct",
+    "price_vs_ema50_pct",
+    "price_vs_ema200_pct",
+    "vol_ratio_10_30",
+    "momentum_accel",
+    "fear_greed_value",
+    "trend_encoded"
+  ],
+  "n_features": 38,
+  "xgb_params": {
+    "n_estimators": 1000,
+    "max_depth": 6,
+    "learning_rate": 0.03,
+    "subsample": 0.8,
+    "colsample_bytree": 0.7,
+    "min_child_weight": 5,
+    "gamma": 0.2,
+    "reg_alpha": 0.3,
+    "reg_lambda": 1.5,
+    "random_state": 42,
+    "n_jobs": -1,
+    "eval_metric": "logloss",
+    "tree_method": "hist"
+  },
+  "model_24h": {
+    "path": "C:\\Users\\RAJ\\OneDrive\\Documents\\Desktop\\PumpIQ\\ml\\models\\model_24h_1d_20260218_171936.pkl",
+    "cv_mean": 0.6393,
+    "cv_scores": [
+      0.6419,
+      0.6101,
+      0.6265,
+      0.6701,
+      0.6479
+    ],
+    "passes_threshold": true,
+    "top_features": [
+      [
+        "fear_greed_value",
+        0.0474
+      ],
+      [
+        "bb_width",
+        0.0372
+      ],
+      [
+        "dist_to_support_pct",
+        0.0342
+      ],
+      [
+        "volume_mcap_ratio",
+        0.0334
+      ],
+      [
+        "volume_spike",
+        0.0325
+      ],
+      [
+        "volatility_30d",
+        0.0325
+      ],
+      [
+        "price_vs_sma20_pct",
+        0.0321
+      ],
+      [
+        "ath_change_pct",
+        0.032
+      ],
+      [
+        "price_momentum_10d",
+        0.0319
+      ],
+      [
+        "rate_of_change_14",
+        0.0315
+      ]
+    ]
+  },
+  "model_7d": {
+    "path": "C:\\Users\\RAJ\\OneDrive\\Documents\\Desktop\\PumpIQ\\ml\\models\\model_7d_1d_20260218_171936.pkl",
+    "cv_mean": 0.6116,
+    "cv_scores": [
+      0.5989,
+      0.4975,
+      0.6128,
+      0.6735,
+      0.6755
+    ],
+    "passes_threshold": true,
+    "top_features": [
+      [
+        "volume_mcap_ratio",
+        0.0472
+      ],
+      [
+        "fear_greed_value",
+        0.0462
+      ],
+      [
+        "rate_of_change_14",
+        0.0349
+      ],
+      [
+        "price_vs_ema200_pct",
+        0.0347
+      ],
+      [
+        "price_momentum_30d",
+        0.0346
+      ],
+      [
+        "dist_to_support_pct",
+        0.0343
+      ],
+      [
+        "ath_change_pct",
+        0.0341
+      ],
+      [
+        "price_vs_sma20_pct",
+        0.0339
+      ],
+      [
+        "rsi_14_ma_diff",
+        0.0336
+      ],
+      [
+        "vol_ratio_10_30",
+        0.033
+      ]
+    ]
+  },
+  "model_dir": {
+    "path": "C:\\Users\\RAJ\\OneDrive\\Documents\\Desktop\\PumpIQ\\ml\\models\\model_dir_1d_20260218_171936.pkl",
+    "cv_mean": 0.396,
+    "direction_classes": [
+      "DOWN",
+      "SIDEWAYS",
+      "UP"
+    ]
+  }
+}

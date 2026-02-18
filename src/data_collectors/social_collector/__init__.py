@@ -1,5 +1,5 @@
 """
-PumpIQ Social Collector Package
+NexYpher Social Collector Package
 ================================
 Social sentiment analysis engine for cryptocurrency discussions.
 

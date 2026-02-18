@@ -1,5 +1,5 @@
 """
-PumpIQ Security & Rate Limiting Middleware
+NEXYPHER Security & Rate Limiting Middleware
 ==========================================
 Production-hardened middleware for:
 - API rate limiting (per-IP and per-user)

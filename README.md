@@ -1,7 +1,7 @@
-# PumpIQ - AI-Powered Cryptocurrency Trading Recommendation System
+# NexYpher - AI-Powered Cryptocurrency Trading Recommendation System
 
 ## Overview
-PumpIQ is an intelligent cryptocurrency trading recommendation system that analyzes multiple data sources using AI to generate actionable trading insights.
+NexYpher is an intelligent cryptocurrency trading recommendation system that analyzes multiple data sources using AI to generate actionable trading insights.
 
 ## System Architecture
 
@@ -22,7 +22,7 @@ PumpIQ is an intelligent cryptocurrency trading recommendation system that analy
 
 ## Project Structure
 ```
-PumpIQ/
+NexYpher/
 ├── src/
 │   ├── orchestrator/           # Main coordination service
 │   ├── data_collectors/        # Independent data collection services

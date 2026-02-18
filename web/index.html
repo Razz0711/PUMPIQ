@@ -1,20 +1,20 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PumpIQ — AI-Powered Crypto Intelligence</title>
-<meta name="description" content="PumpIQ is an AI-powered crypto intelligence platform. Real-time analysis, smart trading signals, and market insights powered by multi-model AI.">
-<meta name="keywords" content="crypto, AI, trading, bitcoin, ethereum, solana, DeFi, market analysis, PumpIQ">
-<meta property="og:title" content="PumpIQ — AI-Powered Crypto Intelligence">
+<title>NexYpher — AI-Powered Crypto Intelligence</title>
+<meta name="description" content="NexYpher is an AI-powered crypto intelligence platform. Real-time analysis, smart trading signals, and market insights powered by multi-model AI.">
+<meta name="keywords" content="crypto, AI, trading, bitcoin, ethereum, solana, DeFi, market analysis, NexYpher">
+<meta property="og:title" content="NexYpher — AI-Powered Crypto Intelligence">
 <meta property="og:description" content="Real-time AI crypto analysis, trading signals, and market insights. Your unfair edge in crypto markets.">
-<meta property="og:url" content="https://pumpiq.vercel.app">
+<meta property="og:url" content="https://nexypher.vercel.app">
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="PumpIQ">
+<meta property="og:site_name" content="NexYpher">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="PumpIQ — AI-Powered Crypto Intelligence">
+<meta name="twitter:title" content="NexYpher — AI-Powered Crypto Intelligence">
 <meta name="twitter:description" content="Real-time AI crypto analysis, trading signals, and market insights.">
-<link rel="canonical" href="https://pumpiq.vercel.app">
+<link rel="canonical" href="https://nexypher.vercel.app">
 <style>
 /* ── CSS Reset & Variables ────────────────────────────────── */
 :root {
@@ -862,7 +862,7 @@ a:hover { text-decoration: underline; }
 @keyframes toastIn { from { opacity:0; transform:translateX(40px); } to { opacity:1; transform:translateX(0); } }
 @keyframes toastOut { from { opacity:1; } to { opacity:0; transform:translateY(-10px); } }
 
-/* ── PumpIQ Chat Bot Widget ───────────────────────────────── */
+/* ── NexYpher Chat Bot Widget ───────────────────────────────── */
 .bot-fab {
     position:fixed; bottom:24px; right:24px; z-index:9000;
     width:56px; height:56px; border-radius:50%;
@@ -1804,7 +1804,7 @@ a:hover { text-decoration: underline; }
 <!-- HEADER                                                     -->
 <!-- ═══════════════════════════════════════════════════════════ -->
 <div class="header">
-    <div class="logo" onclick="navigate('home')">PumpIQ</div>
+    <div class="logo" onclick="navigate('home')">NexYpher</div>
     <div class="nav-tabs">
         <button class="nav-tab active" data-page="home">Home</button>
         <button class="nav-tab" data-page="feed">Token Feed</button>
@@ -1858,7 +1858,7 @@ a:hover { text-decoration: underline; }
         <div class="hero-tag">AI-POWERED CRYPTO INTELLIGENCE</div>
         <h1 class="hero-title">See through the noise.</h1>
         <p class="hero-desc">
-            PumpIQ fuses real-time data, multi-model AI reasoning, and transparent analytics to give you an unfair edge in crypto markets.
+            NexYpher fuses real-time data, multi-model AI reasoning, and transparent analytics to give you an unfair edge in crypto markets.
         </p>
         <div class="hero-steps">
             <div class="step-card">
@@ -2239,7 +2239,7 @@ a:hover { text-decoration: underline; }
     <div class="learning-hero">
         <div class="learning-hero-title">🧠 AI Learning Loop</div>
         <div class="learning-hero-desc">
-            Track how PumpIQ's AI evolves over time. Every prediction is recorded, evaluated against actual market movements, and used to refine future trading strategies.
+            Track how NexYpher's AI evolves over time. Every prediction is recorded, evaluated against actual market movements, and used to refine future trading strategies.
         </div>
         <div class="learning-actions">
             <button class="btn btn-primary" onclick="loadLearningStats()">📊 Refresh Stats</button>
@@ -2876,7 +2876,7 @@ a:hover { text-decoration: underline; }
 <!-- ═══════════════════════════════════════════════════════════ -->
 <div class="page" id="page-settings">
     <div class="section-title">⚙️ Settings</div>
-    <div class="section-desc">Customize your PumpIQ experience</div>
+    <div class="section-desc">Customize your NexYpher experience</div>
 
     <!-- Appearance -->
     <div class="card" style="margin-top:20px">
@@ -3378,7 +3378,7 @@ a:hover { text-decoration: underline; }
 <script>
 // ── State ─────────────────────────────────────────────────────
 let currentUser = null;
-let authToken = localStorage.getItem('pumpiq_token') || null;
+let authToken = localStorage.getItem('nexypher_token') || null;
 let currentPage = 'home';
 let feedSort = 'volume';
 let feedStatus = 'all';
@@ -3732,7 +3732,7 @@ async function submitAuth() {
         }
 
         authToken = data.access_token;
-        localStorage.setItem('pumpiq_token', authToken);
+        localStorage.setItem('nexypher_token', authToken);
         currentUser = data.user;
         updateAuthUI();
         closeModal('authModal');
@@ -3813,7 +3813,7 @@ async function resendVerificationFromLogin(email) {
 function logout() {
     authToken = null;
     currentUser = null;
-    localStorage.removeItem('pumpiq_token');
+    localStorage.removeItem('nexypher_token');
     updateAuthUI();
     navigate('home');
 }
@@ -3841,7 +3841,7 @@ async function checkAuth() {
         updateAuthUI();
     } catch {
         authToken = null;
-        localStorage.removeItem('pumpiq_token');
+        localStorage.removeItem('nexypher_token');
     }
 }
 
@@ -5739,7 +5739,7 @@ async function loadClosedPositions() {
 // ══════════════════════════════════════════════════════════════
 
 function loadSettings() {
-    const saved = JSON.parse(localStorage.getItem('pumpiq_settings') || '{}');
+    const saved = JSON.parse(localStorage.getItem('nexypher_settings') || '{}');
     if (saved.theme) { document.getElementById('settTheme').value = saved.theme; }
     if (saved.defaultExchange) document.getElementById('settDefaultExchange').value = saved.defaultExchange;
     if (saved.defaultStable) document.getElementById('settDefaultStable').value = saved.defaultStable;
@@ -5836,12 +5836,12 @@ function saveSettings() {
             analytics: document.getElementById('settAnalytics').checked,
         },
     };
-    localStorage.setItem('pumpiq_settings', JSON.stringify(settings));
+    localStorage.setItem('nexypher_settings', JSON.stringify(settings));
     showToast('Settings saved!', 'success');
 }
 
 function resetSettings() {
-    localStorage.removeItem('pumpiq_settings');
+    localStorage.removeItem('nexypher_settings');
     applyTheme('dark');
     document.documentElement.style.setProperty('--primary', '#6c5ce7');
     loadSettings();
@@ -5853,11 +5853,11 @@ function saveApiKey() {
     const key = document.getElementById('settApiKey').value.trim();
     const secret = document.getElementById('settApiSecret').value.trim();
     if (!key || !secret) { showToast('Enter both API Key and Secret', 'error'); return; }
-    const keys = JSON.parse(localStorage.getItem('pumpiq_api_keys') || '[]');
+    const keys = JSON.parse(localStorage.getItem('nexypher_api_keys') || '[]');
     const existing = keys.findIndex(k => k.exchange === exchange);
     const entry = { exchange, key: key.slice(0,6) + '...' + key.slice(-4), added: new Date().toISOString() };
     if (existing >= 0) keys[existing] = entry; else keys.push(entry);
-    localStorage.setItem('pumpiq_api_keys', JSON.stringify(keys));
+    localStorage.setItem('nexypher_api_keys', JSON.stringify(keys));
     document.getElementById('settApiKey').value = '';
     document.getElementById('settApiSecret').value = '';
     loadApiKeysDisplay();
@@ -5865,7 +5865,7 @@ function saveApiKey() {
 }
 
 function loadApiKeysDisplay() {
-    const keys = JSON.parse(localStorage.getItem('pumpiq_api_keys') || '[]');
+    const keys = JSON.parse(localStorage.getItem('nexypher_api_keys') || '[]');
     const container = document.getElementById('settApiKeysList');
     if (!keys.length) { container.innerHTML = '<div style="color:var(--text-muted);font-size:13px">No API keys configured</div>'; return; }
     container.innerHTML = keys.map(k => `
@@ -5877,16 +5877,16 @@ function loadApiKeysDisplay() {
 }
 
 function removeApiKey(exchange) {
-    let keys = JSON.parse(localStorage.getItem('pumpiq_api_keys') || '[]');
+    let keys = JSON.parse(localStorage.getItem('nexypher_api_keys') || '[]');
     keys = keys.filter(k => k.exchange !== exchange);
-    localStorage.setItem('pumpiq_api_keys', JSON.stringify(keys));
+    localStorage.setItem('nexypher_api_keys', JSON.stringify(keys));
     loadApiKeysDisplay();
     showToast(`${exchange} API key removed`, 'info');
 }
 
 // Apply saved settings on page load
 (function initSettings() {
-    const saved = JSON.parse(localStorage.getItem('pumpiq_settings') || '{}');
+    const saved = JSON.parse(localStorage.getItem('nexypher_settings') || '{}');
     if (saved.theme) applyTheme(saved.theme);
     if (saved.accent) document.documentElement.style.setProperty('--primary', saved.accent);
 })();
@@ -6262,7 +6262,7 @@ document.addEventListener('keydown', e => {
 });
 
 // ══════════════════════════════════════════════════════════════
-// PUMPIQ WEB INSIGHT BOT
+// NEXYPHER WEB INSIGHT BOT
 // ══════════════════════════════════════════════════════════════
 
 const BOT_SUGGESTIONS = [
@@ -6285,7 +6285,7 @@ function toggleBotWindow() {
         const msgs = document.getElementById('botMessages');
         if (msgs.children.length === 0) {
             appendBotMessage(
-                "Hey! 👋 I'm **PumpIQ Bot** — your crypto intelligence assistant.\n\n" +
+                "Hey! 👋 I'm **NexYpher Bot** — your crypto intelligence assistant.\n\n" +
                 "I fetch **live data** from CoinGecko, DexScreener & news to answer your questions. Try asking about any coin, market trends, or trading insights!",
                 []
             );
@@ -6457,13 +6457,13 @@ async function sendBotMessage() {
 
 </script>
 
-<!-- PumpIQ Bot Widget -->
-<button class="bot-fab has-dot" onclick="toggleBotWindow()" title="PumpIQ Bot">🤖</button>
+<!-- NexYpher Bot Widget -->
+<button class="bot-fab has-dot" onclick="toggleBotWindow()" title="NexYpher Bot">🤖</button>
 <div class="bot-window" id="botWindow">
     <div class="bot-header">
         <div class="bot-header-icon">🤖</div>
         <div class="bot-header-info">
-            <h3>PumpIQ Bot</h3>
+            <h3>NexYpher Bot</h3>
             <p>● Online — Live Web Insights</p>
         </div>
         <button class="bot-close" onclick="toggleBotWindow()">✕</button>

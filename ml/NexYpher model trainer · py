@@ -1,0 +1,1059 @@
+"""
+PumpIQ Model Trainer
+====================
+Trains XGBoost models on downloaded crypto data.
+Must run pumpiq_data_downloader.py first to populate the database.
+
+Models trained:
+  1. model_24h  → Predicts if price goes up 2%+ in next 24 hours
+  2. model_7d   → Predicts if price goes up 5%+ in next 7 days
+  3. model_dir  → Predicts direction: UP / DOWN / SIDEWAYS
+
+Usage:
+    python pumpiq_model_trainer.py --mode train    # Train fresh models
+    python pumpiq_model_trainer.py --mode evaluate # Evaluate saved models
+    python pumpiq_model_trainer.py --mode predict  # Predict for a coin
+      --coin bitcoin --timeframe 1d
+
+Requirements:
+    pip install xgboost scikit-learn joblib
+"""
+
+import os
+import sys
+import json
+import math
+import sqlite3
+import argparse
+import time
+from datetime import datetime
+
+
+# ── Optional imports with helpful error messages ─────────────────────────────
+try:
+    import xgboost as xgb
+except ImportError:
+    sys.exit("ERROR: xgboost not installed.\nRun: pip install xgboost")
+
+try:
+    from sklearn.model_selection import TimeSeriesSplit
+    from sklearn.metrics import (
+        accuracy_score, classification_report,
+        roc_auc_score, confusion_matrix
+    )
+    from sklearn.preprocessing import LabelEncoder
+except ImportError:
+    sys.exit("ERROR: scikit-learn not installed.\nRun: pip install scikit-learn")
+
+try:
+    import joblib
+except ImportError:
+    sys.exit("ERROR: joblib not installed.\nRun: pip install joblib")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CONFIGURATION
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Use absolute paths so loading via SourceFileLoader works from any CWD
+_ML_DIR        = os.path.dirname(os.path.abspath(__file__))
+DB_PATH        = os.path.join(_ML_DIR, "pumpiq_training_data.db")
+MODELS_DIR     = os.path.join(_ML_DIR, "models")
+METADATA_FILE  = os.path.join(MODELS_DIR, "model_metadata.json")
+
+# ── Feature column groups ────────────────────────────────────────────────────
+# DB_FEATURE_COLUMNS: read directly from technical_indicators table
+# NOTE: Raw price columns (ema_9, ema_200, bb_upper, etc.) are excluded
+#       because they are NOT comparable across tokens (BTC=$40k vs DOGE=$0.1).
+#       We use normalised/relative versions instead (price_vs_ema50_pct etc.)
+DB_FEATURE_COLUMNS = [
+    # RSI (already normalised 0-100)
+    "rsi_7", "rsi_14", "rsi_21",
+
+    # MACD (relative to itself)
+    "macd_line", "macd_signal", "macd_histogram", "macd_crossover",
+
+    # Bollinger Bands (width & position are normalised)
+    "bb_width", "bb_position",
+
+    # Moving average signals (binary/directional — cross-token safe)
+    "ema_9_21_cross", "ema_50_200_cross", "price_above_ema200",
+
+    # Volume (ratios — cross-token safe)
+    "volume_ratio", "volume_spike",
+
+    # Momentum (percentage changes — cross-token safe)
+    "price_momentum_5d", "price_momentum_10d", "price_momentum_30d",
+    "rate_of_change_14",
+
+    # Volatility & ATR (relative measures)
+    "atr_14", "volatility_10d", "volatility_30d",
+
+    # Distance to key levels (already percentage)
+    "dist_to_support_pct", "dist_to_resist_pct",
+]
+
+# MARKET_FEATURE_COLUMNS: joined from market_data table
+MARKET_FEATURE_COLUMNS = [
+    "price_change_24h", "price_change_7d", "price_change_30d",
+    "volume_mcap_ratio", "ath_change_pct",
+]
+
+# ENGINEERED_FEATURE_COLUMNS: computed at load time
+ENGINEERED_FEATURE_COLUMNS = [
+    # RSI-derived
+    "rsi_14_ma_diff",        # RSI(14) minus mean of RSI(7,14,21)
+    "rsi_oversold",          # 1 if RSI(14) < 30
+    "rsi_overbought",        # 1 if RSI(14) > 70
+
+    # Price vs moving averages (normalised distance)
+    "price_vs_sma20_pct",
+    "price_vs_ema50_pct",
+    "price_vs_ema200_pct",
+
+    # Volatility ratio
+    "vol_ratio_10_30",       # volatility_10d / volatility_30d
+
+    # Momentum acceleration
+    "momentum_accel",        # momentum_5d - momentum_10d
+
+    # Fear & Greed (from fear_greed table)
+    "fear_greed_value",
+
+    # Trend encoding (from trend_direction column)
+    "trend_encoded",         # UP=1, SIDEWAYS=0, DOWN=-1
+]
+
+# The full ordered list used for training (DB + market + engineered)
+FEATURE_COLUMNS = DB_FEATURE_COLUMNS + MARKET_FEATURE_COLUMNS + ENGINEERED_FEATURE_COLUMNS
+
+# XGBoost hyperparameters  (early_stopping handled in fit())
+XGB_PARAMS = {
+    "n_estimators":     1000,
+    "max_depth":        6,
+    "learning_rate":    0.03,
+    "subsample":        0.8,
+    "colsample_bytree": 0.7,
+    "min_child_weight": 5,
+    "gamma":            0.2,
+    "reg_alpha":        0.3,
+    "reg_lambda":       1.5,
+    "random_state":     42,
+    "n_jobs":           -1,
+    "eval_metric":      "logloss",
+    "tree_method":      "hist",
+}
+
+EARLY_STOPPING_ROUNDS = 50   # stop if no improvement for 50 rounds
+
+# Minimum requirements
+MIN_ROWS_TO_TRAIN  = 500
+MIN_TEST_ACCURACY  = 0.52   # 52% minimum to save model
+N_CV_SPLITS        = 5      # TimeSeriesSplit folds
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DATABASE LOADER
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _safe_float(val, default=0.0):
+    """Convert a value to float, returning default for None/invalid."""
+    if val is None:
+        return default
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return default
+
+
+def load_training_data(db_path: str, timeframe: str = "1d"):
+    """
+    Load features and labels from SQLite database.
+    Joins technical_indicators + training_labels + market_data + fear_greed.
+    Computes engineered features on-the-fly.
+    Returns: (X as list of dicts, y_24h list, y_7d list, y_dir list)
+    """
+    if not os.path.exists(db_path):
+        raise FileNotFoundError(
+            f"Database not found: {db_path}\n"
+            "Run pumpiq_data_downloader.py --mode full first."
+        )
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+
+    # --- Build SQL for DB feature columns ---
+    db_feat_sql = ", ".join([f"t.{col}" for col in DB_FEATURE_COLUMNS])
+
+    # --- Extra raw columns needed for engineered features (not used directly) ---
+    extra_cols = "t.ema_50, t.ema_200, t.sma_20,"
+
+    # --- Build SQL for market_data columns (LEFT JOIN) ---
+    mkt_feat_sql = ", ".join([f"m.{col}" for col in MARKET_FEATURE_COLUMNS])
+
+    query = f"""
+        SELECT
+            t.token_id,
+            t.timestamp,
+            t.datetime,
+            t.close,
+            t.trend_direction,
+            {db_feat_sql},
+            {extra_cols}
+            {mkt_feat_sql},
+            fg.value AS fg_value,
+            l.label_24h_binary,
+            l.label_7d_binary,
+            l.label_7d_direction
+        FROM technical_indicators t
+        INNER JOIN training_labels l
+            ON t.token_id   = l.token_id
+            AND t.timestamp  = l.timestamp
+            AND t.timeframe  = l.timeframe
+        LEFT JOIN market_data m
+            ON t.token_id = m.token_id
+            AND DATE(t.datetime) = m.date
+        LEFT JOIN fear_greed fg
+            ON DATE(t.datetime) = fg.date
+        WHERE t.timeframe = ?
+            AND t.rsi_14 IS NOT NULL
+            AND t.macd_line IS NOT NULL
+            AND t.bb_position IS NOT NULL
+            AND t.volume_ratio IS NOT NULL
+            AND t.price_momentum_5d IS NOT NULL
+            AND l.label_7d_binary IS NOT NULL
+        ORDER BY t.timestamp ASC
+    """
+
+    c.execute(query, (timeframe,))
+    rows = c.fetchall()
+    conn.close()
+
+    print(f"  Loaded {len(rows):,} raw rows from database")
+
+    if len(rows) < MIN_ROWS_TO_TRAIN:
+        raise ValueError(
+            f"Only {len(rows)} rows available. "
+            f"Need at least {MIN_ROWS_TO_TRAIN}. "
+            "Download more data first."
+        )
+
+    # --- Build feature matrix and label vectors ---
+    X, y_24h, y_7d, y_dir = [], [], [], []
+
+    for row in rows:
+        features = {}
+
+        # 1. DB features
+        for col in DB_FEATURE_COLUMNS:
+            val = row[col]
+            if val is None:
+                if "cross" in col or "spike" in col or "above" in col:
+                    val = 0
+                else:
+                    val = 0.0
+            features[col] = float(val)
+
+        # 2. Market-data features (may be NULL from LEFT JOIN)
+        for col in MARKET_FEATURE_COLUMNS:
+            features[col] = _safe_float(row[col], 0.0)
+
+        # 3. Engineered features
+        rsi7  = features.get("rsi_7", 50)
+        rsi14 = features.get("rsi_14", 50)
+        rsi21 = features.get("rsi_21", 50)
+        rsi_avg = (rsi7 + rsi14 + rsi21) / 3.0
+        features["rsi_14_ma_diff"]    = rsi14 - rsi_avg
+        features["rsi_oversold"]      = 1.0 if rsi14 < 30 else 0.0
+        features["rsi_overbought"]    = 1.0 if rsi14 > 70 else 0.0
+
+        close  = _safe_float(row["close"], 1.0) or 1.0
+        sma20  = _safe_float(row["sma_20"], close) or close
+        ema50  = _safe_float(row["ema_50"], close) or close
+        ema200 = _safe_float(row["ema_200"], close) or close
+        features["price_vs_sma20_pct"]  = (close - sma20)  / sma20  * 100
+        features["price_vs_ema50_pct"]  = (close - ema50)  / ema50  * 100
+        features["price_vs_ema200_pct"] = (close - ema200) / ema200 * 100
+
+        v10 = features.get("volatility_10d", 0) or 1e-9
+        v30 = features.get("volatility_30d", 0) or 1e-9
+        features["vol_ratio_10_30"] = v10 / v30 if v30 else 1.0
+
+        m5  = features.get("price_momentum_5d", 0)
+        m10 = features.get("price_momentum_10d", 0)
+        features["momentum_accel"] = m5 - m10
+
+        features["fear_greed_value"] = _safe_float(row["fg_value"], 50.0)
+
+        td = str(row["trend_direction"] or "SIDEWAYS").upper()
+        features["trend_encoded"] = 1.0 if td == "UP" else (-1.0 if td == "DOWN" else 0.0)
+
+        X.append(features)
+        y_24h.append(int(row["label_24h_binary"]))
+        y_7d.append(int(row["label_7d_binary"]))
+        y_dir.append(str(row["label_7d_direction"] or "SIDEWAYS"))
+
+    print(f"  Final dataset: {len(X):,} samples | {len(FEATURE_COLUMNS)} features")
+    return X, y_24h, y_7d, y_dir
+
+
+def load_fear_greed(db_path: str) -> dict:
+    """Load Fear & Greed index as date→value lookup"""
+    if not os.path.exists(db_path):
+        return {}
+    conn = sqlite3.connect(db_path)
+    c = conn.cursor()
+    c.execute("SELECT date, value FROM fear_greed")
+    result = {row[0]: row[1] for row in c.fetchall()}
+    conn.close()
+    return result
+
+
+def features_to_list(X: list) -> list:
+    """Convert list of feature dicts to list of lists (same column order)"""
+    return [[row[col] for col in FEATURE_COLUMNS] for row in X]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LABEL ANALYSIS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def analyze_labels(y_24h, y_7d, y_dir):
+    """Print label distribution stats"""
+    print("\n  Label Distribution:")
+
+    # 24h binary
+    pos_24h = sum(y_24h)
+    print(f"    24h UP (>{2}%):  {pos_24h:,} ({pos_24h/len(y_24h)*100:.1f}%)")
+    print(f"    24h NOT UP:     {len(y_24h)-pos_24h:,} ({(len(y_24h)-pos_24h)/len(y_24h)*100:.1f}%)")
+
+    # 7d binary
+    pos_7d = sum(y_7d)
+    print(f"    7d  UP (>{5}%):  {pos_7d:,} ({pos_7d/len(y_7d)*100:.1f}%)")
+    print(f"    7d  NOT UP:     {len(y_7d)-pos_7d:,} ({(len(y_7d)-pos_7d)/len(y_7d)*100:.1f}%)")
+
+    # Direction
+    from collections import Counter
+    dir_counts = Counter(y_dir)
+    print(f"    Direction UP:       {dir_counts.get('UP',0):,}")
+    print(f"    Direction DOWN:     {dir_counts.get('DOWN',0):,}")
+    print(f"    Direction SIDEWAYS: {dir_counts.get('SIDEWAYS',0):,}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# WALK-FORWARD VALIDATION
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _compute_scale_pos_weight(y):
+    """Compute scale_pos_weight using sqrt(neg/pos) for gentler imbalance correction."""
+    pos = sum(y)
+    neg = len(y) - pos
+    if pos == 0:
+        return 1.0
+    return math.sqrt(neg / pos)   # sqrt dampens extreme ratios
+
+
+def _compute_sample_weights(y):
+    """Compute per-sample weights inversely proportional to class frequency."""
+    from collections import Counter
+    counts = Counter(y)
+    total = len(y)
+    n_classes = len(counts)
+    weights = []
+    for label in y:
+        w = total / (n_classes * counts[label])
+        weights.append(w)
+    return weights
+
+
+def walk_forward_validation(X_list, y, model_params, n_splits=5, task="binary"):
+    """
+    Perform walk-forward cross-validation with class-imbalance handling.
+    Critical for time-series: future data never leaks into training.
+
+    Returns: list of per-fold accuracy scores
+    """
+    tscv = TimeSeriesSplit(n_splits=n_splits)
+    scores = []
+    le = None
+
+    if task == "multiclass":
+        le = LabelEncoder()
+        y_encoded = le.fit_transform(y)
+    else:
+        y_encoded = y
+
+    print(f"\n  Walk-Forward Validation ({n_splits} folds):")
+    print(f"  {'Fold':<6} {'Train':>8} {'Test':>8} {'Accuracy':>10} {'AUC':>8}")
+    print(f"  {'-'*46}")
+
+    for fold, (train_idx, test_idx) in enumerate(tscv.split(X_list), 1):
+        X_train = [X_list[i] for i in train_idx]
+        X_test  = [X_list[i] for i in test_idx]
+        y_train = [y_encoded[i] for i in train_idx]
+        y_test  = [y_encoded[i] for i in test_idx]
+
+        # ── Build model with class-imbalance correction ──────────────────
+        if task == "binary":
+            spw = _compute_scale_pos_weight(y_train)
+            params = {**model_params, "scale_pos_weight": spw}
+            model = xgb.XGBClassifier(**params, use_label_encoder=False)
+            model.fit(
+                X_train, y_train,
+                eval_set=[(X_test, y_test)],
+                verbose=False,
+            )
+        else:
+            params = {**model_params, "objective": "multi:softprob",
+                      "num_class": len(set(y_encoded)),
+                      "eval_metric": "mlogloss"}
+            model = xgb.XGBClassifier(**params, use_label_encoder=False)
+            sw_train = _compute_sample_weights(y_train)
+            model.fit(
+                X_train, y_train,
+                sample_weight=sw_train,
+                eval_set=[(X_test, y_test)],
+                verbose=False,
+            )
+
+        y_pred = model.predict(X_test)
+        acc = accuracy_score(y_test, y_pred)
+        scores.append(acc)
+
+        # AUC only for binary
+        auc_str = "-"
+        if task == "binary":
+            try:
+                y_prob = model.predict_proba(X_test)[:, 1]
+                auc = roc_auc_score(y_test, y_prob)
+                auc_str = f"{auc:.4f}"
+            except Exception:
+                pass
+
+        print(f"  {fold:<6} {len(train_idx):>8,} {len(test_idx):>8,} "
+              f"{acc:>10.4f} {auc_str:>8}")
+
+    avg = sum(scores) / len(scores)
+    std = math.sqrt(sum((s - avg)**2 for s in scores) / len(scores))
+    print(f"  {'':6} {'':>8} {'':>8} {'':>10} {'':>8}")
+    print(f"  Mean accuracy: {avg:.4f} ± {std:.4f}")
+
+    return scores, avg, std
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MODEL TRAINING
+# ─────────────────────────────────────────────────────────────────────────────
+
+def train_binary_model(X_list, y, label_name: str, model_params: dict):
+    """
+    Train a binary XGBoost classifier with walk-forward validation
+    and automatic class-imbalance correction (scale_pos_weight).
+    Returns trained model, cv_scores, final_accuracy
+    """
+    print(f"\n{'='*60}")
+    print(f"  Training Model: {label_name}")
+    print(f"  Samples: {len(X_list):,} | Positive: {sum(y):,} ({sum(y)/len(y)*100:.1f}%)")
+    print(f"{'='*60}")
+
+    # Walk-forward CV first
+    cv_scores, cv_mean, cv_std = walk_forward_validation(
+        X_list, y, model_params, N_CV_SPLITS, task="binary"
+    )
+
+    # Train final model on ALL data with class-imbalance correction
+    spw = _compute_scale_pos_weight(y)
+    print(f"\n  scale_pos_weight = {spw:.2f}  (auto-computed from label ratio)")
+    print(f"  Training final model on all {len(X_list):,} samples...")
+
+    final_params = {**model_params, "scale_pos_weight": spw}
+    model = xgb.XGBClassifier(**final_params, use_label_encoder=False)
+    model.fit(X_list, y, verbose=False)
+
+    # Feature importance
+    importance = model.feature_importances_
+    feat_imp = sorted(
+        zip(FEATURE_COLUMNS, importance),
+        key=lambda x: x[1], reverse=True
+    )
+
+    print(f"\n  Top 10 Most Important Features:")
+    for feat, imp in feat_imp[:10]:
+        bar = "█" * int(imp * 200)
+        print(f"    {feat:<30} {imp:.4f} {bar}")
+
+    return model, cv_scores, cv_mean, feat_imp
+
+
+def train_direction_model(X_list, y_dir, model_params: dict):
+    """
+    Train multiclass direction model: UP / DOWN / SIDEWAYS
+    Returns trained model, label_encoder, cv_mean
+    """
+    print(f"\n{'='*60}")
+    print(f"  Training Model: Direction Classifier")
+    print(f"  Samples: {len(X_list):,}")
+    print(f"{'='*60}")
+
+    from collections import Counter
+    dist = Counter(y_dir)
+    print(f"  Classes: UP={dist.get('UP',0):,} "
+          f"DOWN={dist.get('DOWN',0):,} "
+          f"SIDEWAYS={dist.get('SIDEWAYS',0):,}")
+
+    le = LabelEncoder()
+    y_encoded = le.fit_transform(y_dir)
+
+    # Walk-forward CV
+    cv_scores, cv_mean, cv_std = walk_forward_validation(
+        X_list, list(y_encoded), model_params, N_CV_SPLITS, task="multiclass"
+    )
+
+    # Train final model with sample weights for class imbalance
+    n_classes = len(le.classes_)
+    params = {
+        **model_params,
+        "objective":  "multi:softprob",
+        "num_class":  n_classes,
+        "eval_metric": "mlogloss",
+    }
+    model = xgb.XGBClassifier(**params, use_label_encoder=False)
+    sw = _compute_sample_weights(list(y_encoded))
+    model.fit(X_list, y_encoded, sample_weight=sw, verbose=False)
+
+    print(f"\n  Classes learned: {list(le.classes_)}")
+
+    return model, le, cv_scores, cv_mean
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MODEL SAVING & LOADING
+# ─────────────────────────────────────────────────────────────────────────────
+
+def save_models(model_24h, model_7d, model_dir, label_encoder,
+                feat_imp_24h, feat_imp_7d,
+                cv_24h, cv_7d, cv_dir,
+                timeframe: str, db_path: str):
+    """Save all models and metadata to disk"""
+    os.makedirs(MODELS_DIR, exist_ok=True)
+
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    # Save model files
+    path_24h = os.path.join(MODELS_DIR, f"model_24h_{timeframe}_{ts}.pkl")
+    path_7d  = os.path.join(MODELS_DIR, f"model_7d_{timeframe}_{ts}.pkl")
+    path_dir = os.path.join(MODELS_DIR, f"model_dir_{timeframe}_{ts}.pkl")
+    path_le  = os.path.join(MODELS_DIR, f"label_encoder_{ts}.pkl")
+
+    joblib.dump(model_24h, path_24h)
+    joblib.dump(model_7d,  path_7d)
+    joblib.dump(model_dir, path_dir)
+    joblib.dump(label_encoder, path_le)
+
+    # Also save as "latest" for easy loading
+    joblib.dump(model_24h, os.path.join(MODELS_DIR, f"model_24h_{timeframe}_latest.pkl"))
+    joblib.dump(model_7d,  os.path.join(MODELS_DIR, f"model_7d_{timeframe}_latest.pkl"))
+    joblib.dump(model_dir, os.path.join(MODELS_DIR, f"model_dir_{timeframe}_latest.pkl"))
+    joblib.dump(label_encoder, os.path.join(MODELS_DIR, "label_encoder_latest.pkl"))
+
+    # Save metadata JSON
+    metadata = {
+        "version":           ts,
+        "timeframe":         timeframe,
+        "trained_at":        datetime.now().isoformat(),
+        "feature_columns":   FEATURE_COLUMNS,
+        "n_features":        len(FEATURE_COLUMNS),
+        "xgb_params":        XGB_PARAMS,
+
+        "model_24h": {
+            "path":          path_24h,
+            "cv_mean":       round(sum(cv_24h) / len(cv_24h), 4),
+            "cv_scores":     [round(s, 4) for s in cv_24h],
+            "passes_threshold": bool((sum(cv_24h) / len(cv_24h)) >= MIN_TEST_ACCURACY),
+            "top_features":  [[f, round(float(i), 4)] for f, i in feat_imp_24h[:10]],
+        },
+        "model_7d": {
+            "path":          path_7d,
+            "cv_mean":       round(sum(cv_7d) / len(cv_7d), 4),
+            "cv_scores":     [round(s, 4) for s in cv_7d],
+            "passes_threshold": bool((sum(cv_7d) / len(cv_7d)) >= MIN_TEST_ACCURACY),
+            "top_features":  [[f, round(float(i), 4)] for f, i in feat_imp_7d[:10]],
+        },
+        "model_dir": {
+            "path":          path_dir,
+            "cv_mean":       round(sum(cv_dir) / len(cv_dir), 4),
+            "direction_classes": list(label_encoder.classes_),
+        },
+    }
+
+    with open(METADATA_FILE, "w") as f:
+        json.dump(metadata, f, indent=2)
+
+    print(f"\n  Models saved to: {MODELS_DIR}/")
+    print(f"  Metadata saved:  {METADATA_FILE}")
+    return metadata
+
+
+def load_latest_models(timeframe: str = "1d"):
+    """Load the latest saved models from disk"""
+    paths = {
+        "24h": os.path.join(MODELS_DIR, f"model_24h_{timeframe}_latest.pkl"),
+        "7d":  os.path.join(MODELS_DIR, f"model_7d_{timeframe}_latest.pkl"),
+        "dir": os.path.join(MODELS_DIR, f"model_dir_{timeframe}_latest.pkl"),
+        "le":  os.path.join(MODELS_DIR, "label_encoder_latest.pkl"),
+    }
+
+    for name, path in paths.items():
+        if not os.path.exists(path):
+            raise FileNotFoundError(
+                f"Model file not found: {path}\n"
+                "Run with --mode train first."
+            )
+
+    model_24h = joblib.load(paths["24h"])
+    model_7d  = joblib.load(paths["7d"])
+    model_dir = joblib.load(paths["dir"])
+    le        = joblib.load(paths["le"])
+
+    # Load metadata
+    metadata = {}
+    if os.path.exists(METADATA_FILE):
+        with open(METADATA_FILE) as f:
+            metadata = json.load(f)
+
+    return model_24h, model_7d, model_dir, le, metadata
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PREDICTION
+# ─────────────────────────────────────────────────────────────────────────────
+
+def predict_single(features_dict: dict, timeframe: str = "1d") -> dict:
+    """
+    Make prediction for a single candle using saved models.
+    features_dict: dict with same keys as FEATURE_COLUMNS
+
+    Returns full prediction result with probabilities and confidence.
+    """
+    model_24h, model_7d, model_dir, le, metadata = load_latest_models(timeframe)
+
+    # Build feature vector in correct order
+    X = [[features_dict.get(col, 0.0) for col in FEATURE_COLUMNS]]
+
+    # Predict
+    prob_24h = model_24h.predict_proba(X)[0][1]  # probability of going UP
+    prob_7d  = model_7d.predict_proba(X)[0][1]
+    dir_probs = model_dir.predict_proba(X)[0]
+    dir_pred  = le.classes_[dir_probs.argmax()]
+
+    # Confidence based on how strongly models agree
+    agreement = abs(prob_24h - 0.5) + abs(prob_7d - 0.5)
+    confidence = min(10, round(5 + agreement * 10, 1))
+
+    # Final verdict
+    if prob_7d >= 0.65 and prob_24h >= 0.60:
+        verdict = "STRONG BUY"
+    elif prob_7d >= 0.55:
+        verdict = "BUY"
+    elif prob_7d <= 0.35:
+        verdict = "SELL"
+    elif prob_7d <= 0.45 and prob_24h <= 0.45:
+        verdict = "AVOID"
+    else:
+        verdict = "NEUTRAL"
+
+    return {
+        "verdict":          verdict,
+        "direction":        dir_pred,
+        "prob_up_24h":      round(prob_24h * 100, 1),
+        "prob_up_7d":       round(prob_7d  * 100, 1),
+        "confidence":       confidence,
+        "direction_probs": {
+            cls: round(float(prob) * 100, 1)
+            for cls, prob in zip(le.classes_, dir_probs)
+        },
+        "model_version":    metadata.get("version", "unknown"),
+        "top_signals": _explain_prediction(features_dict, metadata),
+    }
+
+
+def _explain_prediction(features_dict: dict, metadata: dict) -> list:
+    """Return top signals driving the prediction"""
+    signals = []
+    feat_imp = {}
+
+    if metadata and "model_7d" in metadata:
+        for feat, imp in metadata["model_7d"].get("top_features", []):
+            feat_imp[feat] = imp
+
+    for feat, imp in sorted(feat_imp.items(), key=lambda x: x[1], reverse=True)[:5]:
+        val = features_dict.get(feat, 0)
+        signals.append({"feature": feat, "value": val, "importance": imp})
+
+    return signals
+
+
+def predict_from_db(token_id: str, timeframe: str = "1d", db_path: str = DB_PATH):
+    """
+    Load latest indicators for a token from DB and predict.
+    Joins market_data + fear_greed and computes engineered features
+    (same logic as load_training_data, but for a single row).
+    """
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+
+    db_feat_sql = ", ".join([f"t.{col}" for col in DB_FEATURE_COLUMNS])
+    mkt_feat_sql = ", ".join([f"m.{col}" for col in MARKET_FEATURE_COLUMNS])
+
+    c.execute(f"""
+        SELECT
+            t.token_id, t.timestamp, t.datetime, t.close, t.trend_direction,
+            t.ema_50, t.ema_200, t.sma_20,
+            {db_feat_sql},
+            {mkt_feat_sql},
+            fg.value AS fg_value
+        FROM technical_indicators t
+        LEFT JOIN market_data m
+            ON t.token_id = m.token_id
+            AND DATE(t.datetime) = m.date
+        LEFT JOIN fear_greed fg
+            ON DATE(t.datetime) = fg.date
+        WHERE t.token_id=? AND t.timeframe=?
+        ORDER BY t.timestamp DESC LIMIT 1
+    """, (token_id, timeframe))
+
+    row = c.fetchone()
+    conn.close()
+
+    if not row:
+        return None
+
+    # Build feature dict identical to load_training_data
+    features = {}
+
+    # 1. DB features
+    for col in DB_FEATURE_COLUMNS:
+        val = row[col]
+        if val is None:
+            val = 0 if ("cross" in col or "spike" in col or "above" in col) else 0.0
+        features[col] = float(val)
+
+    # 2. Market-data features
+    for col in MARKET_FEATURE_COLUMNS:
+        features[col] = _safe_float(row[col], 0.0)
+
+    # 3. Engineered features
+    rsi7  = features.get("rsi_7", 50)
+    rsi14 = features.get("rsi_14", 50)
+    rsi21 = features.get("rsi_21", 50)
+    rsi_avg = (rsi7 + rsi14 + rsi21) / 3.0
+    features["rsi_14_ma_diff"]   = rsi14 - rsi_avg
+    features["rsi_oversold"]     = 1.0 if rsi14 < 30 else 0.0
+    features["rsi_overbought"]   = 1.0 if rsi14 > 70 else 0.0
+
+    close  = _safe_float(row["close"], 1.0) or 1.0
+    sma20  = _safe_float(row["sma_20"], close) or close
+    ema50  = _safe_float(row["ema_50"], close) or close
+    ema200 = _safe_float(row["ema_200"], close) or close
+    features["price_vs_sma20_pct"]  = (close - sma20)  / sma20  * 100
+    features["price_vs_ema50_pct"]  = (close - ema50)  / ema50  * 100
+    features["price_vs_ema200_pct"] = (close - ema200) / ema200 * 100
+
+    v10 = features.get("volatility_10d", 0) or 1e-9
+    v30 = features.get("volatility_30d", 0) or 1e-9
+    features["vol_ratio_10_30"] = v10 / v30 if v30 else 1.0
+
+    m5  = features.get("price_momentum_5d", 0)
+    m10 = features.get("price_momentum_10d", 0)
+    features["momentum_accel"] = m5 - m10
+
+    features["fear_greed_value"] = _safe_float(row["fg_value"], 50.0)
+
+    td = str(row["trend_direction"] or "SIDEWAYS").upper()
+    features["trend_encoded"] = 1.0 if td == "UP" else (-1.0 if td == "DOWN" else 0.0)
+
+    result = predict_single(features, timeframe)
+    result["token_id"]    = token_id
+    result["datetime"]    = row["datetime"]
+    result["close_price"] = row["close"]
+    result["trend"]       = row["trend_direction"]
+    return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# EVALUATE SAVED MODELS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def evaluate_models(timeframe: str = "1d", db_path: str = DB_PATH):
+    """Load saved models and evaluate on full dataset"""
+    print("\n" + "="*60)
+    print("MODEL EVALUATION")
+    print("="*60)
+
+    model_24h, model_7d, model_dir, le, metadata = load_latest_models(timeframe)
+
+    print(f"\n  Model version: {metadata.get('version', 'unknown')}")
+    print(f"  Trained at:    {metadata.get('trained_at', 'unknown')}")
+    print(f"  Timeframe:     {metadata.get('timeframe', timeframe)}")
+
+    # Load data
+    print("\n  Loading evaluation data...")
+    X, y_24h, y_7d, y_dir = load_training_data(db_path, timeframe)
+    X_list = features_to_list(X)
+
+    # Use last 20% as holdout test set (never shown during training)
+    split = int(len(X_list) * 0.8)
+    X_test   = X_list[split:]
+    y24_test = y_24h[split:]
+    y7d_test = y_7d[split:]
+    ydir_test = y_dir[split:]
+
+    print(f"\n  Holdout test set: {len(X_test):,} samples "
+          f"(last 20% chronologically)")
+
+    # Evaluate 24h model
+    print("\n  [24h Model]")
+    pred_24h = model_24h.predict(X_test)
+    prob_24h = model_24h.predict_proba(X_test)[:, 1]
+    acc_24h  = accuracy_score(y24_test, pred_24h)
+    print(f"    Accuracy:  {acc_24h:.4f} ({acc_24h*100:.1f}%)")
+    try:
+        auc_24h = roc_auc_score(y24_test, prob_24h)
+        print(f"    AUC-ROC:   {auc_24h:.4f}")
+    except Exception:
+        pass
+    print(f"    Report:\n{classification_report(y24_test, pred_24h, target_names=['NOT UP','UP'], indent=6)}")
+
+    # Evaluate 7d model
+    print("\n  [7d Model]")
+    pred_7d  = model_7d.predict(X_test)
+    prob_7d  = model_7d.predict_proba(X_test)[:, 1]
+    acc_7d   = accuracy_score(y7d_test, pred_7d)
+    print(f"    Accuracy:  {acc_7d:.4f} ({acc_7d*100:.1f}%)")
+    try:
+        auc_7d = roc_auc_score(y7d_test, prob_7d)
+        print(f"    AUC-ROC:   {auc_7d:.4f}")
+    except Exception:
+        pass
+    print(f"    Report:\n{classification_report(y7d_test, pred_7d, target_names=['NOT UP','UP'], indent=6)}")
+
+    # Evaluate direction model
+    print("\n  [Direction Model]")
+    y_dir_enc = le.transform(ydir_test)
+    pred_dir  = model_dir.predict(X_test)
+    acc_dir   = accuracy_score(y_dir_enc, pred_dir)
+    print(f"    Accuracy: {acc_dir:.4f} ({acc_dir*100:.1f}%)")
+    print(f"    Report:\n{classification_report(y_dir_enc, pred_dir, target_names=le.classes_, indent=6)}")
+
+    # Confidence calibration check
+    print("\n  [Confidence Calibration]")
+    print("  Does high probability actually mean more wins?")
+    thresholds = [0.5, 0.55, 0.60, 0.65, 0.70, 0.75]
+    print(f"  {'Threshold':>10} {'Signals':>8} {'Win Rate':>10}")
+    print(f"  {'-'*32}")
+    for thresh in thresholds:
+        mask = [p >= thresh for p in prob_7d]
+        signals = sum(mask)
+        if signals > 0:
+            wins = sum(y7d_test[i] for i in range(len(y7d_test)) if mask[i])
+            wr = wins / signals * 100
+            print(f"  {thresh:>10.2f} {signals:>8,} {wr:>9.1f}%")
+
+    print("\n" + "="*60)
+    print("EVALUATION COMPLETE")
+    print("="*60)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MAIN TRAINING PIPELINE
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Global score holders (needed in save_models)
+cv_scores_24h = []
+cv_scores_7d  = []
+
+def run_training(timeframe: str = "1d", db_path: str = DB_PATH):
+    """Full training pipeline"""
+    global cv_scores_24h, cv_scores_7d
+
+    print("\n" + "="*60)
+    print("PUMPIQ MODEL TRAINING PIPELINE")
+    print(f"Started:   {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Timeframe: {timeframe}")
+    print(f"Database:  {db_path}")
+    print("="*60)
+
+    # ── Step 1: Load data ───────────────────────────────────────────────────
+    print("\n[Step 1] Loading training data...")
+    X, y_24h, y_7d, y_dir = load_training_data(db_path, timeframe)
+    X_list = features_to_list(X)
+    analyze_labels(y_24h, y_7d, y_dir)
+
+    # ── Step 2: Train 24h model ─────────────────────────────────────────────
+    print("\n[Step 2] Training 24-hour prediction model...")
+    model_24h, cv_scores_24h, cv_mean_24h, feat_imp_24h = train_binary_model(
+        X_list, y_24h, "24h Binary (price up 2%+ in 24h)", XGB_PARAMS
+    )
+
+    # ── Step 3: Train 7d model ──────────────────────────────────────────────
+    print("\n[Step 3] Training 7-day prediction model...")
+    model_7d, cv_scores_7d, cv_mean_7d, feat_imp_7d = train_binary_model(
+        X_list, y_7d, "7d Binary (price up 5%+ in 7 days)", XGB_PARAMS
+    )
+
+    # ── Step 4: Train direction model ───────────────────────────────────────
+    print("\n[Step 4] Training direction classifier...")
+    model_dir, label_encoder, cv_scores_dir, cv_mean_dir = train_direction_model(
+        X_list, y_dir, XGB_PARAMS
+    )
+
+    # ── Step 5: Quality check ───────────────────────────────────────────────
+    print("\n[Step 5] Quality Check...")
+    print(f"\n  {'Model':<20} {'CV Accuracy':>12} {'Threshold':>10} {'Status':>10}")
+    print(f"  {'-'*55}")
+
+    results = [
+        ("24h prediction",  cv_mean_24h, MIN_TEST_ACCURACY),
+        ("7d prediction",   cv_mean_7d,  MIN_TEST_ACCURACY),
+        ("Direction",       cv_mean_dir, 0.40),
+    ]
+
+    all_pass = True
+    for name, acc, thresh in results:
+        status = "✅ PASS" if acc >= thresh else "❌ FAIL"
+        if acc < thresh:
+            all_pass = False
+        print(f"  {name:<20} {acc:>12.4f} {thresh:>10.2f} {status:>10}")
+
+    if not all_pass:
+        print("\n  ⚠️  Warning: Some models below threshold.")
+        print("  Possible reasons:")
+        print("    - Not enough training data (need 500+ rows per timeframe)")
+        print("    - Data quality issues")
+        print("    - Crypto markets are genuinely hard to predict")
+        print("  Models will still be saved for reference.")
+
+    # ── Step 6: Save models ─────────────────────────────────────────────────
+    print("\n[Step 6] Saving models...")
+    metadata = save_models(
+        model_24h, model_7d, model_dir, label_encoder,
+        feat_imp_24h, feat_imp_7d,
+        cv_scores_24h, cv_scores_7d, cv_scores_dir,
+        timeframe, db_path
+    )
+
+    # ── Summary ─────────────────────────────────────────────────────────────
+    print("\n" + "="*60)
+    print("TRAINING COMPLETE")
+    print("="*60)
+    print(f"  24h model accuracy:  {cv_mean_24h*100:.1f}%")
+    print(f"  7d  model accuracy:  {cv_mean_7d*100:.1f}%")
+    print(f"  Dir model accuracy:  {cv_mean_dir*100:.1f}%")
+    print(f"\n  Models saved to:  {MODELS_DIR}/")
+    print(f"  To predict:  python pumpiq_model_trainer.py --mode predict --coin bitcoin")
+    print("="*60)
+
+    return model_24h, model_7d, model_dir, label_encoder, metadata
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# INCREMENTAL LEARNING (add paper trade outcomes to retrain)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def retrain_with_paper_trades(timeframe: str = "1d", db_path: str = DB_PATH):
+    """
+    Retrain models using paper trade feedback from the continuous learning system.
+    Delegates to continuous_learner.py which handles:
+      1. Evaluating pending paper trade outcomes
+      2. Generating reinforcement/penalty feedback labels
+      3. Retraining with feedback-weighted samples
+    """
+    try:
+        from continuous_learner import (
+            evaluate_paper_trades, generate_feedback_labels, retrain_with_feedback
+        )
+        print("\n  Running continuous learning retrain pipeline...")
+        evaluate_paper_trades()
+        generate_feedback_labels()
+        result = retrain_with_feedback(timeframe, min_feedback=5)
+        if result is None:
+            print("  Not enough feedback yet. Running standard training...")
+            run_training(timeframe, db_path)
+    except ImportError:
+        print("  continuous_learner.py not found. Running standard training...")
+        run_training(timeframe, db_path)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CLI ENTRY POINT
+# ─────────────────────────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="PumpIQ Model Trainer",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python pumpiq_model_trainer.py --mode train
+  python pumpiq_model_trainer.py --mode train --timeframe 4h
+  python pumpiq_model_trainer.py --mode evaluate
+  python pumpiq_model_trainer.py --mode predict --coin bitcoin
+  python pumpiq_model_trainer.py --mode predict --coin ethereum --timeframe 4h
+        """
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["train", "evaluate", "predict", "retrain"],
+        default="train",
+        help="train=fresh training | evaluate=test saved models | predict=single coin"
+    )
+    parser.add_argument(
+        "--timeframe",
+        choices=["1d", "4h", "1h"],
+        default="1d",
+        help="Timeframe to use (default: 1d)"
+    )
+    parser.add_argument(
+        "--coin",
+        default="bitcoin",
+        help="CoinGecko coin ID for prediction (default: bitcoin)"
+    )
+    parser.add_argument(
+        "--db",
+        default=DB_PATH,
+        help=f"Database path (default: {DB_PATH})"
+    )
+
+    args = parser.parse_args()
+
+    if args.mode == "train":
+        run_training(args.timeframe, args.db)
+
+    elif args.mode == "evaluate":
+        evaluate_models(args.timeframe, args.db)
+
+    elif args.mode == "predict":
+        print(f"\nPredicting for: {args.coin} ({args.timeframe})")
+        result = predict_from_db(args.coin, args.timeframe, args.db)
+        if result:
+            print(f"\n{'='*50}")
+            print(f"  Token:      {result['token_id']}")
+            print(f"  Price:      ${result['close_price']:,.4f}")
+            print(f"  Trend:      {result['trend']}")
+            print(f"  Verdict:    {result['verdict']}")
+            print(f"  Direction:  {result['direction']}")
+            print(f"  Prob UP 24h:{result['prob_up_24h']}%")
+            print(f"  Prob UP 7d: {result['prob_up_7d']}%")
+            print(f"  Confidence: {result['confidence']}/10")
+            print(f"\n  Direction breakdown:")
+            for k, v in result['direction_probs'].items():
+                print(f"    {k}: {v}%")
+            print(f"\n  Top signals:")
+            for s in result['top_signals']:
+                print(f"    {s['feature']}: {s['value']:.4f} (imp={s['importance']:.4f})")
+            print(f"{'='*50}")
+
+    elif args.mode == "retrain":
+        retrain_with_paper_trades(args.timeframe, args.db)

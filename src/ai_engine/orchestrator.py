@@ -1,7 +1,7 @@
 """
 Master Orchestrator
 =====================
-Step 3.1 – The central coordinator for the PumpIQ AI Synthesis Engine.
+Step 3.1 – The central coordinator for the NexYpher AI Synthesis Engine.
 
 The orchestrator implements the 11-step pipeline:
 
@@ -144,13 +144,37 @@ def _get_prediction_tracker():
     return _prediction_tracker
 
 
+_nexypher_trainer = None
+
+def _get_nexypher_trainer():
+    """Lazy-load the NexYpher ML trainer (38-feature XGBoost models from ml/models/)."""
+    global _nexypher_trainer
+    if _nexypher_trainer is None:
+        try:
+            import os
+            import importlib.util
+            from importlib.machinery import SourceFileLoader
+            ml_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "ml")
+            trainer_path = os.path.join(ml_dir, "NexYpher model trainer \u00b7 py")
+            if os.path.exists(trainer_path):
+                loader = SourceFileLoader("nexypher_trainer", trainer_path)
+                spec = importlib.util.spec_from_loader("nexypher_trainer", loader, origin=trainer_path)
+                mod = importlib.util.module_from_spec(spec)
+                mod.__file__ = trainer_path
+                spec.loader.exec_module(mod)
+                _nexypher_trainer = mod
+        except Exception as e:
+            logger.debug("NexYpher trainer not available: %s", e)
+    return _nexypher_trainer
+
+
 # ══════════════════════════════════════════════════════════════════
 # Public Interface
 # ══════════════════════════════════════════════════════════════════
 
 class Orchestrator:
     """
-    Central coordinator for the PumpIQ AI synthesis pipeline.
+    Central coordinator for the NexYpher AI synthesis pipeline.
 
     Accepts either a ``GeminiClient`` (default) or ``GPTClient`` (legacy)
     as the AI backend — both expose the same ``chat()`` interface.
@@ -191,6 +215,7 @@ class Orchestrator:
         self._mtf_analyzer = _get_mtf_analyzer()
         self._param_optimizer = _get_param_optimizer()
         self._prediction_tracker = _get_prediction_tracker()
+        self._nexypher_trainer = _get_nexypher_trainer()
 
     # ── Main entry point ──────────────────────────────────────────
 
@@ -237,8 +262,11 @@ class Orchestrator:
         # ── Step 4: Multi-timeframe confluence gate ───────────────
         await self._apply_mtf_confluence(tokens)
 
-        # ── Step 5: ML backtest gate (XGBoost) ────────────────────
+        # ── Step 5: ML backtest gate (XGBoost — per-coin models) ─
         await self._apply_ml_backtest(tokens)
+
+        # ── Step 5b: NexYpher ML predictions (38-feature models) ────
+        await self._apply_nexypher_ml(tokens)
 
         # ── Step 6: LSTM pattern recognition ──────────────────────
         await self._apply_lstm_patterns(tokens)
@@ -395,6 +423,46 @@ class Orchestrator:
                 logger.debug("LSTM prediction failed for %s: %s", token.token_ticker, e)
 
     # ══════════════════════════════════════════════════════════════
+    # Step 5b – NexYpher ML Prediction Models (24h / 7d / direction)
+    # ══════════════════════════════════════════════════════════════
+
+    async def _apply_nexypher_ml(self, tokens: List[TokenData]):
+        """
+        Run the NexYpher 38-feature XGBoost models on each token.
+        Stores prob_up_7d as _nexypher_signal for composite blending.
+        """
+        trainer = self._nexypher_trainer
+        if trainer is None:
+            return
+
+        for token in tokens:
+            try:
+                coin_id = getattr(token, "coin_id", "") or token.token_ticker.lower()
+                result = trainer.predict_from_db(coin_id, "1d")
+                if result:
+                    # Store raw prediction for composite blending
+                    if not hasattr(token, "_nexypher_prediction"):
+                        object.__setattr__(token, "_nexypher_prediction", None)
+                    token._nexypher_prediction = result
+
+                    # Blend into ML signal (prob_up_7d is 0-100 → 0-1)
+                    prob_7d = result.get("prob_up_7d", 50) / 100.0
+                    if not hasattr(token, "_nexypher_signal"):
+                        object.__setattr__(token, "_nexypher_signal", 0.5)
+                    token._nexypher_signal = prob_7d
+
+                    logger.debug(
+                        "NexYpher ML for %s: prob_7d=%.1f%% prob_24h=%.1f%% dir=%s verdict=%s",
+                        token.token_ticker,
+                        result.get("prob_up_7d", 0),
+                        result.get("prob_up_24h", 0),
+                        result.get("direction", "?"),
+                        result.get("verdict", "?"),
+                    )
+            except Exception as e:
+                logger.debug("NexYpher ML failed for %s: %s", token.token_ticker, e)
+
+    # ══════════════════════════════════════════════════════════════
     # Composite Scoring
     # ══════════════════════════════════════════════════════════════
 
@@ -435,6 +503,13 @@ class Orchestrator:
         if ml_signal is not None and ml_w > 0:
             ml_score = ml_signal * 10.0  # normalise to 0-10
             total = total * (1.0 - ml_w) + ml_score * ml_w
+
+        # Blend NexYpher 38-feature model signal (prob_up_7d → 0-10)
+        nexypher_signal = getattr(token, "_nexypher_signal", None)
+        if nexypher_signal is not None:
+            nexypher_w = 0.10  # 10% weight for the trained models
+            nexypher_score = nexypher_signal * 10.0
+            total = total * (1.0 - nexypher_w) + nexypher_score * nexypher_w
 
         # Apply confluence multiplier if available
         confluence_mult = getattr(token, "_confluence_multiplier", None)

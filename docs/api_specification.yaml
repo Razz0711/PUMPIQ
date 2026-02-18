@@ -1,20 +1,20 @@
-# PumpIQ REST API Documentation
+# NexYpher REST API Documentation
 # Version: 1.0.0
-# Base URL: https://api.pumpiq.com/v1
+# Base URL: https://api.nexypher.com/v1
 
 openapi: 3.0.3
 info:
-  title: PumpIQ API
+  title: NexYpher API
   description: AI-powered cryptocurrency trading recommendation system API
   version: 1.0.0
   contact:
-    name: PumpIQ Support
-    email: support@pumpiq.com
+    name: NexYpher Support
+    email: support@nexypher.com
 
 servers:
-  - url: https://api.pumpiq.com/v1
+  - url: https://api.nexypher.com/v1
     description: Production server
-  - url: https://staging-api.pumpiq.com/v1
+  - url: https://staging-api.nexypher.com/v1
     description: Staging server
   - url: http://localhost:8000/v1
     description: Local development server

@@ -231,7 +231,7 @@ class ResponseFormatter:
         """Plain-text rendering for CLI / Telegram / Discord bots."""
         lines: List[str] = []
         lines.append("═" * 50)
-        lines.append(f"  PUMPIQ RECOMMENDATIONS")
+        lines.append(f"  NEXYPHER RECOMMENDATIONS")
         lines.append(f"  Market: {rec_set.market_condition.value.title()}")
         lines.append("═" * 50)
 

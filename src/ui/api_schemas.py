@@ -2,7 +2,7 @@
 API Response Schema
 =====================
 Step 4.2 – Pydantic models defining the canonical JSON response
-returned by the PumpIQ REST API.
+returned by the NexYpher REST API.
 
 These schemas serve as:
   1. Response validation (FastAPI will auto-generate OpenAPI docs)

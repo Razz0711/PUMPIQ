@@ -1,5 +1,5 @@
 """
-PumpIQ — Deploy TransactionRegistry to Base Sepolia (or Base/Ethereum mainnet).
+NexYpher — Deploy TransactionRegistry to Base Sepolia (or Base/Ethereum mainnet).
 
 Prerequisites:
   1. pip install web3 py-solc-x

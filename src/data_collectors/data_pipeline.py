@@ -1,5 +1,5 @@
 """
-PumpIQ Data Pipeline
+NexYpher Data Pipeline
 ======================
 The **data_fetcher** callback that the Orchestrator calls in Step 2.
 

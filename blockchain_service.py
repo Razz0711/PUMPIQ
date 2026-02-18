@@ -1,11 +1,11 @@
 """
-PumpIQ Blockchain Service
+NEXYPHER Blockchain Service
 ============================================================
 Handles on-chain recording and verification of transactions
 on Base (L2) and Ethereum via the TransactionRegistry smart contract.
 
 Architecture:
-  PumpIQ Backend ──→ blockchain_service.py ──→ Base/Ethereum RPC
+  NEXYPHER Backend ──→ blockchain_service.py ──→ Base/Ethereum RPC
                                                     │
                                               TransactionRegistry.sol
                                               (on-chain tx records)
@@ -139,7 +139,7 @@ NETWORKS = {
 
 class BlockchainService:
     """
-    Service for recording PumpIQ transactions on Base/Ethereum blockchain.
+    Service for recording NEXYPHER transactions on Base/Ethereum blockchain.
     Falls back gracefully when blockchain is not configured (local-only hashes still work).
     """
 

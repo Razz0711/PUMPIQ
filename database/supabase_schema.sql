@@ -1,5 +1,5 @@
 -- ═══════════════════════════════════════════════════════════════════════════════
--- PumpIQ — Supabase Schema
+-- NexYpher — Supabase Schema
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- Run this ONCE in your Supabase SQL Editor:
 --   https://app.supabase.com → Your Project → SQL Editor → New Query → Paste → Run
