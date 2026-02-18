@@ -1,0 +1,12 @@
+# Exclude all local ML, data, and model files from Vercel deployment
+ml/
+*.db
+*.pkl
+__pycache__/
+.venv/
+.DS_Store
+*.log
+# Exclude test files
+tests/
+# Exclude local config
+.env*
