@@ -32,8 +32,26 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from blockchain_service import blockchain
 from supabase_db import get_supabase
+from src.backtest_engine import get_backtest_engine, BacktestResult
 
 logger = logging.getLogger(__name__)
+
+# ── Backtest result cache (avoid re-running for same coin within 1 hour) ──
+_backtest_cache: Dict[str, Tuple[float, "BacktestResult"]] = {}
+BACKTEST_CACHE_TTL = 3600  # seconds
+
+def _get_cached_backtest(coin_id: str) -> Optional["BacktestResult"]:
+    """Return cached backtest result if still valid."""
+    if coin_id in _backtest_cache:
+        cached_time, result = _backtest_cache[coin_id]
+        if time.time() - cached_time < BACKTEST_CACHE_TTL:
+            return result
+    return None
+
+def _cache_backtest(coin_id: str, result: "BacktestResult"):
+    """Cache a backtest result."""
+    _backtest_cache[coin_id] = (time.time(), result)
+
 
 # Late-import learning loop (avoid circular)
 _learning_loop = None
@@ -473,7 +491,81 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
             logger.warning("AI analysis failed: %s", e)
 
     opportunities.sort(key=lambda x: x["score"], reverse=True)
-    return opportunities
+
+    # ── MANDATORY BACKTEST VERIFICATION ──
+    # Only CoinGecko tokens (non-address coin_ids) can be backtested
+    # because we need 6 months of OHLCV from CoinGecko.
+    backtested = []
+    bt_engine = get_backtest_engine()
+
+    for opp in opportunities:
+        coin_id = opp.get("coin_id", "")
+        # Skip DEX-only tokens (addresses) — they lack historical data
+        if coin_id.startswith("0x") or opp.get("source") == "dexscreener":
+            opp["backtest_status"] = "skipped"
+            opp["backtest_reason"] = "DEX token — insufficient historical data for backtest"
+            opp["backtest_verified"] = False
+            backtested.append(opp)
+            continue
+
+        # Check cache first
+        cached = _get_cached_backtest(coin_id)
+        if cached:
+            bt_result = cached
+        else:
+            try:
+                bt_result = await bt_engine.run_backtest(
+                    coin_id=coin_id,
+                    coin_name=opp["name"],
+                    symbol=opp["symbol"],
+                    cg_collector=cg_collector,
+                    days=180,
+                )
+                _cache_backtest(coin_id, bt_result)
+            except Exception as e:
+                logger.warning("Backtest failed for %s: %s", coin_id, e)
+                opp["backtest_status"] = "error"
+                opp["backtest_reason"] = f"Backtest error: {e}"
+                opp["backtest_verified"] = False
+                backtested.append(opp)
+                continue
+
+        # Attach backtest stats to the opportunity
+        opp["backtest_verified"] = bt_result.passed_all_thresholds
+        opp["backtest_status"] = "passed" if bt_result.passed_all_thresholds else "failed"
+        opp["backtest_stats"] = {
+            "win_rate": round(bt_result.win_rate, 2),
+            "total_return": round(bt_result.total_return, 2),
+            "max_drawdown": round(bt_result.max_drawdown, 2),
+            "sharpe_ratio": round(bt_result.sharpe_ratio, 2),
+            "total_trades": bt_result.total_trades,
+            "period": f"{bt_result.start_date} to {bt_result.end_date}",
+            "days_covered": bt_result.days_covered,
+        }
+        opp["backtest_recommendation"] = bt_result.recommendation
+        opp["backtest_detail"] = bt_result.recommendation_detail
+        opp["backtest_confidence"] = bt_result.confidence
+
+        if bt_result.passed_all_thresholds:
+            # Boost score for verified tokens
+            opp["score"] = min(100, opp["score"] + 10)
+            opp["reasons"].append(
+                f"✅ Backtest verified: {bt_result.win_rate:.0f}% win rate, "
+                f"{bt_result.total_return:.1f}% return, Sharpe {bt_result.sharpe_ratio:.2f}"
+            )
+            opp["reasoning"] = " | ".join(opp["reasons"])
+        else:
+            # Penalize and flag
+            opp["score"] = max(0, opp["score"] - 20)
+            opp["reasons"].append(
+                f"⚠️ Backtest FAILED: {'; '.join(bt_result.failure_reasons)}"
+            )
+            opp["reasoning"] = " | ".join(opp["reasons"])
+
+        backtested.append(opp)
+
+    backtested.sort(key=lambda x: x["score"], reverse=True)
+    return backtested
 
 
 # -- Autonomous Trading Loop ---------------------------------------------------
@@ -574,6 +666,21 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
         opportunities = [o for o in opportunities if o["coin_id"] not in held_coins]
         opportunities = [o for o in opportunities if o["market_cap"] >= settings["min_market_cap"]]
 
+        # ── MANDATORY BACKTEST GATE ──
+        # Only allow tokens that passed backtest verification
+        verified_opportunities = []
+        for o in opportunities:
+            if o.get("backtest_verified"):
+                verified_opportunities.append(o)
+            else:
+                bt_status = o.get("backtest_status", "unknown")
+                logger.info(
+                    "Backtest gate BLOCKED %s (%s) — status: %s",
+                    o.get("symbol", "?"), o.get("coin_id", "?"), bt_status,
+                )
+        opportunities = verified_opportunities
+        results["backtest_filtered"] = len(verified_opportunities)
+
         # Apply confidence threshold — convert score (0-100) to confidence (0-10)
         min_score = mods["min_score"]
         confidence_min_score = int(confidence_threshold * 10)  # e.g. 7.0 → 70
@@ -596,12 +703,25 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
 
             effective_sl = max(1.0, settings["stop_loss_pct"] + mods["stop_loss_add"])
 
-            # Build detailed AI reasoning for the buy
+            # Build detailed AI reasoning for the buy (includes backtest verification)
+            bt_stats = opp.get("backtest_stats", {})
+            bt_summary = ""
+            if bt_stats:
+                bt_summary = (
+                    f"BACKTEST VERIFIED: {bt_stats.get('win_rate', 0):.1f}% win rate, "
+                    f"{bt_stats.get('total_return', 0):.1f}% return, "
+                    f"{bt_stats.get('max_drawdown', 0):.1f}% max DD, "
+                    f"Sharpe {bt_stats.get('sharpe_ratio', 0):.2f}, "
+                    f"{bt_stats.get('total_trades', 0)} trades over "
+                    f"{bt_stats.get('days_covered', 0)} days. "
+                )
+
             detailed_reasoning = (
                 f"BUY SIGNAL for {opp['name']} ({opp['symbol']}): "
                 f"Price ${opp['price']:,.6f} | 24h: {opp['change_24h']:+.1f}% | "
                 f"Market Cap: ${opp['market_cap']:,.0f} | Volume: ${opp['volume_24h']:,.0f} | "
                 f"Score: {opp['score']}/100 (threshold: {effective_min_score}). "
+                f"{bt_summary}"
                 f"Risk profile: {risk_profile} | Confidence gate: {confidence_threshold}/10. "
                 f"Analysis: {opp['reasoning']}. "
                 f"Investing ${trade_amount:,.2f} ({trade_amount/balance*100:.1f}% of wallet) with "
@@ -673,6 +793,20 @@ def get_performance_stats(user_id):
         "invested_in_positions": round(open_value, 2),
         "total_invested_ever": round(stats.get("total_invested", 0), 2),
     }
+
+
+def get_todays_trade_count() -> int:
+    """Get the number of auto-trades executed today across all users."""
+    try:
+        sb = get_supabase()
+        from datetime import datetime, timezone
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        result = sb.table("positions").select("id", count="exact").gte(
+            "created_at", today
+        ).execute()
+        return result.count if hasattr(result, "count") and result.count else len(result.data) if result.data else 0
+    except Exception:
+        return 0
 
 
 # Tables are created via Supabase SQL Editor (database/supabase_schema.sql)

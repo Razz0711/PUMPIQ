@@ -3,26 +3,34 @@ Master Orchestrator
 =====================
 Step 3.1 – The central coordinator for the PumpIQ AI Synthesis Engine.
 
-The orchestrator implements the 6-step pipeline:
+The orchestrator implements the 11-step pipeline:
 
   ┌───────────┐   ┌──────────────┐   ┌───────────────┐
-  │ 1. Parse  │──▶│ 2. Collect   │──▶│ 3. Composite  │
-  │   Query   │   │   Data       │   │   Scoring     │
-  └───────────┘   └──────────────┘   └───────────────┘
-                                           │
-  ┌───────────┐   ┌──────────────┐   ┌─────▼─────────┐
-  │ 6. Output │◀──│ 5. Rank &    │◀──│ 4. Conflict   │
-  │  Gemini   │   │   Filter     │   │   Detection   │
+  │ 1. Parse  │──▶│ 2. Collect   │──▶│ 3. Optimize   │
+  │   Query   │   │   Data       │   │   Params      │
+  └───────────┘   └──────────────┘   └───────┬───────┘
+  ┌───────────┐   ┌──────────────┐   ┌───────▼───────┐
+  │ 6. LSTM   │◀──│ 5. XGBoost   │◀──│ 4. MTF Gate   │
+  │  Patterns │   │   Gate       │   │  Confluence   │
+  └─────┬─────┘   └──────────────┘   └───────────────┘
+  ┌─────▼─────┐   ┌──────────────┐   ┌───────────────┐
+  │ 7. Score  │──▶│ 8. Conflict  │──▶│ 9. Rank &     │
+  │ Composite │   │  Detection   │   │   Filter      │
+  └───────────┘   └──────────────┘   └───────┬───────┘
+  ┌───────────┐   ┌──────────────┐   ┌───────▼───────┐
+  │11. Record │◀──│ 11. Record   │◀──│ 10. AI Synth  │
+  │ Extended  │   │ (Learn Loop) │   │   Gemini/GPT  │
   └───────────┘   └──────────────┘   └───────────────┘
 
 AI backend: Google Gemini (default) or OpenAI GPT-4o (legacy).
 Both expose the same ``chat()`` interface.
 
 Composite Scoring Formula:
-    Overall = news × 0.20 + onchain × 0.35 + technical × 0.25
-              + (social / 12 × 10) × 0.20
+    Overall = (news × 0.20 + onchain × 0.30 + technical × 0.35
+              + (social / 12 × 10) × 0.10) × (1 - 0.05)
+              + ml_signal × 10 × 0.05
 
-Filtering (Step 5):
+Filtering (Step 9):
     - Composite score > 6/10
     - No critical red flags (social red_flags list empty OR score still > threshold)
     - Minimum liquidity met
@@ -31,7 +39,6 @@ Filtering (Step 5):
 Weight Adjustments:
     Bear market  → onchain weight +10%, social −5%
     Bull market  → social weight +5%, technical −5%
-    New token    → social weight +10%, technical −10%
 """
 
 from __future__ import annotations
@@ -73,6 +80,68 @@ from .prompt_templates import PromptBuilder
 from .learning_loop import LearningLoop
 
 logger = logging.getLogger(__name__)
+
+# ── Lazy imports for ML engines (graceful degradation) ────────────
+_ml_backtester = None
+_lstm_engine = None
+_mtf_analyzer = None
+_param_optimizer = None
+_prediction_tracker = None
+
+
+def _get_ml_backtester():
+    global _ml_backtester
+    if _ml_backtester is None:
+        try:
+            from ..ml_backtester import get_ml_backtester
+            _ml_backtester = get_ml_backtester()
+        except Exception:
+            pass
+    return _ml_backtester
+
+
+def _get_lstm_engine():
+    global _lstm_engine
+    if _lstm_engine is None:
+        try:
+            from ..lstm_pattern_engine import get_lstm_engine
+            _lstm_engine = get_lstm_engine()
+        except Exception:
+            pass
+    return _lstm_engine
+
+
+def _get_mtf_analyzer():
+    global _mtf_analyzer
+    if _mtf_analyzer is None:
+        try:
+            from ..mtf_analyzer import get_mtf_analyzer
+            _mtf_analyzer = get_mtf_analyzer()
+        except Exception:
+            pass
+    return _mtf_analyzer
+
+
+def _get_param_optimizer():
+    global _param_optimizer
+    if _param_optimizer is None:
+        try:
+            from ..parameter_optimizer import get_param_optimizer
+            _param_optimizer = get_param_optimizer()
+        except Exception:
+            pass
+    return _param_optimizer
+
+
+def _get_prediction_tracker():
+    global _prediction_tracker
+    if _prediction_tracker is None:
+        try:
+            from ..prediction_tracker import get_prediction_tracker
+            _prediction_tracker = get_prediction_tracker()
+        except Exception:
+            pass
+    return _prediction_tracker
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -116,6 +185,13 @@ class Orchestrator:
         self._entry_exit = EntryExitCalculator()
         self._learning = LearningLoop()
 
+        # ML engines (lazy — None until first use, graceful degradation)
+        self._ml_backtester = _get_ml_backtester()
+        self._lstm_engine = _get_lstm_engine()
+        self._mtf_analyzer = _get_mtf_analyzer()
+        self._param_optimizer = _get_param_optimizer()
+        self._prediction_tracker = _get_prediction_tracker()
+
     # ── Main entry point ──────────────────────────────────────────
 
     async def run(
@@ -155,15 +231,28 @@ class Orchestrator:
         if not tokens:
             return self._empty_result(query, config)
 
-        # ── Step 3-5: Score → Detect Conflicts → Rank & Filter ───
+        # ── Step 3: Optimize parameters per token (Optuna) ────────
+        await self._optimize_parameters(tokens)
+
+        # ── Step 4: Multi-timeframe confluence gate ───────────────
+        await self._apply_mtf_confluence(tokens)
+
+        # ── Step 5: ML backtest gate (XGBoost) ────────────────────
+        await self._apply_ml_backtest(tokens)
+
+        # ── Step 6: LSTM pattern recognition ──────────────────────
+        await self._apply_lstm_patterns(tokens)
+
+        # ── Step 7-9: Score → Detect Conflicts → Rank & Filter ───
         enriched = self._enrich_all(tokens, config, adjusted_weights)
         ranked = self._rank_and_filter(enriched, query, config)
 
-        # ── Step 6: AI synthesis (Gemini or GPT) ─────────────────
+        # ── Step 10: AI synthesis (Gemini or GPT) ─────────────────
         rec_set = await self._synthesize(query, config, ranked)
 
-        # ── Step 7: Record predictions for learning loop ─────────
+        # ── Step 11: Record predictions for learning loop ─────────
         self._record_predictions(rec_set)
+        self._record_extended_predictions(rec_set)
 
         return rec_set
 
@@ -191,7 +280,122 @@ class Orchestrator:
             return []
 
     # ══════════════════════════════════════════════════════════════
-    # Step 3 – Composite Scoring
+    # Step 3 – Parameter Optimization (Optuna)
+    # ══════════════════════════════════════════════════════════════
+
+    async def _optimize_parameters(self, tokens: List[TokenData]):
+        """Run per-token parameter optimization using Optuna (if available)."""
+        optimizer = self._param_optimizer
+        if optimizer is None:
+            return
+
+        for token in tokens:
+            try:
+                coin_id = getattr(token, "coin_id", "") or token.token_ticker.lower()
+                result = await optimizer.optimize(coin_id, token.token_ticker)
+                if result:
+                    # Store optimal params on the token for downstream use
+                    if not hasattr(token, "_optimal_params"):
+                        object.__setattr__(token, "_optimal_params", None)
+                    token._optimal_params = result
+                    logger.debug("Optimized params for %s: RSI=%d, BB=%d",
+                                 token.token_ticker, result.rsi_period, result.bb_period)
+            except Exception as e:
+                logger.debug("Param optimization failed for %s: %s", token.token_ticker, e)
+
+    # ══════════════════════════════════════════════════════════════
+    # Step 4 – Multi-Timeframe Confluence Gate
+    # ══════════════════════════════════════════════════════════════
+
+    async def _apply_mtf_confluence(self, tokens: List[TokenData]):
+        """
+        Run MTF analysis on each token. Tokens that fail the confluence
+        gate (score < 0.5 or daily bearish) get a penalty flag.
+        """
+        mtf = self._mtf_analyzer
+        if mtf is None:
+            return
+
+        for token in tokens:
+            try:
+                coin_id = getattr(token, "coin_id", "") or token.token_ticker.lower()
+                result = await mtf.analyze(coin_id, token.token_ticker)
+                if result:
+                    # Store confluence result on token
+                    if not hasattr(token, "_confluence"):
+                        object.__setattr__(token, "_confluence", None)
+                    token._confluence = result
+
+                    # Apply confluence as a score multiplier
+                    if result.blocked:
+                        # Hard block: daily bearish or insufficient confluence
+                        token.composite_score = max(0, token.composite_score * 0.3)
+                        logger.info("MTF BLOCKED %s: %s (confluence=%.2f)",
+                                    token.token_ticker, result.dominant_bias, result.confluence_score)
+                    else:
+                        # Boost/attenuate based on confluence
+                        token._confluence_multiplier = result.confluence_score
+            except Exception as e:
+                logger.debug("MTF analysis failed for %s: %s", token.token_ticker, e)
+
+    # ══════════════════════════════════════════════════════════════
+    # Step 5 – ML Backtest Gate (XGBoost)
+    # ══════════════════════════════════════════════════════════════
+
+    async def _apply_ml_backtest(self, tokens: List[TokenData]):
+        """
+        Run XGBoost ML backtest validation on each token.
+        Tokens failing ML validation get their score dampened.
+        """
+        ml = self._ml_backtester
+        if ml is None:
+            return
+
+        for token in tokens:
+            try:
+                coin_id = getattr(token, "coin_id", "") or token.token_ticker.lower()
+                result = await ml.run(coin_id, token.token_ticker)
+                if result:
+                    if not hasattr(token, "_ml_result"):
+                        object.__setattr__(token, "_ml_result", None)
+                    token._ml_result = result
+
+                    # Store ML signal for composite blending
+                    if not hasattr(token, "_ml_signal"):
+                        object.__setattr__(token, "_ml_signal", 0.5)
+                    token._ml_signal = result.latest_prediction
+
+                    if result.accuracy < 0.50:
+                        logger.debug("ML backtest low accuracy for %s: %.2f", token.token_ticker, result.accuracy)
+            except Exception as e:
+                logger.debug("ML backtest failed for %s: %s", token.token_ticker, e)
+
+    # ══════════════════════════════════════════════════════════════
+    # Step 6 – LSTM Pattern Recognition
+    # ══════════════════════════════════════════════════════════════
+
+    async def _apply_lstm_patterns(self, tokens: List[TokenData]):
+        """Run LSTM pattern recognition on each token."""
+        lstm = self._lstm_engine
+        if lstm is None:
+            return
+
+        for token in tokens:
+            try:
+                coin_id = getattr(token, "coin_id", "") or token.token_ticker.lower()
+                prediction = await lstm.predict(coin_id, token.token_ticker)
+                if prediction:
+                    if not hasattr(token, "_lstm_prediction"):
+                        object.__setattr__(token, "_lstm_prediction", None)
+                    token._lstm_prediction = prediction
+                    logger.debug("LSTM prediction for %s: direction=%s prob=%.2f pattern=%s",
+                                 token.token_ticker, prediction.direction,
+                                 prediction.probability, prediction.pattern_detected)
+            except Exception as e:
+                logger.debug("LSTM prediction failed for %s: %s", token.token_ticker, e)
+
+    # ══════════════════════════════════════════════════════════════
+    # Composite Scoring
     # ══════════════════════════════════════════════════════════════
 
     def _compute_composite(
@@ -203,9 +407,13 @@ class Orchestrator:
         """
         Composite = Σ mode_score × mode_weight  (all scores normalised 0-10).
 
-        Formula from spec:
-            Overall = news×w_n + onchain×w_o + technical×w_t
-                      + (social/12×10)×w_s
+        Extended formula:
+            Overall = (news×w_n + onchain×w_o + technical×w_t
+                       + (social/12×10)×w_s) × (1 - ml_w)
+                      + ml_signal × 10 × ml_w
+
+        Where ml_w = config.ml_signal_weight (default 0.05).
+        Confluence score is applied as a multiplier if available.
         """
         total = 0.0
         weight_sum = 0.0
@@ -220,6 +428,19 @@ class Orchestrator:
         # Re-normalise if not all modes provided data
         if weight_sum > 0 and abs(weight_sum - 1.0) > 0.01:
             total = total / weight_sum
+
+        # Blend ML signal (0-1 → 0-10 scale)
+        ml_w = getattr(config, "ml_signal_weight", 0.05)
+        ml_signal = getattr(token, "_ml_signal", None)
+        if ml_signal is not None and ml_w > 0:
+            ml_score = ml_signal * 10.0  # normalise to 0-10
+            total = total * (1.0 - ml_w) + ml_score * ml_w
+
+        # Apply confluence multiplier if available
+        confluence_mult = getattr(token, "_confluence_multiplier", None)
+        if confluence_mult is not None:
+            # Scale: 1.0 = full alignment, 0.5 = partial, 0.25 = weak
+            total = total * (0.5 + 0.5 * confluence_mult)
 
         return round(total, 2)
 
@@ -616,17 +837,20 @@ class Orchestrator:
         """
         Return adjusted weights based on market conditions.
 
+        New defaults: Technical 0.35, On-chain 0.30, News 0.20, Social 0.10
+        ML signal weight (0.05) is applied separately during composite scoring.
+
         Bear  → onchain +10 pp, social −5 pp
         Bull  → social  +5 pp,  technical −5 pp
         """
         w = dict(config.mode_weights)
 
         if market == MarketCondition.BEAR:
-            w[DataMode.ONCHAIN] = w.get(DataMode.ONCHAIN, 0.35) + 0.10
-            w[DataMode.SOCIAL] = max(0.05, w.get(DataMode.SOCIAL, 0.20) - 0.05)
+            w[DataMode.ONCHAIN] = w.get(DataMode.ONCHAIN, 0.30) + 0.10
+            w[DataMode.SOCIAL] = max(0.05, w.get(DataMode.SOCIAL, 0.10) - 0.05)
         elif market == MarketCondition.BULL:
-            w[DataMode.SOCIAL] = w.get(DataMode.SOCIAL, 0.20) + 0.05
-            w[DataMode.TECHNICAL] = max(0.05, w.get(DataMode.TECHNICAL, 0.25) - 0.05)
+            w[DataMode.SOCIAL] = w.get(DataMode.SOCIAL, 0.10) + 0.05
+            w[DataMode.TECHNICAL] = max(0.05, w.get(DataMode.TECHNICAL, 0.35) - 0.05)
 
         # Re-normalise to 1.0
         total = sum(w.values())
@@ -686,3 +910,59 @@ class Orchestrator:
                 )
             except Exception as exc:
                 logger.debug("Failed to record prediction for %s: %s", rec.token_ticker, exc)
+
+    def _record_extended_predictions(self, rec_set: RecommendationSet):
+        """Record predictions in the extended PredictionTracker for per-token/regime accuracy."""
+        tracker = self._prediction_tracker
+        if tracker is None:
+            return
+
+        for rec in rec_set.recommendations:
+            try:
+                import hashlib
+                pred_id = hashlib.sha256(
+                    f"{rec.token_ticker}|{rec.current_price}|{datetime.utcnow().isoformat()}".encode()
+                ).hexdigest()[:16]
+
+                target_price = rec.entry_exit.target_1 if rec.entry_exit else 0
+                stop_loss = rec.entry_exit.stop_loss if rec.entry_exit else 0
+
+                # Determine predicted direction
+                verdict_str = rec.verdict.value if hasattr(rec.verdict, "value") else str(rec.verdict)
+                if verdict_str in ("Strong Buy", "Moderate Buy", "Cautious Buy"):
+                    direction = "up"
+                elif verdict_str in ("Sell", "Avoid"):
+                    direction = "down"
+                else:
+                    direction = "flat"
+
+                # Collect indicator combo
+                indicators = []
+                if rec.confidence_breakdown:
+                    if getattr(rec.confidence_breakdown, "signal_strength_detail", ""):
+                        indicators.append(rec.confidence_breakdown.signal_strength_detail)
+                if hasattr(rec, "_ml_signal") and rec._ml_signal is not None:
+                    indicators.append(f"ML_{rec._ml_signal:.2f}")
+
+                # Get ML/LSTM signals from token data if available
+                ml_signal = getattr(rec, "_ml_signal", None)
+                lstm_signal = None
+                confluence_score = None
+
+                tracker.record(
+                    prediction_id=pred_id,
+                    token_ticker=rec.token_ticker,
+                    entry_price=rec.current_price,
+                    target_price=target_price,
+                    stop_loss_price=stop_loss,
+                    predicted_direction=direction,
+                    confidence_score=rec.confidence,
+                    composite_score=rec.composite_score,
+                    market_regime=rec.market_regime or "unknown",
+                    indicator_combo=indicators,
+                    ml_signal=ml_signal,
+                    lstm_signal=lstm_signal,
+                    confluence_score=confluence_score,
+                )
+            except Exception as exc:
+                logger.debug("Failed to record extended prediction for %s: %s", rec.token_ticker, exc)

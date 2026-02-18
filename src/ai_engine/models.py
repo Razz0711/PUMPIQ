@@ -99,11 +99,12 @@ class UserConfig(BaseModel):
     """User's active configuration for the analysis session."""
     enabled_modes: List[DataMode] = Field(default_factory=lambda: list(DataMode))
     mode_weights: Dict[DataMode, float] = Field(default_factory=lambda: {
+        DataMode.TECHNICAL: 0.35,
+        DataMode.ONCHAIN: 0.30,
         DataMode.NEWS: 0.20,
-        DataMode.ONCHAIN: 0.35,
-        DataMode.TECHNICAL: 0.25,
-        DataMode.SOCIAL: 0.20,
+        DataMode.SOCIAL: 0.10,
     })
+    ml_signal_weight: float = Field(default=0.05, description="Weight for ML/LSTM signal blended into composite")
     risk_tolerance: RiskTolerance = RiskTolerance.MODERATE
     timeframe: InvestmentTimeframe = InvestmentTimeframe.SWING
     min_confidence: float = Field(default=0.65, ge=0, le=1)

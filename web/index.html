@@ -4370,6 +4370,19 @@ async function loadProfile() {
 async function loadHomeData() {
     const body = document.getElementById('homeMarketBody');
     body.innerHTML = skeletonRows(6, 8);
+
+    // ── Fetch platform stats for the stat cards ──
+    try {
+        const stats = await api('/api/platform/stats');
+        const el = (id) => document.getElementById(id);
+        if (stats.tokens_tracked !== undefined) el('homeStatTokens').textContent = stats.tokens_tracked.toLocaleString();
+        if (stats.ai_analyses_run !== undefined) el('homeStatAIScans').textContent = stats.ai_analyses_run.toLocaleString();
+        if (stats.market_regime) el('homeStatRegime').textContent = stats.market_regime;
+        if (stats.auto_trades_today !== undefined) el('homeStatAutoTrades').textContent = stats.auto_trades_today.toLocaleString();
+    } catch (e) {
+        console.warn('Platform stats unavailable:', e.message);
+    }
+
     try {
         const [coins, trending] = await Promise.all([
             api('/api/market/top?limit=10'),
