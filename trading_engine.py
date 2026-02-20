@@ -39,7 +39,9 @@ logger = logging.getLogger(__name__)
 # ── System auto-trader (always-on background bot) ──
 SYSTEM_USER_ID = 1  # trades under the primary user account so dashboard shows activity
 SYSTEM_INITIAL_BALANCE = 10_000_000.0  # ₹1,00,00,000 (1 Cr)
-AUTO_TRADE_INTERVAL_SECONDS = 300  # 5 minutes between cycles
+AUTO_TRADE_INTERVAL_SECONDS = 120  # 2 minutes between cycles for active trading
+MAX_HOLD_HOURS = 4  # auto-sell positions held longer than this
+STABLECOINS = {"tether", "usd-coin", "dai", "usd1-wlfi", "binance-usd", "true-usd", "first-digital-usd"}
 _autotrader_task = None  # reference to the background asyncio task
 _autotrader_running = False
 
@@ -461,6 +463,12 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
                 if 0.3 < ath_ratio < 0.7:
                     score += 10; reasons.append(f"Room to grow - {(1-ath_ratio)*100:.0f}% below ATH")
             score = max(0, min(100, score))
+            # Skip stablecoins — they don't move
+            if coin.coin_id in STABLECOINS:
+                continue
+            # Skip coins with invalid prices
+            if coin.current_price <= 0.001:
+                continue
             if score >= 25:
                 opportunities.append({
                     "coin_id": coin.coin_id, "name": coin.name, "symbol": coin.symbol.upper(),
@@ -669,7 +677,42 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
         if datetime.now(timezone.utc) - last_time < cooldown:
             return {"status": "cooldown", "message": f"Cooldown active ({settings['cooldown_minutes']}min)"}
 
+    # ── AUTO-EXIT: sell positions held too long ──
     open_positions = get_open_positions(user_id)
+    for pos in open_positions:
+        try:
+            opened_at_str = pos.get("opened_at") or pos.get("created_at", "")
+            if opened_at_str:
+                opened_at = datetime.fromisoformat(opened_at_str.replace("Z", "+00:00"))
+                if opened_at.tzinfo is None:
+                    opened_at = opened_at.replace(tzinfo=timezone.utc)
+                hours_held = (datetime.now(timezone.utc) - opened_at).total_seconds() / 3600
+                if hours_held >= MAX_HOLD_HOURS:
+                    # Auto-exit — sell at current price
+                    coin_id = pos.get("coin_id", "")
+                    current_price = pos["current_price"]
+                    if coin_id and not coin_id.startswith("0x"):
+                        try:
+                            prices = await cg_collector.get_simple_price([coin_id])
+                            current_price = prices.get(coin_id, current_price)
+                        except Exception:
+                            pass
+                    sell_reason = (
+                        f"AUTO-EXIT: {pos['symbol']} held for {hours_held:.1f}h "
+                        f"(max {MAX_HOLD_HOURS}h). Entry: ${pos['entry_price']:.2f}, "
+                        f"Current: ${current_price:.2f}. Short-term hold expired."
+                    )
+                    sell_result = execute_sell(user_id, pos["id"], current_price, sell_reason)
+                    if sell_result["success"]:
+                        pnl_pct = sell_result.get('pnl_pct', 0)
+                        results["actions"].append(
+                            f"Auto-exit: Sold {pos['symbol']} after {hours_held:.1f}h "
+                            f"(P&L: {pnl_pct:+.1f}%)"
+                        )
+                        results["positions_updated"] += 1
+                    continue  # Skip normal position update
+        except Exception as e:
+            logger.warning("Auto-exit check failed for position %s: %s", pos.get('id'), e)
     for pos in open_positions:
         try:
             if pos["coin_id"] and not pos["coin_id"].startswith("0x"):
@@ -716,6 +759,11 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
         opportunities = await research_opportunities(cg_collector, dex_collector, gemini_client)
         held_coins = {p["coin_id"] for p in get_open_positions(user_id)}
         opportunities = [o for o in opportunities if o["coin_id"] not in held_coins]
+
+        # Skip DEX tokens for auto-trader — only CoinGecko coins have reliable price feeds
+        opportunities = [o for o in opportunities if o.get("source") != "dexscreener"]
+        # Skip coins with $0 or near-zero prices
+        opportunities = [o for o in opportunities if o.get("price", 0) > 0.001]
         opportunities = [o for o in opportunities if o["market_cap"] >= settings["min_market_cap"]]
 
         # ── BACKTEST GATE ──
@@ -921,7 +969,7 @@ def ensure_system_wallet():
                 "auto_trade_enabled": True,
                 "max_trade_pct": 20.0,
                 "daily_loss_limit_pct": 10.0,
-                "max_open_positions": 5,
+                "max_open_positions": 8,
                 "stop_loss_pct": 8.0,
                 "take_profit_pct": 20.0,
                 "cooldown_minutes": 5,
