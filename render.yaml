@@ -1,0 +1,31 @@
+# render.yaml — Render Blueprint for NexYpher Backend
+# https://render.com/docs/blueprint-spec
+#
+# Deploy: Connect your GitHub repo on Render Dashboard,
+#         or use `render blueprint launch` CLI.
+
+services:
+  - type: web
+    name: nexypher-api
+    runtime: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn web_app:app --host 0.0.0.0 --port $PORT
+    envVars:
+      # ── Required ──
+      - key: SUPABASE_URL
+        sync: false          # Set manually in Render dashboard
+      - key: SUPABASE_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      # ── Optional (set in dashboard if needed) ──
+      - key: COINGECKO_API_KEY
+        sync: false
+      - key: CRYPTOPANIC_API_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        value: "https://nexypher.vercel.app,http://localhost:3000,http://localhost:8000"
+      - key: PYTHON_VERSION
+        value: "3.11.6"
