@@ -6407,7 +6407,7 @@
         let feedStatus = 'all';
         let feedData = [];
 
-        const API = '';
+        const API = location.hostname === 'localhost' ? '' : 'https://nexypher-api.onrender.com';
 
         // ── TradingView Symbol Mapping ────────────────────────────────
         const TV_SYMBOL_MAP = {
