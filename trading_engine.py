@@ -636,6 +636,9 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
         max_daily = 10
         risk_profile = "balanced"
 
+    # Trade settings risk_level overrides user prefs (auto-trader sets this to "aggressive")
+    risk_profile = settings.get("risk_level", risk_profile)
+
     # Risk profile modifiers
     risk_modifiers = {
         "conservative": {"max_trade_pct_mult": 0.5, "min_score": 70, "stop_loss_add": 2},
@@ -715,25 +718,30 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
         opportunities = [o for o in opportunities if o["coin_id"] not in held_coins]
         opportunities = [o for o in opportunities if o["market_cap"] >= settings["min_market_cap"]]
 
-        # ── MANDATORY BACKTEST GATE ──
-        # Only allow tokens that passed backtest verification
-        verified_opportunities = []
-        for o in opportunities:
-            if o.get("backtest_verified"):
-                verified_opportunities.append(o)
-            else:
-                bt_status = o.get("backtest_status", "unknown")
-                logger.info(
-                    "Backtest gate BLOCKED %s (%s) — status: %s",
-                    o.get("symbol", "?"), o.get("coin_id", "?"), bt_status,
-                )
-        opportunities = verified_opportunities
-        results["backtest_filtered"] = len(verified_opportunities)
+        # ── BACKTEST GATE ──
+        # Aggressive: allow all coins (skip backtest gate for maximum trading)
+        # Conservative/Balanced: only allow backtest-verified tokens
+        if risk_profile != "aggressive":
+            verified_opportunities = []
+            for o in opportunities:
+                if o.get("backtest_verified"):
+                    verified_opportunities.append(o)
+                else:
+                    bt_status = o.get("backtest_status", "unknown")
+                    logger.info(
+                        "Backtest gate BLOCKED %s (%s) — status: %s",
+                        o.get("symbol", "?"), o.get("coin_id", "?"), bt_status,
+                    )
+            opportunities = verified_opportunities
+            results["backtest_filtered"] = len(verified_opportunities)
+        else:
+            logger.info("Aggressive mode — backtest gate BYPASSED, %d coins eligible", len(opportunities))
 
         # Apply confidence threshold — convert score (0-100) to confidence (0-10)
         min_score = mods["min_score"]
         confidence_min_score = int(confidence_threshold * 10)  # e.g. 7.0 → 70
-        effective_min_score = max(min_score, confidence_min_score)
+        # Aggressive mode uses its own lower min_score to allow more trades
+        effective_min_score = min_score if risk_profile == "aggressive" else max(min_score, confidence_min_score)
         opportunities = [o for o in opportunities if o["score"] >= effective_min_score]
         results["confidence_threshold"] = confidence_threshold
         results["effective_min_score"] = effective_min_score
@@ -922,12 +930,11 @@ def ensure_system_wallet():
             }).execute()
             logger.info("Created system auto-trader settings (auto_trade=ON, aggressive)")
         else:
-            # Make sure it's enabled
-            if not settings.data[0].get("auto_trade_enabled"):
-                sb.table("trade_settings").update({
-                    "auto_trade_enabled": True,
-                }).eq("user_id", SYSTEM_USER_ID).execute()
-                logger.info("Re-enabled system auto-trader")
+            # Make sure it's enabled and aggressive for auto-trading
+            update_data = {"auto_trade_enabled": True, "risk_level": "aggressive"}
+            if not settings.data[0].get("auto_trade_enabled") or settings.data[0].get("risk_level") != "aggressive":
+                sb.table("trade_settings").update(update_data).eq("user_id", SYSTEM_USER_ID).execute()
+                logger.info("Updated system auto-trader: enabled=ON, risk_level=aggressive")
 
         # Ensure trade_stats row exists
         stats = sb.table("trade_stats").select("*").eq("user_id", SYSTEM_USER_ID).execute()
