@@ -748,14 +748,13 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
             logger.warning("Position update failed for %s: %s", pos["coin_id"], e)
 
     balance = _get_wallet_balance(user_id)
-    open_count = len([p for p in get_open_positions(user_id) if p["status"] == "open"])
 
     # Check daily trade count limit
     today_start = datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00+00:00")
     today_orders = sb.table("trade_orders").select("id").eq("user_id", user_id).eq("action", "BUY").gte("created_at", today_start).execute()
     trades_today = len(today_orders.data) if today_orders.data else 0
 
-    if open_count < settings["max_open_positions"] and balance > 100 and trades_today < max_daily:
+    if balance > 100 and trades_today < max_daily:
         opportunities = await research_opportunities(cg_collector, dex_collector, gemini_client)
         held_coins = {p["coin_id"] for p in get_open_positions(user_id)}
         opportunities = [o for o in opportunities if o["coin_id"] not in held_coins]
@@ -795,16 +794,12 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
         results["effective_min_score"] = effective_min_score
         results["risk_profile"] = risk_profile
 
-        max_buys = min(3, max_daily - trades_today)
-        for opp in opportunities[:max_buys]:
-            if open_count >= settings["max_open_positions"]:
-                break
-            # Apply risk-profile trade size modifier
-            effective_max_pct = settings["max_trade_pct"] * mods["max_trade_pct_mult"]
-            max_trade = balance * (effective_max_pct / 100)
-            trade_amount = min(max_trade, balance * 0.15)
+        # ── ALL-IN STRATEGY: pick the SINGLE best coin, invest entire balance ──
+        if opportunities:
+            opp = opportunities[0]  # highest-scoring coin
+            trade_amount = balance - 100  # keep $100 reserve
             if trade_amount < 50:
-                break
+                trade_amount = balance
 
             effective_sl = max(1.0, settings["stop_loss_pct"] + mods["stop_loss_add"])
 
@@ -846,7 +841,6 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
             )
             if buy_result["success"]:
                 results["new_trades"] += 1
-                open_count += 1
                 balance -= trade_amount
                 results["actions"].append(
                     f"Bought {opp['symbol']} at ${opp['price']:,.2f} (${trade_amount:,.0f}) "
