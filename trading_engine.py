@@ -847,7 +847,7 @@ def get_todays_trade_count() -> int:
         sb = get_supabase()
         from datetime import datetime, timezone
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        result = sb.table("positions").select("id", count="exact").gte(
+        result = sb.table("trade_positions").select("id", count="exact").gte(
             "created_at", today
         ).execute()
         return result.count if hasattr(result, "count") and result.count else len(result.data) if result.data else 0

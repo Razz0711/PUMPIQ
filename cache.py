@@ -33,6 +33,8 @@ from typing import Any, Callable, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
+_SENTINEL = object()  # Used to distinguish 'not cached' from 'cached None'
+
 
 @dataclass
 class CacheEntry:
@@ -175,8 +177,8 @@ class InMemoryCache:
                 logger.debug("Cache MISS: %s", cache_key)
                 result = await func(*args, **kwargs)
 
-                # Store result
-                if result is not None:
+                # Store result (cache everything except _SENTINEL; None is valid)
+                if result is not _SENTINEL:
                     self.set(cache_key, result, ttl=ttl)
 
                 return result

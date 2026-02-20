@@ -163,7 +163,7 @@ def _get_nexypher_trainer():
                 mod.__file__ = trainer_path
                 spec.loader.exec_module(mod)
                 _nexypher_trainer = mod
-        except Exception as e:
+        except BaseException as e:
             logger.debug("NexYpher trainer not available: %s", e)
     return _nexypher_trainer
 

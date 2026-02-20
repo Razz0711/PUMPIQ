@@ -10,9 +10,13 @@ Open:      http://localhost:8000
 from __future__ import annotations
 
 import asyncio
+import html as _html
 import json
 import logging
 import os
+import re as _re
+import threading
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -36,6 +40,7 @@ import auth
 import smtp_service
 import trading_engine
 from blockchain_service import blockchain
+from middleware import login_tracker
 from supabase_db import get_supabase
 from src.backtest_engine import get_backtest_engine, BacktestResult
 
@@ -211,11 +216,13 @@ async def require_user(authorization: Optional[str] = Header(None)):
 # APP SETUP
 # ══════════════════════════════════════════════════════════════════
 
+_cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:8000,http://localhost:8080").split(",")
+
 app = FastAPI(title="NEXYPHER", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -229,13 +236,17 @@ except OSError:
 
 
 _initialized = False
+_init_lock = threading.Lock()
 
 def _ensure_initialized():
     """Lazy initialization — works both with startup event and on first request (Vercel)."""
     global _initialized, cg, dex, news, ta, gemini_client
     if _initialized:
         return
-    _initialized = True
+    with _init_lock:
+        if _initialized:  # Double-check after acquiring lock
+            return
+        _initialized = True
 
     cg = CoinGeckoCollector(api_key=os.getenv("COINGECKO_API_KEY", ""))
     dex = DexScreenerCollector(apify_api_key=os.getenv("APIFY_API_KEY", ""))
@@ -293,7 +304,10 @@ async def algo_trader():
 
 @app.get("/static/{filepath:path}")
 async def static_files(filepath: str):
-    file_path = STATIC_DIR / filepath
+    file_path = (STATIC_DIR / filepath).resolve()
+    # Prevent path traversal — ensure resolved path stays inside STATIC_DIR
+    if not str(file_path).startswith(str(STATIC_DIR.resolve())):
+        raise HTTPException(403, "Forbidden")
     if file_path.exists():
         return FileResponse(file_path)
     raise HTTPException(404, "File not found")
@@ -305,14 +319,18 @@ async def static_files(filepath: str):
 
 @app.post("/api/auth/register")
 async def api_register(body: auth.UserRegister):
-    if len(body.password) < 6:
-        raise HTTPException(400, "Password must be at least 6 characters")
+    if len(body.password) < 8:
+        raise HTTPException(400, "Password must be at least 8 characters")
+    if not _re.search(r'[A-Z]', body.password):
+        raise HTTPException(400, "Password must contain at least one uppercase letter")
+    if not _re.search(r'[0-9]', body.password):
+        raise HTTPException(400, "Password must contain at least one number")
     user = auth.register_user(body.email, body.username, body.password)
     if not user:
         raise HTTPException(409, "Email or username already taken")
-    # Send welcome email with credentials
+    # Send welcome email (without password — never email passwords)
     try:
-        smtp_service.send_registration_email(body.email, body.username, body.password)
+        smtp_service.send_welcome_email(body.email, body.username)
     except Exception as e:
         logger.warning("Failed to send registration email: %s", e)
     token = auth.create_access_token(user.id, user.email)
@@ -321,9 +339,34 @@ async def api_register(body: auth.UserRegister):
 
 @app.post("/api/auth/login")
 async def api_login(body: auth.UserLogin, request: Request):
+    # Check account lockout
+    client_ip = request.headers.get(
+        "x-forwarded-for",
+        request.client.host if request.client else "unknown",
+    )
+    if "," in client_ip:
+        client_ip = client_ip.split(",")[0].strip()
+    identifier = f"{client_ip}:{body.email.lower()}"
+    is_locked, remaining = login_tracker.is_locked(identifier)
+    if is_locked:
+        raise HTTPException(
+            429,
+            f"Account locked due to too many failed attempts. Try again in {remaining} seconds.",
+        )
+
     user = auth.authenticate_user(body.email, body.password)
     if not user:
-        raise HTTPException(401, "Invalid email or password")
+        now_locked, attempts_left = login_tracker.record_failure(identifier)
+        if now_locked:
+            raise HTTPException(
+                429,
+                "Account locked for 15 minutes due to too many failed login attempts.",
+            )
+        raise HTTPException(
+            401,
+            f"Invalid email or password. {attempts_left} attempt(s) remaining.",
+        )
+    login_tracker.record_success(identifier)
     token = auth.create_access_token(user.id, user.email)
     # Send login alert email in background (non-blocking)
     try:
@@ -351,12 +394,13 @@ async def api_me(user=Depends(require_user)):
 async def verify_email_page(token: str = Query(...)):
     error = auth.verify_email(token)
     if error:
+        safe_error = _html.escape(error)
         html = f"""
         <html><head><meta charset="utf-8"><title>NEXYPHER</title></head>
         <body style="background:#0a0a0f;color:#e0e0e0;font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;">
             <div style="text-align:center;">
                 <h1 style="color:#ff4d4d;">Verification Failed</h1>
-                <p>{error}</p>
+                <p>{safe_error}</p>
                 <a href="/" style="color:#7c5cff;">Back to NEXYPHER</a>
             </div>
         </body></html>"""
@@ -2829,70 +2873,77 @@ async def get_enhanced_ai_recommendations(
     market regime detection, and transparent reasoning.
     Uses the Orchestrator + DataPipeline + LearningLoop stack.
     """
-    from src.ai_engine.models import (
-        DataMode, MarketCondition, UserQuery, UserConfig, QueryType
-    )
-    from src.ai_engine.orchestrator import Orchestrator
-    from src.data_collectors.data_pipeline import DataPipeline
+    import traceback as _tb
 
     try:
-        dp = DataPipeline()
-    except Exception:
-        dp = None
+        from src.ai_engine.models import (
+            DataMode, MarketCondition, UserQuery, UserConfig, QueryType
+        )
+        from src.ai_engine.orchestrator import Orchestrator
+        from src.data_collectors.data_pipeline import DataPipeline
 
-    ai_client = gemini_client
-    orch = Orchestrator(
-        gpt_client=ai_client,
-        data_fetcher=dp,
-        market_condition=MarketCondition.SIDEWAYS,
-    )
+        try:
+            dp = DataPipeline()
+        except Exception:
+            dp = None
 
-    uq = UserQuery(
-        raw_text=query,
-        query_type=QueryType.DISCOVERY,
-        num_recommendations=num,
-    )
-    uc = UserConfig()
+        ai_client = gemini_client
+        orch = Orchestrator(
+            gpt_client=ai_client,
+            data_fetcher=dp.fetch if dp else None,
+            market_condition=MarketCondition.SIDEWAYS,
+        )
 
-    try:
+        uq = UserQuery(
+            raw_query=query,
+            query_type=QueryType.BEST_COINS,
+            num_recommendations=num,
+        )
+        uc = UserConfig()
+
         rec_set = await orch.run(uq, uc)
-    except Exception as exc:
-        logger.error("Enhanced recs failed: %s", exc)
-        raise HTTPException(500, f"AI pipeline error: {exc}")
 
-    recs_out = []
-    for r in rec_set.recommendations:
-        recs_out.append({
-            "rank": r.rank,
-            "token_name": r.token_name,
-            "token_ticker": r.token_ticker,
-            "current_price": r.current_price,
-            "composite_score": r.composite_score,
-            "confidence": r.confidence,
-            "risk_level": r.risk_level.value if hasattr(r.risk_level, "value") else str(r.risk_level),
-            "verdict": r.verdict.value if hasattr(r.verdict, "value") else str(r.verdict),
-            "core_thesis": r.core_thesis,
-            "ai_thought_summary": getattr(r, "ai_thought_summary", ""),
-            "market_regime": getattr(r, "market_regime", "unknown"),
-            "key_data_points": r.key_data_points,
-            "risks_and_concerns": r.risks_and_concerns,
-            "entry_exit": {
-                "entry_low": r.entry_exit.entry_low if r.entry_exit else 0,
-                "entry_high": r.entry_exit.entry_high if r.entry_exit else 0,
-                "target_1": r.entry_exit.target_1 if r.entry_exit else 0,
-                "target_2": r.entry_exit.target_2 if r.entry_exit else 0,
-                "stop_loss": r.entry_exit.stop_loss if r.entry_exit else 0,
-            } if r.entry_exit else None,
-        })
+        recs_out = []
+        for r in rec_set.recommendations:
+            recs_out.append({
+                "rank": r.rank,
+                "token_name": r.token_name,
+                "token_ticker": r.token_ticker,
+                "current_price": r.current_price,
+                "composite_score": r.composite_score,
+                "confidence": r.confidence,
+                "risk_level": r.risk_level.value if hasattr(r.risk_level, "value") else str(r.risk_level),
+                "verdict": r.verdict.value if hasattr(r.verdict, "value") else str(r.verdict),
+                "core_thesis": r.core_thesis,
+                "ai_thought_summary": getattr(r, "ai_thought_summary", ""),
+                "market_regime": getattr(r, "market_regime", "unknown"),
+                "key_data_points": r.key_data_points,
+                "risks_and_concerns": r.risks_and_concerns,
+                "entry_exit": {
+                    "entry_low": r.entry_exit.entry_low if r.entry_exit else 0,
+                    "entry_high": r.entry_exit.entry_high if r.entry_exit else 0,
+                    "target_1": r.entry_exit.target_1 if r.entry_exit else 0,
+                    "target_2": r.entry_exit.target_2 if r.entry_exit else 0,
+                    "stop_loss": r.entry_exit.stop_loss if r.entry_exit else 0,
+                } if r.entry_exit else None,
+            })
 
-    return {
-        "query": query,
-        "overall_ai_thought": getattr(rec_set, "overall_ai_thought", ""),
-        "market_condition": rec_set.market_condition.value,
-        "recommendations": recs_out,
-        "tokens_analyzed": rec_set.tokens_analyzed,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
+        return {
+            "query": query,
+            "overall_ai_thought": getattr(rec_set, "overall_ai_thought", ""),
+            "market_condition": rec_set.market_condition.value,
+            "recommendations": recs_out,
+            "tokens_analyzed": rec_set.tokens_analyzed,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    except BaseException as exc:
+        error_tb = _tb.format_exc()
+        logger.error("Enhanced recs failed:\n%s", error_tb)
+        raise HTTPException(
+            status_code=500,
+            detail=f"AI pipeline error: {type(exc).__name__}: {exc}",
+        )
 
 
 @app.get("/api/ai/market-regime")

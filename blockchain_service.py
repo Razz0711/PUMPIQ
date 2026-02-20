@@ -109,9 +109,9 @@ CONTRACT_ABI = [
 TX_TYPES = {
     "BUY": 0,
     "SELL": 1,
-    "deposit": 2,
-    "withdraw": 3,
-    "signup_bonus": 4,
+    "DEPOSIT": 2,
+    "WITHDRAW": 3,
+    "SIGNUP_BONUS": 4,
 }
 
 # ── Network Configuration ─────────────────────────────────────
@@ -257,13 +257,14 @@ class BlockchainService:
             # Convert hex string to bytes32
             tx_hash_bytes = bytes.fromhex(tx_hash_hex)
 
-            # Map type string to uint8
-            type_id = TX_TYPES.get(tx_type, 0)
+            # Map type string to uint8 (normalize to uppercase)
+            type_id = TX_TYPES.get(tx_type.upper(), 0)
 
             # Convert USD to cents (uint256)
             amount_cents = int(amount_usd * 100)
 
-            # Build transaction
+            # Build and send transaction — lock covers through receipt
+            # to prevent nonce collisions between concurrent threads
             with self._nonce_lock:
                 nonce = self.w3.eth.get_transaction_count(self.account.address)
 
@@ -285,8 +286,8 @@ class BlockchainService:
                 signed = self.w3.eth.account.sign_transaction(tx, self.account.key)
                 on_chain_hash = self.w3.eth.send_raw_transaction(signed.raw_transaction)
 
-            # Wait for receipt (with timeout)
-            receipt = self.w3.eth.wait_for_transaction_receipt(on_chain_hash, timeout=30)
+                # Wait for receipt inside the lock to prevent nonce reuse
+                receipt = self.w3.eth.wait_for_transaction_receipt(on_chain_hash, timeout=30)
 
             result = {
                 "on_chain_tx_hash": on_chain_hash.hex(),

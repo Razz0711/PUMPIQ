@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import hashlib
+import re
 import secrets
 import json as _json
 from datetime import datetime, timedelta, timezone
@@ -22,7 +23,16 @@ from blockchain_service import blockchain
 from supabase_db import get_supabase
 
 # ── Config ──────────────────────────────────────────────────────
-SECRET_KEY = os.getenv("SECRET_KEY", "NEXYPHER_dev_secret_key_change_in_production")
+_secret = os.getenv("SECRET_KEY", "")
+if not _secret:
+    import warnings
+    _secret = "NEXYPHER_dev_secret_DO_NOT_USE_IN_PRODUCTION"
+    warnings.warn(
+        "SECRET_KEY not set! Using insecure default. "
+        "Set SECRET_KEY env var before deploying to production.",
+        stacklevel=1,
+    )
+SECRET_KEY = _secret
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "10080"))  # 7 days
 
@@ -229,7 +239,6 @@ def _get_user_response(user_id: int) -> Optional[UserResponse]:
 
 def _validate_ifsc(ifsc: str) -> bool:
     """Validate IFSC code format: 4 alpha + 0 + 6 alphanumeric."""
-    import re
     return bool(re.match(r'^[A-Z]{4}0[A-Z0-9]{6}$', ifsc.upper()))
 
 
@@ -384,18 +393,20 @@ def withdraw_from_wallet(user_id: int, amount: float, bank_id: int) -> Dict[str,
 
     sb = get_supabase()
     try:
-        bal = sb.table("wallet_balance").select("balance").eq("user_id", user_id).execute()
-        current = bal.data[0]["balance"] if bal.data else 0.0
-        if amount > current:
-            return {"success": False, "error": "Insufficient wallet balance"}
-
         bank = sb.table("bank_accounts").select("*").eq("id", bank_id).eq("user_id", user_id).eq("verified", True).execute()
         if not bank.data:
             return {"success": False, "error": "Bank account not found or not verified"}
         bank_row = bank.data[0]
 
-        # Atomically deduct balance via RPC
-        sb.rpc("update_wallet_balance", {"p_user_id": user_id, "p_delta": -amount}).execute()
+        # Atomically deduct balance via RPC.
+        # The RPC function should check balance >= amount internally and
+        # raise an exception if insufficient, preventing race conditions.
+        try:
+            sb.rpc("update_wallet_balance", {"p_user_id": user_id, "p_delta": -amount}).execute()
+        except Exception as rpc_err:
+            if "insufficient" in str(rpc_err).lower():
+                return {"success": False, "error": "Insufficient wallet balance"}
+            raise
 
         timestamp = datetime.now(timezone.utc).isoformat()
         wd_hash = _generate_wallet_tx_hash(user_id, 'withdraw', amount, timestamp)

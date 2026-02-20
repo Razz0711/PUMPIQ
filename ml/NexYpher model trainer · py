@@ -33,7 +33,7 @@ from datetime import datetime
 try:
     import xgboost as xgb
 except ImportError:
-    sys.exit("ERROR: xgboost not installed.\nRun: pip install xgboost")
+    raise ImportError("xgboost not installed. Run: pip install xgboost")
 
 try:
     from sklearn.model_selection import TimeSeriesSplit
@@ -43,12 +43,12 @@ try:
     )
     from sklearn.preprocessing import LabelEncoder
 except ImportError:
-    sys.exit("ERROR: scikit-learn not installed.\nRun: pip install scikit-learn")
+    raise ImportError("scikit-learn not installed. Run: pip install scikit-learn")
 
 try:
     import joblib
 except ImportError:
-    sys.exit("ERROR: joblib not installed.\nRun: pip install joblib")
+    raise ImportError("joblib not installed. Run: pip install joblib")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
