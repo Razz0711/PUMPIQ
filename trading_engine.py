@@ -874,7 +874,29 @@ def ensure_system_wallet():
     """
     sb = get_supabase()
     try:
-        # Check if wallet exists
+        # Step 0: Ensure system user exists in the users table (FK requirement)
+        user_check = sb.table("users").select("id").eq("id", SYSTEM_USER_ID).execute()
+        if not user_check.data:
+            try:
+                sb.table("users").insert({
+                    "id": SYSTEM_USER_ID,
+                    "email": "system@nexypher.ai",
+                    "username": "NEXYPHER_BOT",
+                    "password_hash": "SYSTEM_ACCOUNT_NO_LOGIN",
+                }).execute()
+                logger.info("Created system user (id=%d) in users table", SYSTEM_USER_ID)
+            except Exception as e:
+                # May fail if id=0 conflicts or auto-increment issue — try upsert
+                if "duplicate" not in str(e).lower() and "23505" not in str(e):
+                    logger.warning("System user insert failed: %s — trying upsert", e)
+                    sb.table("users").upsert({
+                        "id": SYSTEM_USER_ID,
+                        "email": "system@nexypher.ai",
+                        "username": "NEXYPHER_BOT",
+                        "password_hash": "SYSTEM_ACCOUNT_NO_LOGIN",
+                    }).execute()
+
+        # Step 1: Check if wallet exists
         result = sb.table("wallet_balance").select("balance").eq("user_id", SYSTEM_USER_ID).execute()
         if not result.data:
             # Create wallet with initial balance
