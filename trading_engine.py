@@ -37,7 +37,7 @@ from src.backtest_engine import get_backtest_engine, BacktestResult
 logger = logging.getLogger(__name__)
 
 # ── System auto-trader (always-on background bot) ──
-SYSTEM_USER_ID = 0  # dedicated bot account
+SYSTEM_USER_ID = 1  # trades under the primary user account so dashboard shows activity
 SYSTEM_INITIAL_BALANCE = 10_000_000.0  # ₹1,00,00,000 (1 Cr)
 AUTO_TRADE_INTERVAL_SECONDS = 300  # 5 minutes between cycles
 _autotrader_task = None  # reference to the background asyncio task
@@ -869,32 +869,16 @@ def get_todays_trade_count() -> int:
 
 def ensure_system_wallet():
     """
-    Ensure the system auto-trader (user_id=0) has a wallet with the initial balance.
-    Creates it if it doesn't exist. Also ensures auto_trade_enabled = True.
+    Ensure the auto-trader user has a wallet with the initial ₹1Cr balance.
+    Uses the primary user account (SYSTEM_USER_ID=1) so trades appear in dashboard.
     """
     sb = get_supabase()
     try:
-        # Step 0: Ensure system user exists in the users table (FK requirement)
+        # Check the user exists (user_id=1 should already exist from registration)
         user_check = sb.table("users").select("id").eq("id", SYSTEM_USER_ID).execute()
         if not user_check.data:
-            try:
-                sb.table("users").insert({
-                    "id": SYSTEM_USER_ID,
-                    "email": "system@nexypher.ai",
-                    "username": "NEXYPHER_BOT",
-                    "password_hash": "SYSTEM_ACCOUNT_NO_LOGIN",
-                }).execute()
-                logger.info("Created system user (id=%d) in users table", SYSTEM_USER_ID)
-            except Exception as e:
-                # May fail if id=0 conflicts or auto-increment issue — try upsert
-                if "duplicate" not in str(e).lower() and "23505" not in str(e):
-                    logger.warning("System user insert failed: %s — trying upsert", e)
-                    sb.table("users").upsert({
-                        "id": SYSTEM_USER_ID,
-                        "email": "system@nexypher.ai",
-                        "username": "NEXYPHER_BOT",
-                        "password_hash": "SYSTEM_ACCOUNT_NO_LOGIN",
-                    }).execute()
+            logger.warning("User id=%d not found — auto-trader will retry on next cycle", SYSTEM_USER_ID)
+            return
 
         # Step 1: Check if wallet exists
         result = sb.table("wallet_balance").select("balance").eq("user_id", SYSTEM_USER_ID).execute()
@@ -910,7 +894,16 @@ def ensure_system_wallet():
             )
         else:
             current = result.data[0]["balance"]
-            logger.info("System auto-trader wallet exists — balance: ₹%s", f"{current:,.0f}")
+            if current < SYSTEM_INITIAL_BALANCE:
+                sb.table("wallet_balance").update({
+                    "balance": SYSTEM_INITIAL_BALANCE,
+                }).eq("user_id", SYSTEM_USER_ID).execute()
+                logger.info(
+                    "Topped up auto-trader wallet: ₹%s → ₹%s",
+                    f"{current:,.0f}", f"{SYSTEM_INITIAL_BALANCE:,.0f}",
+                )
+            else:
+                logger.info("Auto-trader wallet — balance: ₹%s", f"{current:,.0f}")
 
         # Ensure auto_trade_enabled is ON for system user
         settings = sb.table("trade_settings").select("*").eq("user_id", SYSTEM_USER_ID).execute()
