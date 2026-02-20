@@ -36,6 +36,13 @@ from src.backtest_engine import get_backtest_engine, BacktestResult
 
 logger = logging.getLogger(__name__)
 
+# ── System auto-trader (always-on background bot) ──
+SYSTEM_USER_ID = 0  # dedicated bot account
+SYSTEM_INITIAL_BALANCE = 10_000_000.0  # ₹1,00,00,000 (1 Cr)
+AUTO_TRADE_INTERVAL_SECONDS = 300  # 5 minutes between cycles
+_autotrader_task = None  # reference to the background asyncio task
+_autotrader_running = False
+
 # ── Backtest result cache (avoid re-running for same coin within 1 hour) ──
 _backtest_cache: Dict[str, Tuple[float, "BacktestResult"]] = {}
 BACKTEST_CACHE_TTL = 3600  # seconds
@@ -104,7 +111,7 @@ def get_trade_settings(user_id: int) -> Dict[str, Any]:
         row["auto_trade_enabled"] = 1 if row.get("auto_trade_enabled") else 0
         return row
     return {
-        "user_id": user_id, "auto_trade_enabled": 0,
+        "user_id": user_id, "auto_trade_enabled": 1,  # ON by default
         "max_trade_pct": 20.0, "daily_loss_limit_pct": 10.0,
         "max_open_positions": 5, "stop_loss_pct": 8.0,
         "take_profit_pct": 20.0, "cooldown_minutes": 5,
@@ -856,3 +863,206 @@ def get_todays_trade_count() -> int:
 
 
 # Tables are created via Supabase SQL Editor (database/supabase_schema.sql)
+
+
+# -- Always-On Auto-Trading System --------------------------------------------
+
+def ensure_system_wallet():
+    """
+    Ensure the system auto-trader (user_id=0) has a wallet with the initial balance.
+    Creates it if it doesn't exist. Also ensures auto_trade_enabled = True.
+    """
+    sb = get_supabase()
+    try:
+        # Check if wallet exists
+        result = sb.table("wallet_balance").select("balance").eq("user_id", SYSTEM_USER_ID).execute()
+        if not result.data:
+            # Create wallet with initial balance
+            sb.table("wallet_balance").insert({
+                "user_id": SYSTEM_USER_ID,
+                "balance": SYSTEM_INITIAL_BALANCE,
+            }).execute()
+            logger.info(
+                "Created system auto-trader wallet with ₹%s balance",
+                f"{SYSTEM_INITIAL_BALANCE:,.0f}",
+            )
+        else:
+            current = result.data[0]["balance"]
+            logger.info("System auto-trader wallet exists — balance: ₹%s", f"{current:,.0f}")
+
+        # Ensure auto_trade_enabled is ON for system user
+        settings = sb.table("trade_settings").select("*").eq("user_id", SYSTEM_USER_ID).execute()
+        if not settings.data:
+            sb.table("trade_settings").insert({
+                "user_id": SYSTEM_USER_ID,
+                "auto_trade_enabled": True,
+                "max_trade_pct": 20.0,
+                "daily_loss_limit_pct": 10.0,
+                "max_open_positions": 5,
+                "stop_loss_pct": 8.0,
+                "take_profit_pct": 20.0,
+                "cooldown_minutes": 5,
+                "min_market_cap": 1000000,
+                "risk_level": "aggressive",
+            }).execute()
+            logger.info("Created system auto-trader settings (auto_trade=ON, aggressive)")
+        else:
+            # Make sure it's enabled
+            if not settings.data[0].get("auto_trade_enabled"):
+                sb.table("trade_settings").update({
+                    "auto_trade_enabled": True,
+                }).eq("user_id", SYSTEM_USER_ID).execute()
+                logger.info("Re-enabled system auto-trader")
+
+        # Ensure trade_stats row exists
+        stats = sb.table("trade_stats").select("*").eq("user_id", SYSTEM_USER_ID).execute()
+        if not stats.data:
+            sb.table("trade_stats").upsert({"user_id": SYSTEM_USER_ID}).execute()
+
+    except Exception as e:
+        logger.error("Failed to ensure system wallet: %s", e)
+
+
+async def continuous_trading_loop(cg_collector, dex_collector, gemini_client=None):
+    """
+    Always-on background trading loop.
+
+    Runs every AUTO_TRADE_INTERVAL_SECONDS:
+      1. Calls auto_trade_cycle() to research + buy/sell
+      2. Evaluates past predictions via LearningLoop
+      3. Generates strategy adjustments from outcomes
+      4. Never crashes — catches all exceptions
+    """
+    global _autotrader_running
+    _autotrader_running = True
+    cycle_count = 0
+
+    logger.info(
+        "=== NEXYPHER AUTO-TRADER STARTED === "
+        "User: SYSTEM(%d) | Balance: ₹%s | Interval: %ds",
+        SYSTEM_USER_ID,
+        f"{SYSTEM_INITIAL_BALANCE:,.0f}",
+        AUTO_TRADE_INTERVAL_SECONDS,
+    )
+
+    while _autotrader_running:
+        cycle_count += 1
+        try:
+            logger.info("── Auto-trade cycle #%d starting ──", cycle_count)
+
+            # 1. Run the main trading cycle (research → buy/sell)
+            result = await auto_trade_cycle(
+                user_id=SYSTEM_USER_ID,
+                cg_collector=cg_collector,
+                dex_collector=dex_collector,
+                gemini_client=gemini_client,
+            )
+
+            status = result.get("status", "ok")
+            actions = result.get("actions", [])
+            new_trades = result.get("new_trades", 0)
+            positions_updated = result.get("positions_updated", 0)
+
+            logger.info(
+                "Auto-trade cycle #%d complete — status: %s | "
+                "new_trades: %d | positions_updated: %d | actions: %d",
+                cycle_count, status, new_trades, positions_updated, len(actions),
+            )
+            for action in actions:
+                logger.info("  → %s", action)
+
+            # 2. Evaluate past predictions (learning from mistakes)
+            ll = _get_learning_loop()
+            if ll:
+                try:
+                    evaluated = ll.evaluate_pending(cg_collector)
+                    if evaluated:
+                        logger.info(
+                            "Learning loop evaluated %d pending predictions",
+                            evaluated if isinstance(evaluated, int) else 0,
+                        )
+                except Exception as e:
+                    logger.warning("Learning evaluation error: %s", e)
+
+                # 3. Generate strategy adjustments every 10 cycles
+                if cycle_count % 10 == 0:
+                    try:
+                        adjustments = ll.generate_adjustments()
+                        if adjustments:
+                            logger.info(
+                                "Generated %d strategy adjustments from trade history",
+                                len(adjustments) if isinstance(adjustments, list) else 0,
+                            )
+                    except Exception as e:
+                        logger.warning("Strategy adjustment error: %s", e)
+
+                # 4. Snapshot accuracy every 50 cycles
+                if cycle_count % 50 == 0:
+                    try:
+                        ll.snapshot_accuracy()
+                        logger.info("Accuracy snapshot saved (cycle #%d)", cycle_count)
+                    except Exception:
+                        pass
+
+        except Exception as e:
+            logger.error("Auto-trade cycle #%d FAILED: %s", cycle_count, e, exc_info=True)
+
+        # Wait for next cycle
+        if _autotrader_running:
+            await asyncio.sleep(AUTO_TRADE_INTERVAL_SECONDS)
+
+    logger.info("=== NEXYPHER AUTO-TRADER STOPPED after %d cycles ===", cycle_count)
+
+
+def start_autotrader(cg_collector, dex_collector, gemini_client=None):
+    """
+    Start the always-on auto-trader as a background asyncio task.
+    Safe to call multiple times — will not create duplicate tasks.
+    """
+    global _autotrader_task, _autotrader_running
+
+    if _autotrader_task and not _autotrader_task.done():
+        logger.info("Auto-trader already running — skipping duplicate start")
+        return
+
+    # Ensure system user has wallet & settings
+    ensure_system_wallet()
+
+    _autotrader_running = True
+    _autotrader_task = asyncio.create_task(
+        continuous_trading_loop(cg_collector, dex_collector, gemini_client)
+    )
+    logger.info("Auto-trader background task created")
+
+
+def stop_autotrader():
+    """Stop the auto-trader gracefully."""
+    global _autotrader_running
+    _autotrader_running = False
+    logger.info("Auto-trader stop requested — will finish current cycle")
+
+
+def get_autotrader_status() -> Dict[str, Any]:
+    """Get the current status of the auto-trader."""
+    running = _autotrader_running and _autotrader_task and not _autotrader_task.done()
+    try:
+        balance = _get_wallet_balance(SYSTEM_USER_ID)
+        stats = _get_trade_stats(SYSTEM_USER_ID)
+        open_pos = get_open_positions(SYSTEM_USER_ID)
+    except Exception:
+        balance = 0
+        stats = {}
+        open_pos = []
+
+    return {
+        "running": bool(running),
+        "system_user_id": SYSTEM_USER_ID,
+        "initial_balance": SYSTEM_INITIAL_BALANCE,
+        "current_balance": balance,
+        "total_pnl": stats.get("total_pnl", 0),
+        "total_trades": stats.get("total_trades", 0),
+        "winning_trades": stats.get("winning_trades", 0),
+        "losing_trades": stats.get("losing_trades", 0),
+        "open_positions": len(open_pos),
+        "interval_seconds": AUTO_TRADE_INTERVAL_SECONDS,
+    }

@@ -250,15 +250,19 @@ def _ensure_initialized():
 
     cg = CoinGeckoCollector(api_key=os.getenv("COINGECKO_API_KEY", ""))
     dex = DexScreenerCollector(apify_api_key=os.getenv("APIFY_API_KEY", ""))
-    news = NewsCollector(api_key=os.getenv("CRYPTOPANIC_API_KEY", ""))
+    news = NewsCollector(
+        api_key=os.getenv("CRYPTOPANIC_API_KEY", ""),
+        news_api_key=os.getenv("NEWS_API_KEY", ""),
+    )
     ta = TechnicalAnalyzer()
 
     gemini_key = os.getenv("GEMINI_API_KEY", "")
     if gemini_key:
         try:
             from src.ai_engine.gemini_client import GeminiClient
-            gemini_client = GeminiClient(api_key=gemini_key)
-            logger.info("Gemini AI client initialized")
+            gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+            gemini_client = GeminiClient(api_key=gemini_key, model=gemini_model)
+            logger.info("Gemini AI client initialized (model=%s)", gemini_model)
         except Exception as e:
             logger.warning("Gemini init failed: %s", e)
 
@@ -271,12 +275,19 @@ def _ensure_initialized():
 async def startup():
     _ensure_initialized()
 
-    # Start auto-trade background loop (skip on Vercel serverless)
+    # Start always-on auto-trade background loop (skip on Vercel serverless)
     if not os.getenv("VERCEL"):
-        asyncio.create_task(_auto_trade_loop())
-        logger.info("Auto-trader background loop started")
+        trading_engine.start_autotrader(cg, dex, gemini_client)
+        logger.info("Always-on auto-trader started (system user, ₹1Cr balance)")
     else:
         logger.info("Running on Vercel (auto-trader disabled in serverless mode)")
+
+
+@app.get("/api/autotrader/status")
+async def autotrader_status():
+    """Get the always-on auto-trader status, balance, and performance."""
+    return trading_engine.get_autotrader_status()
+
 
 
 @app.middleware("http")
@@ -893,8 +904,52 @@ async def get_token_detail(coin_id: str):
             f"{bt_result.total_trades} trades over {bt_result.days_covered} days | "
             f"Tier: {bt_result.token_tier}.\n\n"
         )
-        ai_text = bt_prefix + ai_text if ai_text else bt_prefix + bt_result.recommendation_detail
+        if ai_text:
+            ai_text = bt_prefix + ai_text
+        else:
+            # Use only recommendation_detail (already contains full analysis)
+            ai_text = bt_result.recommendation_detail
         ai_avail = True
+
+    # ── Fallback: generate market-based sentiment if news APIs returned nothing ──
+    if news_result.total_articles == 0:
+        pct_24h = coin.price_change_pct_24h or 0
+        pct_7d = coin.price_change_pct_7d or 0
+        sym = coin.symbol.upper()
+
+        # Derive sentiment from price action
+        if pct_24h > 5:
+            fallback_sentiment = min(0.7, pct_24h / 15)
+            fallback_narrative = f"{sym} is showing strong bullish momentum with {pct_24h:+.1f}% gain in the last 24 hours."
+        elif pct_24h > 1:
+            fallback_sentiment = min(0.4, pct_24h / 10)
+            fallback_narrative = f"{sym} is trending mildly bullish with a {pct_24h:+.1f}% move over 24 hours."
+        elif pct_24h < -5:
+            fallback_sentiment = max(-0.7, pct_24h / 15)
+            fallback_narrative = f"{sym} is experiencing bearish pressure with {pct_24h:+.1f}% decline in the last 24 hours."
+        elif pct_24h < -1:
+            fallback_sentiment = max(-0.4, pct_24h / 10)
+            fallback_narrative = f"{sym} is trending mildly bearish with a {pct_24h:+.1f}% move over 24 hours."
+        else:
+            fallback_sentiment = 0.0
+            fallback_narrative = f"{sym} is trading in a neutral range with minimal price movement ({pct_24h:+.1f}% in 24h)."
+
+        fallback_headlines = []
+        if abs(pct_24h) > 2:
+            direction = "surges" if pct_24h > 0 else "drops"
+            fallback_headlines.append(f"{sym} {direction} {abs(pct_24h):.1f}% in 24-hour trading session")
+        if abs(pct_7d) > 5:
+            direction = "gains" if pct_7d > 0 else "loses"
+            fallback_headlines.append(f"{sym} {direction} {abs(pct_7d):.1f}% over the past week")
+        if coin.market_cap and coin.market_cap > 1_000_000_000:
+            fallback_headlines.append(f"{sym} maintains ${coin.market_cap/1e9:.1f}B market capitalization")
+        if ta_result:
+            fallback_headlines.append(f"Technical outlook: {ta_result.trend.capitalize()} — RSI at {ta_result.rsi:.0f}")
+
+        news_result.avg_sentiment = round(fallback_sentiment, 3)
+        news_result.narrative = fallback_narrative
+        news_result.key_headlines = fallback_headlines
+        logger.info("Using market-data fallback for %s news sentiment", sym)
 
     return TokenDetail(
         name=coin.name,

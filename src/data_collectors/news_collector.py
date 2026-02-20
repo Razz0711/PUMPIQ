@@ -35,19 +35,32 @@ logger = logging.getLogger(__name__)
 # ───────────────────────── sentiment word lists ─────────────────────────
 
 _BULLISH_WORDS = {
-    "bullish", "surge", "soar", "rally", "pump", "moon", "breakout",
-    "partnership", "listing", "launch", "upgrade", "adoption", "milestone",
-    "record", "high", "buy", "accumulate", "growth", "profit", "gain",
-    "outperform", "breakthrough", "support", "uptrend", "whale",
-    "institutional", "approval", "etf", "integration", "backed",
+    "bullish", "surge", "surges", "soar", "soars", "rally", "rallies",
+    "pump", "pumps", "moon", "breakout", "partnership", "listing",
+    "upgrade", "adoption", "milestone", "record", "buy", "buying",
+    "accumulate", "growth", "profit", "profits", "gain", "gains",
+    "outperform", "outperforms", "breakthrough", "uptrend", "whale",
+    "institutional", "approval", "integration", "backed", "bullrun",
+    "inflow", "inflows", "recover", "recovery", "rebound", "rebounds",
+    "positive", "optimistic", "momentum",
 }
 
 _BEARISH_WORDS = {
-    "bearish", "crash", "dump", "plunge", "hack", "exploit", "scam",
-    "rug", "rugpull", "ban", "regulation", "sec", "lawsuit", "fraud",
-    "sell", "decline", "loss", "drop", "downtrend", "resistance",
-    "fud", "warning", "vulnerability", "delay", "concern", "risk",
-    "investigation", "liquidation", "bankrupt", "exit",
+    "bearish", "crash", "crashes", "dump", "dumps", "plunge", "plunges",
+    "hack", "hacked", "exploit", "scam", "rug", "rugpull", "ban",
+    "regulation", "sec", "lawsuit", "fraud", "sell", "selling", "selloff",
+    "decline", "declines", "loss", "losses", "drop", "drops",
+    "downtrend", "resistance", "fud", "warning", "vulnerability",
+    "delay", "concern", "risk", "investigation", "liquidation",
+    "liquidated", "bankrupt", "bankruptcy", "exit",
+    "bleed", "bleeds", "bleeding", "pressure", "pressured",
+    "outflow", "outflows", "correction", "fear", "bearmarket",
+    "below", "bottom", "collapse", "collapses", "plummet", "plummets",
+    "tumble", "tumbles", "slide", "slides", "slump", "slumps",
+    "weak", "weaken", "weakens", "negative", "pessimistic",
+    "bubble", "overvalued", "overbought", "panic", "recession",
+    "downturn", "struggle", "struggles", "volatile", "uncertainty",
+    "slash", "slashed", "cut", "deficit", "inflation",
 }
 
 
@@ -129,9 +142,11 @@ class NewsCollector:
     def __init__(
         self,
         api_key: Optional[str] = None,
+        news_api_key: Optional[str] = None,
         rate_limit_sleep: float = 1.5,
     ):
         self.api_key = api_key or os.getenv("CRYPTOPANIC_API_KEY", "")
+        self.news_api_key = news_api_key or os.getenv("NEWS_API_KEY", "")
         self.rate_limit_sleep = rate_limit_sleep
 
     # ── public API ─────────────────────────────────────────────────
@@ -144,16 +159,27 @@ class NewsCollector:
         """
         Collect news for *query* (a token ticker or keyword).
 
-        If a CryptoPanic key is configured, uses the API.
-        Otherwise falls back to a placeholder / keyword-only mode.
+        Tries CryptoPanic first, then falls back to NewsAPI.org.
         """
+        articles: List[NewsArticle] = []
+
+        # Primary: CryptoPanic
         if self.api_key:
             articles = await self._fetch_cryptopanic(query, max_articles)
+            if articles:
+                logger.info("CryptoPanic returned %d articles for %s", len(articles), query)
         else:
-            logger.info(
-                "No CRYPTOPANIC_API_KEY – using keyword-only sentiment"
-            )
-            articles = []
+            logger.info("No CRYPTOPANIC_API_KEY configured")
+
+        # Fallback: NewsAPI.org
+        if not articles and self.news_api_key:
+            logger.info("CryptoPanic empty — trying NewsAPI fallback for %s", query)
+            articles = await self._fetch_newsapi(query, max_articles)
+            if articles:
+                logger.info("NewsAPI returned %d articles for %s", len(articles), query)
+
+        if not articles:
+            logger.warning("No news articles found for %s from any source", query)
 
         return self._aggregate(query, articles)
 
@@ -162,10 +188,11 @@ class NewsCollector:
         max_articles: int = 30,
     ) -> NewsResult:
         """Collect general crypto market news (no specific token filter)."""
+        articles: List[NewsArticle] = []
         if self.api_key:
             articles = await self._fetch_cryptopanic("", max_articles)
-        else:
-            articles = []
+        if not articles and self.news_api_key:
+            articles = await self._fetch_newsapi("cryptocurrency", max_articles)
         return self._aggregate("crypto market", articles)
 
     # ── CryptoPanic ────────────────────────────────────────────────
@@ -244,6 +271,79 @@ class NewsCollector:
                     votes_negative=neg,
                     votes_important=votes.get("important", 0) or 0,
                     currencies=currencies,
+                )
+            )
+
+        return articles
+
+    # ── NewsAPI.org fallback ────────────────────────────────────────
+
+    async def _fetch_newsapi(
+        self,
+        query: str,
+        max_articles: int,
+    ) -> List[NewsArticle]:
+        """
+        NewsAPI.org fallback.
+
+        Docs: https://newsapi.org/docs/endpoints/everything
+        Endpoint: /v2/everything?q=bitcoin+crypto&apiKey=KEY
+        """
+        try:
+            import httpx
+        except ImportError:
+            logger.warning("httpx not installed — cannot fetch news from NewsAPI")
+            return []
+
+        # Build a crypto-centric search query
+        search_query = f"{query} crypto" if query else "cryptocurrency"
+
+        params: Dict[str, Any] = {
+            "apiKey": self.news_api_key,
+            "q": search_query,
+            "language": "en",
+            "sortBy": "publishedAt",
+            "pageSize": min(max_articles, 100),
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.get(
+                    "https://newsapi.org/v2/everything", params=params,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+        except Exception as exc:
+            logger.error("NewsAPI error: %s", exc)
+            return []
+
+        if data.get("status") != "ok":
+            logger.error("NewsAPI returned status: %s", data.get("status"))
+            return []
+
+        articles: List[NewsArticle] = []
+        for item in (data.get("articles", []) or [])[:max_articles]:
+            published = None
+            if item.get("publishedAt"):
+                try:
+                    published = datetime.fromisoformat(
+                        item["publishedAt"].replace("Z", "+00:00")
+                    )
+                except Exception:
+                    pass
+
+            title = item.get("title", "") or ""
+            # Also consider description for richer sentiment
+            description = item.get("description", "") or ""
+            sentiment = _keyword_sentiment(f"{title} {description}")
+
+            articles.append(
+                NewsArticle(
+                    title=title,
+                    url=item.get("url", ""),
+                    source=item.get("source", {}).get("name", ""),
+                    published_at=published,
+                    sentiment=sentiment,
                 )
             )
 
