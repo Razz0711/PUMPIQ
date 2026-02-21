@@ -279,6 +279,11 @@ async def startup():
     if not os.getenv("VERCEL"):
         trading_engine.start_autotrader(cg, dex, gemini_client)
         logger.info("Always-on auto-trader started (system user, ₹1Cr balance)")
+
+        # Start learning evaluation loop (evaluates predictions for ALL users)
+        import asyncio as _aio
+        _aio.create_task(_learning_evaluation_loop())
+        logger.info("Learning evaluation background loop started")
     else:
         logger.info("Running on Vercel (auto-trader disabled in serverless mode)")
 
@@ -1093,17 +1098,23 @@ async def get_ai_recommendations(
     tokens_scored.sort(key=lambda x: x.score, reverse=True)
 
     # ── Record predictions in the learning loop ───────────────────
+    # NOTE: DexScreener tokens use symbol as ticker (e.g. "PEPE") which
+    # won't resolve via CoinGecko price lookup.  We also store the
+    # price at prediction time so the evaluation path has a fallback.
     ll = _get_ll()
     if ll:
         for t in tokens_scored:
             try:
+                price = token_prices.get(t.address, 0.0)
+                if price <= 0:
+                    continue  # skip — can't evaluate without entry price
                 ll.record_prediction(
-                    token_ticker=t.symbol,
+                    token_ticker=t.symbol.upper(),
                     token_name=t.name,
                     verdict=t.verdict,
                     confidence=t.score / 100.0,
                     composite_score=float(t.score),
-                    price_at_prediction=token_prices.get(t.address, 0.0),
+                    price_at_prediction=price,
                     risk_level="HIGH" if t.risk_flags else "MEDIUM",
                     ai_thought_summary=t.summary,
                 )
@@ -1475,37 +1486,31 @@ def _send_trade_cycle_emails(user_id: int, cycle_result: dict):
 # AUTO-TRADER BACKGROUND LOOP
 # ══════════════════════════════════════════════════════════════════
 
-async def _auto_trade_loop():
-    """Background loop — scans markets every 30 seconds for all users with auto-trade enabled."""
-    await asyncio.sleep(5)  # Wait for startup
-    logger.info("Auto-trade background loop started (30s interval)")
+# NOTE: The primary auto-trade loop is `continuous_trading_loop` in
+# trading_engine.py, started via `start_autotrader()` at startup.
+# This secondary loop handles learning-loop evaluation for ALL users
+# and email notifications — the trading engine only evaluates for SYSTEM_USER_ID.
+
+async def _learning_evaluation_loop():
+    """Background loop — evaluates pending predictions every 5 minutes for all users."""
+    await asyncio.sleep(30)  # Wait for some predictions to accumulate
+    logger.info("Learning evaluation background loop started (5-min interval)")
     while True:
         try:
-            sb = get_supabase()
-            resp = sb.table("trade_settings").select("user_id").eq("auto_trade_enabled", 1).execute()
-            enabled_users = resp.data or []
-
-            for row in enabled_users:
-                try:
-                    result = await trading_engine.auto_trade_cycle(
-                        row["user_id"], cg, dex, gemini_client
+            ll = _get_ll()
+            if ll and cg:
+                eval_result = await ll.evaluate_pending(cg)
+                eval_24h = eval_result.get("evaluated_24h", 0) if isinstance(eval_result, dict) else 0
+                eval_7d = eval_result.get("evaluated_7d", 0) if isinstance(eval_result, dict) else 0
+                if eval_24h or eval_7d:
+                    logger.info(
+                        "Learning eval loop: evaluated %d (24h) + %d (7d) predictions",
+                        eval_24h, eval_7d,
                     )
-                    if result.get("actions"):
-                        logger.info("Auto-trade user %d: %s", row["user_id"], result["actions"])
-                        # Send email notifications for each trade in background
-                        import threading
-                        threading.Thread(
-                            target=_send_trade_cycle_emails,
-                            args=(row["user_id"], result),
-                            daemon=True,
-                        ).start()
-                except Exception as e:
-                    logger.warning("Auto-trade failed for user %d: %s", row["user_id"], e)
-
         except Exception as e:
-            logger.warning("Auto-trade loop error: %s", e)
+            logger.warning("Learning evaluation loop error: %s", e)
 
-        await asyncio.sleep(30)  # Run every 30 seconds — continuous market scanning
+        await asyncio.sleep(300)  # Every 5 minutes
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -3002,6 +3007,33 @@ async def get_enhanced_ai_recommendations(
                     "stop_loss": r.entry_exit.stop_loss if r.entry_exit else 0,
                 } if r.entry_exit else None,
             })
+
+        # ── Record predictions in learning loop ──
+        ll = _get_ll()
+        if ll:
+            for r in rec_set.recommendations:
+                try:
+                    entry_price = r.current_price if r.current_price and r.current_price > 0 else 0
+                    if entry_price <= 0:
+                        continue
+                    verdict_str = r.verdict.value if hasattr(r.verdict, "value") else str(r.verdict)
+                    target_p = r.entry_exit.target_1 if r.entry_exit else 0
+                    sl_p = r.entry_exit.stop_loss if r.entry_exit else 0
+                    ll.record_prediction(
+                        token_ticker=r.token_ticker.upper(),
+                        token_name=r.token_name,
+                        verdict=verdict_str,
+                        confidence=r.confidence,
+                        composite_score=r.composite_score,
+                        price_at_prediction=entry_price,
+                        target_price=target_p or 0,
+                        stop_loss_price=sl_p or 0,
+                        market_regime=getattr(r, "market_regime", "unknown"),
+                        risk_level=r.risk_level.value if hasattr(r.risk_level, "value") else str(r.risk_level),
+                        ai_thought_summary=getattr(r, "ai_thought_summary", ""),
+                    )
+                except Exception:
+                    pass
 
         return {
             "query": query,

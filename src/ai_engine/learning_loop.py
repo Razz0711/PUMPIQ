@@ -98,11 +98,25 @@ class LearningLoop:
             f"{token_ticker}|{price_at_prediction}|{datetime.now(timezone.utc).isoformat()}".encode()
         ).hexdigest()[:16]
 
-        predicted_direction = (
-            "up" if verdict in ("Strong Buy", "Moderate Buy", "Cautious Buy")
-            else "down" if verdict in ("Sell", "Avoid")
-            else "flat"
-        )
+        # Normalize verdict to direction — handle ALL sources:
+        #   trading_engine: "bullish", "bearish"
+        #   AI recs (web_app): "STRONG_BUY", "BUY", "HOLD", "CAUTION", "AVOID"
+        #   original format: "Strong Buy", "Moderate Buy", "Cautious Buy", "Sell", "Avoid"
+        v = verdict.lower().replace("_", " ").strip()
+        UP_VERDICTS = {
+            "strong buy", "moderate buy", "cautious buy",
+            "buy", "bullish", "strong bullish", "long",
+        }
+        DOWN_VERDICTS = {
+            "sell", "avoid", "bearish", "strong bearish",
+            "short", "caution",
+        }
+        if v in UP_VERDICTS:
+            predicted_direction = "up"
+        elif v in DOWN_VERDICTS:
+            predicted_direction = "down"
+        else:
+            predicted_direction = "flat"
 
         row = {
             "prediction_id": prediction_id,
@@ -152,7 +166,7 @@ class LearningLoop:
         results = {"evaluated_24h": 0, "evaluated_7d": 0, "errors": 0}
 
         try:
-            cutoff_24h = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+            cutoff_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
             res_24h = (
                 sb.table("ll_predictions")
                 .select("*")
@@ -184,10 +198,17 @@ class LearningLoop:
             if not all_tickers:
                 return results
 
+            # Try fetching prices — use both coin_id and symbol lookups
             try:
                 prices = await cg_collector.get_simple_price(all_tickers)
             except Exception as e:
                 logger.warning("Price fetch for evaluation failed: %s", e)
+                prices = {}
+
+            # If some tickers returned no price, they might be symbols — skip them
+            # rather than aborting the entire evaluation
+            if not prices:
+                logger.warning("No prices returned for %d tickers — skipping eval", len(all_tickers))
                 return results
 
             for row in pending_24h:

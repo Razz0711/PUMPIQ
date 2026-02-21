@@ -1014,6 +1014,7 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
                                 composite_score=opp["score"],
                                 price_at_prediction=opp["price"],
                                 market_regime="unknown",
+                                user_id=user_id,
                             )
                         except Exception:
                             pass
@@ -1210,11 +1211,13 @@ async def continuous_trading_loop(cg_collector, dex_collector, gemini_client=Non
             ll = _get_learning_loop()
             if ll:
                 try:
-                    evaluated = await ll.evaluate_pending(cg_collector)
-                    if evaluated:
+                    eval_result = await ll.evaluate_pending(cg_collector)
+                    eval_24h = eval_result.get("evaluated_24h", 0) if isinstance(eval_result, dict) else 0
+                    eval_7d = eval_result.get("evaluated_7d", 0) if isinstance(eval_result, dict) else 0
+                    if eval_24h or eval_7d:
                         logger.info(
-                            "Learning loop evaluated %d pending predictions",
-                            evaluated if isinstance(evaluated, int) else 0,
+                            "Learning loop evaluated %d (24h) + %d (7d) predictions",
+                            eval_24h, eval_7d,
                         )
                 except Exception as e:
                     logger.warning("Learning evaluation error: %s", e)
