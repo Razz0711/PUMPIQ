@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -184,7 +184,7 @@ class InfluencerTracker:
             accuracy=round(accuracy, 3),
             credibility_score=credibility,
             onchain_reputation=onchain_reputation,
-            last_updated=datetime.utcnow(),
+            last_updated=datetime.now(timezone.utc),
         )
         self._registry[author_id] = profile
         return profile
@@ -203,7 +203,7 @@ class InfluencerTracker:
             if abs(profile.follower_count - follower_count) > 100:
                 profile.follower_count = follower_count
                 profile.tier, profile.weight = get_influence_tier(follower_count)
-                profile.last_updated = datetime.utcnow()
+                profile.last_updated = datetime.now(timezone.utc)
             return profile
 
         return self.register_influencer(
@@ -239,7 +239,7 @@ class InfluencerTracker:
 
         if not influencer_mentions:
             return InfluencerSignalReport(
-                token_ticker=token_ticker, generated_at=datetime.utcnow()
+                token_ticker=token_ticker, generated_at=datetime.now(timezone.utc)
             )
 
         # Build InfluencerMention objects
@@ -338,7 +338,7 @@ class InfluencerTracker:
             consensus=consensus,
             influencer_signal_score=round(signal_score, 2),
             total_reach=total_reach,
-            generated_at=datetime.utcnow(),
+            generated_at=datetime.now(timezone.utc),
         )
 
     def record_outcome(
@@ -361,7 +361,7 @@ class InfluencerTracker:
             else:
                 modifier = 1.0
             profile.credibility_score = round(profile.weight * modifier, 2)
-            profile.last_updated = datetime.utcnow()
+            profile.last_updated = datetime.now(timezone.utc)
 
     # ------------------------------------------------------------------
     # Internal – Signal Score

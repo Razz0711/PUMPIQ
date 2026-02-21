@@ -30,6 +30,12 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+from src.ta_utils import (
+    rsi_series as _ta_rsi_series,
+    macd_series as _ta_macd_series,
+    bollinger_series as _ta_bollinger_series,
+)
+
 logger = logging.getLogger(__name__)
 
 # ── Optional-import guard ─────────────────────────────────────
@@ -87,7 +93,16 @@ def _init_db():
     conn.close()
 
 
-_init_db()
+# Lazy initialization — tables are created on first use, not on import
+_db_initialized = False
+
+
+def _ensure_db():
+    """Initialize DB tables on first use."""
+    global _db_initialized
+    if not _db_initialized:
+        _init_db()
+        _db_initialized = True
 
 
 # ── Result dataclass ──────────────────────────────────────────────
@@ -171,47 +186,10 @@ def _quick_backtest(
     if n < max(rsi_period + 1, macd_slow + macd_signal, bb_period) + 10:
         return 0.0, 0.0, 0.0, 0
 
-    # RSI
-    rsi = [50.0] * n
-    deltas = [closes[i] - closes[i-1] for i in range(1, n)]
-    gains = [max(d, 0) for d in deltas]
-    losses_l = [max(-d, 0) for d in deltas]
-    avg_g = sum(gains[:rsi_period]) / rsi_period
-    avg_l = sum(losses_l[:rsi_period]) / rsi_period
-    for idx in range(rsi_period, n):
-        if idx - 1 < len(gains):
-            avg_g = (avg_g * (rsi_period - 1) + gains[idx - 1]) / rsi_period
-            avg_l = (avg_l * (rsi_period - 1) + losses_l[idx - 1]) / rsi_period
-        rsi[idx] = 100.0 - 100.0 / (1 + avg_g / avg_l) if avg_l > 0 else 100.0
-
-    # EMA helper
-    def _ema(vals, p):
-        out = list(vals)
-        if len(vals) < p:
-            return out
-        k = 2.0 / (p + 1)
-        out[p - 1] = sum(vals[:p]) / p
-        for j in range(p, len(vals)):
-            out[j] = vals[j] * k + out[j - 1] * (1 - k)
-        return out
-
-    # MACD
-    ef = _ema(closes, macd_fast)
-    es = _ema(closes, macd_slow)
-    ml = [ef[i] - es[i] for i in range(n)]
-    sl = _ema(ml, macd_signal)
-    hist = [ml[i] - sl[i] for i in range(n)]
-
-    # Bollinger
-    bb_u = [0.0] * n
-    bb_l_arr = [0.0] * n
-    for i in range(bb_period - 1, n):
-        w = closes[i - bb_period + 1: i + 1]
-        sma = sum(w) / bb_period
-        var = sum((c - sma) ** 2 for c in w) / bb_period
-        std = math.sqrt(var)
-        bb_u[i] = sma + bb_std * std
-        bb_l_arr[i] = sma - bb_std * std
+    # Indicators — delegate to shared ta_utils
+    rsi = _ta_rsi_series(closes, rsi_period)
+    _, _, hist = _ta_macd_series(closes, macd_fast, macd_slow, macd_signal)
+    bb_u, _, bb_l_arr = _ta_bollinger_series(closes, bb_period, bb_std)
 
     # Simulate
     start_idx = max(rsi_period + 1, macd_slow + macd_signal, bb_period)
@@ -283,6 +261,7 @@ class ParameterOptimizer:
     """
 
     def __init__(self, n_trials: int = N_TRIALS):
+        _ensure_db()
         self.n_trials = n_trials
 
     # ── cache ──────────────────────────────────────────────────────

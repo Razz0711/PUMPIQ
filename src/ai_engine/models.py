@@ -59,6 +59,15 @@ class RiskLevel(str, Enum):
     HIGH = "HIGH"
 
 
+# Risk-level ordering helper (shared across modules)
+RISK_ORD = {RiskLevel.LOW: 0, RiskLevel.MEDIUM: 1, RiskLevel.HIGH: 2}
+
+
+def max_risk(*levels: RiskLevel) -> RiskLevel:
+    """Return the highest risk level from the given levels."""
+    return max(levels, key=lambda r: RISK_ORD.get(r, 1))
+
+
 class DataMode(str, Enum):
     NEWS = "news"
     ONCHAIN = "onchain"

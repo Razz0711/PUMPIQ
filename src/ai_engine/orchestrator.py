@@ -45,7 +45,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .models import (
@@ -663,7 +663,7 @@ class Orchestrator:
 
         If the AI call fails, falls back to the NLG template engine.
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # Build prompts
         system_msg = self._prompt.system_prompt(config)
@@ -787,7 +787,7 @@ class Orchestrator:
             technical_analysis=token.technical.summary if token.technical else "",
             social_analysis=token.social.summary if token.social else "",
             market_regime=market_regime,
-            generated_at=datetime.utcnow(),
+            generated_at=datetime.now(timezone.utc),
         )
 
     # ── AI Thought Summary Generator ─────────────────────────────
@@ -996,7 +996,7 @@ class Orchestrator:
             try:
                 import hashlib
                 pred_id = hashlib.sha256(
-                    f"{rec.token_ticker}|{rec.current_price}|{datetime.utcnow().isoformat()}".encode()
+                    f"{rec.token_ticker}|{rec.current_price}|{datetime.now(timezone.utc).isoformat()}".encode()
                 ).hexdigest()[:16]
 
                 target_price = rec.entry_exit.target_1 if rec.entry_exit else 0

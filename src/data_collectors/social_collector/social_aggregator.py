@@ -26,7 +26,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -278,7 +278,7 @@ class SocialAggregator:
             red_flag_count=len(red_flags),
             total_data_points=total_points,
             confidence=round(confidence, 2),
-            generated_at=datetime.utcnow(),
+            generated_at=datetime.now(timezone.utc),
         )
 
     # ------------------------------------------------------------------

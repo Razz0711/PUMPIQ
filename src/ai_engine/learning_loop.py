@@ -116,8 +116,16 @@ def init_learning_tables():
     conn.close()
 
 
-# Initialize tables
-init_learning_tables()
+# Lazy initialization flag — tables are created on first use, not on import
+_tables_initialized = False
+
+
+def _ensure_tables():
+    """Initialize tables on first use (lazy, not at import time)."""
+    global _tables_initialized
+    if not _tables_initialized:
+        init_learning_tables()
+        _tables_initialized = True
 
 
 class LearningLoop:
@@ -138,7 +146,7 @@ class LearningLoop:
     """
 
     def __init__(self):
-        init_learning_tables()
+        _ensure_tables()
 
     # ══════════════════════════════════════════════════════════════
     # Record Predictions
@@ -214,7 +222,7 @@ class LearningLoop:
         try:
             # Short-term evaluations: predictions older than 1h not yet evaluated
             # (matches our 1-hour max hold time)
-            cutoff_24h = (datetime.utcnow() - timedelta(hours=1)).isoformat()
+            cutoff_24h = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
             pending_24h = conn.execute('''
                 SELECT * FROM predictions
                 WHERE evaluated_24h_at IS NULL AND created_at < ?
@@ -222,7 +230,7 @@ class LearningLoop:
             ''', (cutoff_24h,)).fetchall()
 
             # 7d evaluations
-            cutoff_7d = (datetime.utcnow() - timedelta(days=7)).isoformat()
+            cutoff_7d = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
             pending_7d = conn.execute('''
                 SELECT * FROM predictions
                 WHERE evaluated_7d_at IS NULL AND evaluated_24h_at IS NOT NULL
@@ -391,7 +399,7 @@ class LearningLoop:
         """Get aggregate performance statistics."""
         conn = _get_db()
         try:
-            cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
 
             # Overall accuracy
             total = conn.execute(

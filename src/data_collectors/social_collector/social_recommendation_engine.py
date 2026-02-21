@@ -32,10 +32,11 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+from src.ai_engine.models import RiskLevel
 from .social_aggregator import (
     OverallTone,
     SocialScoreReport,
@@ -54,12 +55,6 @@ class Recommendation(str, Enum):
     WATCH = "WATCH"
     AVOID = "AVOID"
     SELL = "SELL"
-
-
-class RiskLevel(str, Enum):
-    LOW = "LOW"
-    MEDIUM = "MEDIUM"
-    HIGH = "HIGH"
 
 
 class SignalAction(str, Enum):
@@ -248,7 +243,7 @@ class SocialRecommendationEngine:
                 is_active=True,
                 entry_score=score,
                 entry_price=current_price,
-                entry_time=datetime.utcnow(),
+                entry_time=datetime.now(timezone.utc),
                 current_score=score,
                 targets=targets,
             )
@@ -295,7 +290,7 @@ class SocialRecommendationEngine:
             overall_tone=score_report.overall_tone.value,
             reasoning=reasoning,
             key_signals=key_signals,
-            generated_at=datetime.utcnow(),
+            generated_at=datetime.now(timezone.utc),
             data_points=score_report.total_data_points,
         )
 

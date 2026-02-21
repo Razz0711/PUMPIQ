@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from .sentiment_analyzer import CryptoSentimentAnalyzer, WeightedSentiment
@@ -239,7 +239,7 @@ class FarcasterCollector:
     ) -> FarcasterTokenMetrics:
         if not scored:
             return FarcasterTokenMetrics(
-                token_ticker=token_ticker, collected_at=datetime.utcnow()
+                token_ticker=token_ticker, collected_at=datetime.now(timezone.utc)
             )
 
         raw_scores = [s.weighted_sentiment.sentiment.raw_score for s in scored]
@@ -274,5 +274,5 @@ class FarcasterCollector:
             top_casts=sorted(scored, key=lambda x: x.engagement_score, reverse=True)[:10],
             channel_breakdown=channel_counts,
             sentiment_distribution=dist,
-            collected_at=datetime.utcnow(),
+            collected_at=datetime.now(timezone.utc),
         )

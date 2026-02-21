@@ -35,6 +35,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from src.ta_utils import (
+    ema_series as _ta_ema_series,
+    rsi_series as _ta_rsi_series,
+    macd_series as _ta_macd_series,
+    bollinger_position as _ta_bollinger_position,
+)
+
 logger = logging.getLogger(__name__)
 
 # ── Optional-import guard  (graceful degradation) ──────────────
@@ -119,72 +126,26 @@ class MLBacktestResult:
 # ── Feature engineering helpers ──────────────────────────────────
 
 def _ema(values: List[float], period: int) -> List[float]:
-    """Full-length EMA series (pads leading values with SMA)."""
-    n = len(values)
-    if n == 0:
-        return []
-    if n < period:
-        return values[:]
-    k = 2.0 / (period + 1)
-    out = [0.0] * n
-    out[period - 1] = sum(values[:period]) / period
-    for i in range(period - 1):
-        out[i] = values[i]  # just copy raw
-    for i in range(period, n):
-        out[i] = values[i] * k + out[i - 1] * (1 - k)
-    return out
+    """Full-length EMA series (delegates to ta_utils)."""
+    return _ta_ema_series(values, period)
 
 
 def _rsi_series(closes: List[float], period: int = 14) -> List[float]:
-    n = len(closes)
-    if n < period + 1:
-        return [50.0] * n
-    rsi = [50.0] * (period + 1)
-    deltas = [closes[i] - closes[i - 1] for i in range(1, n)]
-    gains = [max(d, 0) for d in deltas]
-    losses = [max(-d, 0) for d in deltas]
-    avg_g = sum(gains[:period]) / period
-    avg_l = sum(losses[:period]) / period
-    if avg_l == 0:
-        rsi[period] = 100.0
-    else:
-        rsi[period] = 100.0 - 100.0 / (1 + avg_g / avg_l)
-    for i in range(period, len(deltas)):
-        avg_g = (avg_g * (period - 1) + gains[i]) / period
-        avg_l = (avg_l * (period - 1) + losses[i]) / period
-        if avg_l == 0:
-            rsi.append(100.0)
-        else:
-            rsi.append(100.0 - 100.0 / (1 + avg_g / avg_l))
-    while len(rsi) < n:
-        rsi.append(rsi[-1])
-    return rsi[:n]
+    """RSI series (delegates to ta_utils)."""
+    return _ta_rsi_series(closes, period)
 
 
 def _macd_histogram(closes: List[float], fast: int = 12, slow: int = 26,
                     sig: int = 9) -> List[float]:
-    ema_f = _ema(closes, fast)
-    ema_s = _ema(closes, slow)
-    n = len(closes)
-    macd_line = [ema_f[i] - ema_s[i] for i in range(n)]
-    signal = _ema(macd_line, sig)
-    return [macd_line[i] - signal[i] for i in range(n)]
+    """MACD histogram series (delegates to ta_utils)."""
+    _, _, histogram = _ta_macd_series(closes, fast, slow, sig)
+    return histogram
 
 
 def _bollinger_position(closes: List[float], period: int = 20,
                         std_mult: float = 2.0) -> List[float]:
-    """Position of price within Bollinger bands: −1 (lower) … 0 (mid) … +1 (upper)."""
-    n = len(closes)
-    pos = [0.0] * n
-    for i in range(period - 1, n):
-        window = closes[i - period + 1: i + 1]
-        sma = sum(window) / period
-        var = sum((c - sma) ** 2 for c in window) / period
-        std = math.sqrt(var) if var > 0 else 1e-8
-        band_width = std_mult * std
-        if band_width > 0:
-            pos[i] = (closes[i] - sma) / band_width
-    return pos
+    """Position of price within Bollinger bands (delegates to ta_utils)."""
+    return _ta_bollinger_position(closes, period, std_mult)
 
 
 def _volume_ratio(volumes: List[float], period: int = 20) -> List[float]:
@@ -222,8 +183,9 @@ def _volatility(closes: List[float], period: int = 10) -> List[float]:
 
 def _ema_crossover(closes: List[float], fast: int = 9,
                    slow: int = 21) -> List[float]:
-    ema_f = _ema(closes, fast)
-    ema_s = _ema(closes, slow)
+    """EMA crossover normalised signal (uses ta_utils for EMA)."""
+    ema_f = _ta_ema_series(closes, fast)
+    ema_s = _ta_ema_series(closes, slow)
     n = len(closes)
     cross = [0.0] * n
     for i in range(slow, n):

@@ -27,6 +27,7 @@ from .models import (
     RecommendationVerdict,
     RiskAssessment,
     RiskLevel,
+    RISK_ORD,
     RiskTolerance,
     TokenData,
     TokenRecommendation,
@@ -61,6 +62,15 @@ PHRASES_AVOID = [
     "guaranteed moon", "100% winner", "can't lose", "free money",
     "no risk", "easy profit", "sure thing",
 ]
+
+
+def _sanitize_text(text: str) -> str:
+    """Remove any prohibited phrases from generated text (case-insensitive)."""
+    for phrase in PHRASES_AVOID:
+        # Case-insensitive replacement
+        import re
+        text = re.sub(re.escape(phrase), "[redacted]", text, flags=re.IGNORECASE)
+    return text
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -98,12 +108,12 @@ class NLGEngine:
             parts.append(self._section("FINAL THOUGHTS", rec_set.final_thoughts))
 
         parts.append(self._footer(rec_set))
-        return "\n".join(parts)
+        return _sanitize_text("\n".join(parts))
 
     # ── Single recommendation ─────────────────────────────────────
 
     def render_single(self, rec: TokenRecommendation) -> str:
-        return self._render_single(rec)
+        return _sanitize_text(self._render_single(rec))
 
     # ── Core thesis builder ───────────────────────────────────────
 
@@ -277,7 +287,7 @@ class NLGEngine:
         lines = ["Comparing my top picks:"]
         labels = ["SAFEST play", "BEST RISK/REWARD", "HIGHEST UPSIDE"]
 
-        sorted_recs = sorted(recs, key=lambda r: _RISK_ORD.get(r.risk_level, 1))
+        sorted_recs = sorted(recs, key=lambda r: RISK_ORD.get(r.risk_level, 1))
 
         for i, rec in enumerate(sorted_recs[:3]):
             label = labels[i] if i < len(labels) else f"Pick #{i+1}"
@@ -418,8 +428,3 @@ class NLGEngine:
     @staticmethod
     def _section(title: str, body: str) -> str:
         return f"\n{'─' * 62}\n{title}\n{'─' * 62}\n{body}"
-
-
-# ── Helper ────────────────────────────────────────────────────────
-
-_RISK_ORD = {RiskLevel.LOW: 0, RiskLevel.MEDIUM: 1, RiskLevel.HIGH: 2}

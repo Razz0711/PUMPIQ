@@ -27,6 +27,13 @@ import math
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
+from src.ta_utils import (
+    ema_series as _ta_ema_series,
+    rsi_series as _ta_rsi_series,
+    macd_series as _ta_macd_series,
+    bollinger_series as _ta_bollinger_series,
+)
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -94,17 +101,10 @@ class ConfluenceResult:
         }
 
 
-# ── Indicator helpers (self-contained, no external TA lib) ────────
+# ── Indicator helpers (delegates to shared ta_utils) ────────────────────
 
 def _ema_series(values: List[float], period: int) -> List[float]:
-    if not values or len(values) < period:
-        return values[:]
-    k = 2.0 / (period + 1)
-    out = list(values)
-    out[period - 1] = sum(values[:period]) / period
-    for i in range(period, len(values)):
-        out[i] = values[i] * k + out[i - 1] * (1 - k)
-    return out
+    return _ta_ema_series(values, period)
 
 
 def _sma(values: List[float], period: int) -> List[float]:
@@ -116,49 +116,17 @@ def _sma(values: List[float], period: int) -> List[float]:
 
 
 def _rsi(closes: List[float], period: int = 14) -> List[float]:
-    n = len(closes)
-    if n < period + 1:
-        return [50.0] * n
-    rsi_arr = [50.0] * n
-    deltas = [closes[i] - closes[i-1] for i in range(1, n)]
-    gains = [max(d, 0) for d in deltas]
-    losses = [max(-d, 0) for d in deltas]
-    avg_g = sum(gains[:period]) / period
-    avg_l = sum(losses[:period]) / period
-    for idx in range(period, n):
-        if idx - 1 < len(gains):
-            avg_g = (avg_g * (period - 1) + gains[idx - 1]) / period
-            avg_l = (avg_l * (period - 1) + losses[idx - 1]) / period
-        rsi_arr[idx] = 100.0 - 100.0 / (1 + avg_g / avg_l) if avg_l > 0 else 100.0
-    return rsi_arr
+    return _ta_rsi_series(closes, period)
 
 
 def _bollinger(closes: List[float], period: int = 20,
                std_mult: float = 2.0) -> Tuple[List[float], List[float], List[float]]:
-    n = len(closes)
-    upper = [0.0] * n
-    mid = [0.0] * n
-    lower = [0.0] * n
-    for i in range(period - 1, n):
-        w = closes[i - period + 1: i + 1]
-        sma = sum(w) / period
-        var = sum((c - sma) ** 2 for c in w) / period
-        std = math.sqrt(var)
-        mid[i] = sma
-        upper[i] = sma + std_mult * std
-        lower[i] = sma - std_mult * std
-    return upper, mid, lower
+    return _ta_bollinger_series(closes, period, std_mult)
 
 
 def _macd(closes: List[float], fast: int = 12, slow: int = 26,
           sig: int = 9) -> Tuple[List[float], List[float], List[float]]:
-    ema_f = _ema_series(closes, fast)
-    ema_s = _ema_series(closes, slow)
-    n = len(closes)
-    macd_line = [ema_f[i] - ema_s[i] for i in range(n)]
-    signal_line = _ema_series(macd_line, sig)
-    histogram = [macd_line[i] - signal_line[i] for i in range(n)]
-    return macd_line, signal_line, histogram
+    return _ta_macd_series(closes, fast, slow, sig)
 
 
 def _atr(highs: List[float], lows: List[float], closes: List[float],

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field as dc_field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from .user_config import PortfolioHolding, UserPreferences
@@ -96,7 +96,7 @@ class PortfolioTracker:
         holding = PortfolioHolding(
             token=token.upper(),
             entry_price=entry_price,
-            entry_date=entry_date or datetime.utcnow(),
+            entry_date=entry_date or datetime.now(timezone.utc),
             quantity=quantity,
             recommendation_id=recommendation_id,
             notes=notes,

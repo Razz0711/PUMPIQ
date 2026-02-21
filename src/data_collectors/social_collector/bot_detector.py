@@ -16,7 +16,7 @@ import logging
 import math
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
@@ -69,7 +69,7 @@ class BotScore:
 class ShillCampaign:
     """A detected coordinated shill campaign."""
     token_ticker: str
-    detected_at: datetime = field(default_factory=datetime.utcnow)
+    detected_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     campaign_type: str = "unknown"  # "pump_group", "coordinated", "fake_engagement"
     severity: float = 0.0
     evidence: List[str] = field(default_factory=list)
@@ -166,7 +166,7 @@ class BotDetector:
         report = BotDetectionReport(
             token_ticker=token_ticker,
             total_accounts_analyzed=len({p.get("author_id") for p in posts}),
-            generated_at=datetime.utcnow(),
+            generated_at=datetime.now(timezone.utc),
         )
 
         # 1. Score individual accounts for bot probability

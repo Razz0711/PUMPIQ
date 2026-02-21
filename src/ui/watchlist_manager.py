@@ -13,7 +13,7 @@ Features:
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from .user_config import AlertType, UserPreferences, WatchlistItem
@@ -41,7 +41,7 @@ class TriggeredAlert:
         self.alert_price = alert_price
         self.current_price = current_price
         self.message = message
-        self.triggered_at = datetime.utcnow()
+        self.triggered_at = datetime.now(timezone.utc)
 
     def __repr__(self) -> str:
         return f"<TriggeredAlert {self.token} {self.alert_type.value} @ ${self.current_price}>"

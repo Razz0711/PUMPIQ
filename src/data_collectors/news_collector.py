@@ -148,6 +148,20 @@ class NewsCollector:
         self.api_key = api_key or os.getenv("CRYPTOPANIC_API_KEY", "")
         self.news_api_key = news_api_key or os.getenv("NEWS_API_KEY", "")
         self.rate_limit_sleep = rate_limit_sleep
+        self._client: Optional["httpx.AsyncClient"] = None
+
+    def _get_client(self) -> "httpx.AsyncClient":
+        """Return a long-lived httpx client (connection pooling)."""
+        import httpx
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(timeout=15)
+        return self._client
+
+    async def close(self) -> None:
+        """Close the underlying httpx client."""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
 
     # ── public API ─────────────────────────────────────────────────
 
@@ -222,12 +236,12 @@ class NewsCollector:
             params["currencies"] = query.upper()
 
         try:
-            async with httpx.AsyncClient(timeout=15) as client:
-                resp = await client.get(
+            client = self._get_client()
+            resp = await client.get(
                     self.CRYPTOPANIC_BASE, params=params,
                 )
-                resp.raise_for_status()
-                data = resp.json()
+            resp.raise_for_status()
+            data = resp.json()
             await asyncio.sleep(self.rate_limit_sleep)
         except Exception as exc:
             logger.error("CryptoPanic API error: %s", exc)
@@ -307,12 +321,12 @@ class NewsCollector:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=15) as client:
-                resp = await client.get(
+            client = self._get_client()
+            resp = await client.get(
                     "https://newsapi.org/v2/everything", params=params,
                 )
-                resp.raise_for_status()
-                data = resp.json()
+            resp.raise_for_status()
+            data = resp.json()
         except Exception as exc:
             logger.error("NewsAPI error: %s", exc)
             return []

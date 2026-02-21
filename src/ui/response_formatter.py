@@ -14,7 +14,7 @@ Formats:
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from .visual_indicators import (
@@ -336,4 +336,4 @@ _DISCLAIMER = (
 
 
 def _iso(dt: Optional[datetime]) -> str:
-    return dt.isoformat() + "Z" if dt else datetime.utcnow().isoformat() + "Z"
+    return dt.isoformat() + "Z" if dt else datetime.now(timezone.utc).isoformat() + "Z"

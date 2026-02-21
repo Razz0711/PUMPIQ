@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from .sentiment_analyzer import CryptoSentimentAnalyzer, SentimentResult
@@ -182,15 +182,84 @@ class TelegramDiscordCollector:
     ) -> List[CommunityMessage]:
         """
         Fetch messages from a Telegram group or Discord channel.
-        Production implementation uses respective bot APIs.
+
+        - Telegram: Uses Bot API ``getUpdates`` filtered to the target chat.
+        - Discord:  Uses HTTP API ``GET /channels/{id}/messages``.
+
+        Falls back to an empty list when credentials are missing or the
+        API call fails, so callers always get a safe result.
         """
-        # Placeholder – in production, integrate with:
-        # - Telegram Bot API: getUpdates / getChat + getChatHistory
-        # - Discord.py: fetch_message_history
+        import httpx
+
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+        results: List[CommunityMessage] = []
+
+        try:
+            if platform == "telegram" and self.telegram_token:
+                url = f"https://api.telegram.org/bot{self.telegram_token}/getUpdates"
+                async with httpx.AsyncClient(timeout=15) as client:
+                    resp = await client.get(url, params={"allowed_updates": '["message"]'})
+                    resp.raise_for_status()
+                    data = resp.json()
+
+                for update in data.get("result", []):
+                    msg = update.get("message", {})
+                    chat = msg.get("chat", {})
+                    if str(chat.get("id", "")) != str(group_id):
+                        continue
+                    ts = datetime.fromtimestamp(msg.get("date", 0), tz=timezone.utc)
+                    if ts < cutoff:
+                        continue
+                    user = msg.get("from", {})
+                    results.append(CommunityMessage(
+                        message_id=str(msg.get("message_id", "")),
+                        author=user.get("username", user.get("first_name", "")),
+                        content=msg.get("text", ""),
+                        timestamp=ts,
+                        is_bot=user.get("is_bot", False),
+                    ))
+
+            elif platform == "discord" and self.discord_token:
+                url = f"https://discord.com/api/v10/channels/{group_id}/messages"
+                headers = {"Authorization": f"Bot {self.discord_token}"}
+                async with httpx.AsyncClient(timeout=15) as client:
+                    resp = await client.get(url, headers=headers, params={"limit": 100})
+                    resp.raise_for_status()
+                    messages = resp.json()
+
+                for msg in messages:
+                    ts_str = msg.get("timestamp", "")
+                    try:
+                        ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                    except Exception:
+                        ts = datetime.now(timezone.utc)
+                    if ts < cutoff:
+                        continue
+                    author = msg.get("author", {})
+                    results.append(CommunityMessage(
+                        message_id=str(msg.get("id", "")),
+                        author=author.get("username", ""),
+                        content=msg.get("content", ""),
+                        timestamp=ts,
+                        is_bot=author.get("bot", False),
+                    ))
+
+            else:
+                logger.info(
+                    "No %s credentials configured — returning empty message list",
+                    platform,
+                )
+
+        except Exception as exc:
+            logger.warning(
+                "Failed to fetch %s messages for %s: %s", platform, group_id, exc
+            )
+
         logger.info(
-            f"Fetching {platform} messages for group {group_id} (last {hours}h)"
+            "Fetched %d %s messages for group %s (last %dh)",
+            len(results), platform, group_id, hours,
         )
-        return []
+        return results
 
     # ------------------------------------------------------------------
     # Internal – Analysis
@@ -212,7 +281,7 @@ class TelegramDiscordCollector:
             token_ticker=token_ticker,
             platform=platform,
             total_members=member_count,
-            collected_at=datetime.utcnow(),
+            collected_at=datetime.now(timezone.utc),
         )
 
         # ---------- Member growth ----------

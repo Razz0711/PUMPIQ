@@ -136,33 +136,43 @@ class DexScreenerCollector:
             "SOLANA_RPC_URL", self.SOLANA_RPC
         )
         self.rate_limit_sleep = rate_limit_sleep
+        self._client: Optional["httpx.AsyncClient"] = None
 
     # ── helpers ────────────────────────────────────────────────────
 
+    def _get_client(self) -> "httpx.AsyncClient":
+        """Return a long-lived httpx client (connection pooling)."""
+        import httpx
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(timeout=20)
+        return self._client
+
+    async def close(self) -> None:
+        """Close the underlying httpx client."""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
+
     async def _get_json(self, url: str, params: Optional[Dict] = None,
                         headers: Optional[Dict] = None) -> Any:
-        import httpx
-
-        async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.get(url, params=params or {},
-                                    headers=headers or {})
-            resp.raise_for_status()
-            await asyncio.sleep(self.rate_limit_sleep)
-            return resp.json()
+        client = self._get_client()
+        resp = await client.get(url, params=params or {},
+                                headers=headers or {})
+        resp.raise_for_status()
+        await asyncio.sleep(self.rate_limit_sleep)
+        return resp.json()
 
     async def _rpc_call(self, method: str, params: list) -> Any:
-        import httpx
-
         payload = {
             "jsonrpc": "2.0",
             "id": 1,
             "method": method,
             "params": params,
         }
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.post(self.solana_rpc, json=payload)
-            resp.raise_for_status()
-            return resp.json().get("result")
+        client = self._get_client()
+        resp = await client.post(self.solana_rpc, json=payload)
+        resp.raise_for_status()
+        return resp.json().get("result")
 
     # ── DexScreener endpoints ──────────────────────────────────────
 
@@ -221,8 +231,6 @@ class DexScreenerCollector:
             return []
 
         try:
-            import httpx
-
             # Run a DexScreener scraper actor (generic scraper pattern)
             run_url = (
                 f"{self.APIFY_BASE}/acts/dexscreener~dexscreener-scraper"
@@ -231,9 +239,10 @@ class DexScreenerCollector:
             headers = {"Authorization": f"Bearer {self.apify_key}"}
             body = {"searchQuery": query, "maxItems": 10}
 
-            async with httpx.AsyncClient(timeout=60) as client:
-                resp = await client.post(
-                    run_url, json=body, headers=headers
+            client = self._get_client()
+            resp = await client.post(
+                    run_url, json=body, headers=headers,
+                    timeout=60,
                 )
                 if resp.status_code == 200:
                     items = resp.json()

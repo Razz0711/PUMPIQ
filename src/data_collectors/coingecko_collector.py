@@ -108,6 +108,7 @@ class CoinGeckoCollector:
         self.api_key = api_key or os.getenv("COINGECKO_API_KEY", "")
         self.currency = currency
         self.rate_limit_sleep = rate_limit_sleep
+        self._client: Optional["httpx.AsyncClient"] = None
 
         # Determine tier: Pro keys typically start with "CG-" but use
         # pro-api.coingecko.com.  Demo keys also start with "CG-" but
@@ -123,6 +124,19 @@ class CoinGeckoCollector:
 
     # ── helpers ────────────────────────────────────────────────────
 
+    def _get_client(self) -> "httpx.AsyncClient":
+        """Return a long-lived httpx client (connection pooling)."""
+        import httpx
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(timeout=30)
+        return self._client
+
+    async def close(self) -> None:
+        """Close the underlying httpx client."""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
+
     def _headers(self) -> Dict[str, str]:
         h: Dict[str, str] = {"Accept": "application/json"}
         if self.api_key:
@@ -133,15 +147,13 @@ class CoinGeckoCollector:
         return h
 
     async def _get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
-        """GET request with rate-limit sleep."""
-        import httpx
-
+        """GET request with rate-limit sleep and connection pooling."""
         url = f"{self._base}{path}"
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(url, params=params or {}, headers=self._headers())
-            resp.raise_for_status()
-            await asyncio.sleep(self.rate_limit_sleep)
-            return resp.json()
+        client = self._get_client()
+        resp = await client.get(url, params=params or {}, headers=self._headers())
+        resp.raise_for_status()
+        await asyncio.sleep(self.rate_limit_sleep)
+        return resp.json()
 
     # ── public API ─────────────────────────────────────────────────
 

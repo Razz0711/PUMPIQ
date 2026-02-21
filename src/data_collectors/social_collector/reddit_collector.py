@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from .sentiment_analyzer import CryptoSentimentAnalyzer, SentimentResult
@@ -237,9 +237,44 @@ class RedditCollector:
     async def _fetch_comments(
         self, post_id: str, limit: int
     ) -> List[RedditComment]:
-        """Fetch top comments for a post (production: PRAW or API call)."""
-        # Placeholder – production uses Reddit API
-        return []
+        """Fetch top comments for a post via the Reddit JSON API."""
+        try:
+            import httpx
+
+            url = f"https://www.reddit.com/comments/{post_id}.json"
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.get(
+                    url,
+                    params={"limit": limit, "sort": "top", "raw_json": 1},
+                    headers={"User-Agent": self.user_agent},
+                )
+                resp.raise_for_status()
+                data = resp.json()
+
+            comments: List[RedditComment] = []
+            # Reddit returns [listing_post, listing_comments]
+            if len(data) >= 2:
+                for child in data[1].get("data", {}).get("children", [])[:limit]:
+                    d = child.get("data", {})
+                    if child.get("kind") != "t1":  # skip non-comment nodes
+                        continue
+                    comments.append(
+                        RedditComment(
+                            comment_id=d.get("id", ""),
+                            author=d.get("author", ""),
+                            body=d.get("body", ""),
+                            score=d.get("score", 0),
+                            created_at=datetime.fromtimestamp(
+                                d.get("created_utc", 0),
+                                tz=timezone.utc,
+                            ) if d.get("created_utc") else None,
+                        )
+                    )
+            return comments
+
+        except Exception as exc:
+            logger.warning("Failed to fetch Reddit comments for %s: %s", post_id, exc)
+            return []
 
     # ------------------------------------------------------------------
     # Internal – Scoring
@@ -305,7 +340,7 @@ class RedditCollector:
         """Compute aggregated Reddit metrics."""
         if not scored_posts:
             return RedditTokenMetrics(
-                token_ticker=token_ticker, collected_at=datetime.utcnow()
+                token_ticker=token_ticker, collected_at=datetime.now(timezone.utc)
             )
 
         total = len(scored_posts)
@@ -365,5 +400,5 @@ class RedditCollector:
             sentiment_distribution=dist,
             top_posts=sorted(scored_posts, key=lambda x: x.combined_score, reverse=True)[:10],
             trending_score=round(trending, 2),
-            collected_at=datetime.utcnow(),
+            collected_at=datetime.now(timezone.utc),
         )

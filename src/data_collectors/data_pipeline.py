@@ -42,6 +42,7 @@ from .coingecko_collector import CoinGeckoCollector, CoinMarketData, CoinPriceHi
 from .dexscreener_collector import DexScreenerCollector, DexScreenerToken
 from .news_collector import NewsCollector, NewsResult
 from .technical_analyzer import TechnicalAnalyzer, TechnicalResult
+from .social_collector import SocialAggregator, SocialDataBundle, SocialScoreReport
 
 logger = logging.getLogger(__name__)
 
@@ -61,11 +62,13 @@ class DataPipeline:
         dexscreener: Optional[DexScreenerCollector] = None,
         news: Optional[NewsCollector] = None,
         technical: Optional[TechnicalAnalyzer] = None,
+        social: Optional[SocialAggregator] = None,
     ):
         self.cg = coingecko or CoinGeckoCollector()
         self.dex = dexscreener or DexScreenerCollector()
         self.news = news or NewsCollector()
         self.ta = technical or TechnicalAnalyzer()
+        self.social = social or SocialAggregator()
 
     # ── main entry (compatible with Orchestrator.data_fetcher) ────
 
@@ -181,8 +184,8 @@ class DataPipeline:
         # Technical analysis (with volume data for advanced features)
         ta_result = TechnicalResult()
         if history and history.prices and len(history.prices) >= 30:
-            # Extract volumes if available from the history object
-            vol_data = getattr(history, "total_volumes", None)
+            # CoinPriceHistory stores volume data in the `volumes` attribute
+            vol_data = history.volumes if history.volumes else None
             ta_result = self.ta.analyze(history.prices, coin.current_price, volumes=vol_data)
 
         # Build payloads based on enabled modes
@@ -198,8 +201,15 @@ class DataPipeline:
         if DataMode.TECHNICAL in config.enabled_modes:
             technical_payload = self._ta_to_payload(ta_result)
 
-        # Social is not available without Twitter/Reddit — leave as None
+        # Social data collection & aggregation
         social_payload = None
+        if DataMode.SOCIAL in config.enabled_modes:
+            try:
+                bundle = SocialDataBundle(token_ticker=coin.symbol.upper())
+                report = self.social.compute_social_score(bundle)
+                social_payload = self._social_report_to_payload(report)
+            except Exception as exc:
+                logger.warning("Social data collection failed for %s: %s", coin.symbol, exc)
 
         return TokenData(
             token_name=coin.name,
@@ -274,6 +284,16 @@ class DataPipeline:
         # Technical: we don't have chart data from DexScreener (only snapshots)
         technical_payload = None
 
+        # Social data collection & aggregation
+        social_payload = None
+        if DataMode.SOCIAL in config.enabled_modes:
+            try:
+                bundle = SocialDataBundle(token_ticker=dex.symbol.upper())
+                report = self.social.compute_social_score(bundle)
+                social_payload = self._social_report_to_payload(report)
+            except Exception as exc:
+                logger.warning("Social data collection failed for %s: %s", dex.symbol, exc)
+
         return TokenData(
             token_name=dex.name,
             token_ticker=dex.symbol.upper(),
@@ -283,7 +303,7 @@ class DataPipeline:
             news=news_payload,
             onchain=onchain_payload,
             technical=technical_payload,
-            social=None,
+            social=social_payload,
             collected_at=now,
         )
 
@@ -304,6 +324,53 @@ class DataPipeline:
             narrative=nr.narrative,
             source_count=nr.source_count,
             freshness_minutes=0,
+            risk_level=risk,
+        )
+
+    @staticmethod
+    def _social_report_to_payload(report: SocialScoreReport) -> SocialScorePayload:
+        """Convert SocialScoreReport → SocialScorePayload for the engine."""
+        # Derive risk level from final score
+        risk = RiskLevel.MEDIUM
+        if report.final_score >= 8:
+            risk = RiskLevel.LOW
+        elif report.final_score <= 3:
+            risk = RiskLevel.HIGH
+
+        # Aggregate mention count from platform summaries
+        mention_count = sum(ps.mentions for ps in report.platform_summaries)
+        influencer_count = sum(ps.influencer_mentions for ps in report.platform_summaries)
+
+        # Determine mention trend from trend momentum category score
+        mention_trend = "stable"
+        for cs in report.category_scores:
+            if cs.category.value == "trend_momentum":
+                if cs.score > 0.5:
+                    mention_trend = "rising"
+                elif cs.score < -0.5:
+                    mention_trend = "declining"
+                break
+
+        # Telegram member count (if available)
+        tg_members = 0
+        for ps in report.platform_summaries:
+            if ps.platform.lower() == "telegram":
+                tg_members = ps.engagement_total
+
+        return SocialScorePayload(
+            score=report.final_score,
+            summary=(
+                f"Social score {report.final_score:.1f}/12 "
+                f"({report.overall_tone.value}). "
+                f"{mention_count} mentions across {len(report.platform_summaries)} platforms."
+            ),
+            mention_count_24h=mention_count,
+            mention_trend=mention_trend,
+            influencer_count=influencer_count,
+            telegram_members=tg_members,
+            community_growth=0,
+            trending_status=report.overall_tone.value,
+            red_flags=report.red_flags,
             risk_level=risk,
         )
 

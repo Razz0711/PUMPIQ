@@ -117,8 +117,16 @@ def _init_tracker_tables():
     conn.close()
 
 
-# Initialize on import
-_init_tracker_tables()
+# Lazy initialization — tables are created on first use, not on import
+_tracker_tables_initialized = False
+
+
+def _ensure_tracker_tables():
+    """Initialize tracker tables on first use."""
+    global _tracker_tables_initialized
+    if not _tracker_tables_initialized:
+        _init_tracker_tables()
+        _tracker_tables_initialized = True
 
 
 # ── Data Classes ──────────────────────────────────────────────────
@@ -199,7 +207,7 @@ class PredictionTracker:
     """
 
     def __init__(self):
-        _init_tracker_tables()
+        _ensure_tracker_tables()
 
     # ══════════════════════════════════════════════════════════════
     # Record Prediction
@@ -267,7 +275,7 @@ class PredictionTracker:
 
         try:
             # 24h evaluations
-            cutoff_24h = (datetime.utcnow() - timedelta(hours=24)).isoformat()
+            cutoff_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
             pending_24h = conn.execute('''
                 SELECT * FROM prediction_extended
                 WHERE evaluated_24h = 0 AND created_at < ?
@@ -275,7 +283,7 @@ class PredictionTracker:
             ''', (cutoff_24h,)).fetchall()
 
             # 7d evaluations
-            cutoff_7d = (datetime.utcnow() - timedelta(days=7)).isoformat()
+            cutoff_7d = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
             pending_7d = conn.execute('''
                 SELECT * FROM prediction_extended
                 WHERE evaluated_7d = 0 AND evaluated_24h = 1
@@ -583,7 +591,7 @@ class PredictionTracker:
         """
         conn = _get_db()
         try:
-            cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
 
             # Overall
             total = conn.execute(

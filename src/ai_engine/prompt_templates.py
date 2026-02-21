@@ -9,7 +9,7 @@ that are toggled based on which data modes are enabled.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from .models import (
@@ -316,7 +316,7 @@ class PromptBuilder:
             risk_tolerance=query.risk_tolerance.value.title(),
             timeframe=query.timeframe.value.replace("_", " ").title(),
             position_size=query.position_size.value.title(),
-            date=datetime.utcnow().strftime("%Y-%m-%d"),
+            date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
             market_condition=market.value.title(),
         ))
 
@@ -357,7 +357,7 @@ class PromptBuilder:
             ticker=token.token_ticker,
             holdings=holdings_text,
             risk_tolerance=query.risk_tolerance.value.title(),
-            date=datetime.utcnow().strftime("%Y-%m-%d"),
+            date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
             market_condition=market.value.title(),
         ))
 

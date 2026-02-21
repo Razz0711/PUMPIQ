@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from .sentiment_analyzer import CryptoSentimentAnalyzer, WeightedSentiment
@@ -183,7 +183,7 @@ class TwitterCollector:
         try:
             import httpx
 
-            start_time = (datetime.utcnow() - timedelta(hours=hours)).strftime(
+            start_time = (datetime.now(timezone.utc) - timedelta(hours=hours)).strftime(
                 "%Y-%m-%dT%H:%M:%SZ"
             )
             params = {
@@ -284,7 +284,7 @@ class TwitterCollector:
         for tweet in tweets:
             account_age = 365  # default
             if tweet.account_created_at:
-                account_age = max(1, (datetime.utcnow() - tweet.account_created_at.replace(tzinfo=None)).days)
+                account_age = max(1, (datetime.now(timezone.utc) - tweet.account_created_at.replace(tzinfo=None)).days)
 
             weighted = self.analyzer.compute_weighted_sentiment(
                 text=tweet.text,
@@ -323,7 +323,7 @@ class TwitterCollector:
         """Compute aggregated metrics from scored tweets."""
         if not scored_tweets:
             return TwitterTokenMetrics(
-                token_ticker=token_ticker, collected_at=datetime.utcnow()
+                token_ticker=token_ticker, collected_at=datetime.now(timezone.utc)
             )
 
         total_mentions = len(scored_tweets)
@@ -395,5 +395,5 @@ class TwitterCollector:
             sentiment_distribution=dist,
             hourly_mention_counts=hourly,
             mention_velocity=round(mention_velocity, 2),
-            collected_at=datetime.utcnow(),
+            collected_at=datetime.now(timezone.utc),
         )

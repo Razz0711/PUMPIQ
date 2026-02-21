@@ -41,23 +41,14 @@ from .models import (
     RecommendationVerdict,
     RiskAssessment,
     RiskLevel,
+    RISK_ORD,
+    max_risk,
     RiskTolerance,
     TokenData,
     UserConfig,
 )
 
 logger = logging.getLogger(__name__)
-
-
-# ══════════════════════════════════════════════════════════════════
-# Risk-level helper
-# ══════════════════════════════════════════════════════════════════
-
-_RISK_ORD = {RiskLevel.LOW: 0, RiskLevel.MEDIUM: 1, RiskLevel.HIGH: 2}
-
-
-def _max_risk(*levels: RiskLevel) -> RiskLevel:
-    return max(levels, key=lambda r: _RISK_ORD.get(r, 1))
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -289,19 +280,19 @@ class RiskRater:
             assessment.news_risk,
             assessment.volatility_risk,
         ]
-        assessment.overall_risk = _max_risk(*all_risks)
+        assessment.overall_risk = max_risk(*all_risks)
 
         # Risk multipliers
         if token.token_age_days < 7:
             multipliers.append(f"New token ({token.token_age_days}d old) → +1 risk")
-            assessment.overall_risk = _max_risk(
+            assessment.overall_risk = max_risk(
                 assessment.overall_risk, RiskLevel.MEDIUM
             )
         if token.onchain and token.onchain.liquidity < 20_000:
             multipliers.append(
                 f"Low liquidity (${token.onchain.liquidity:,.0f}) → +1 risk"
             )
-            assessment.overall_risk = _max_risk(
+            assessment.overall_risk = max_risk(
                 assessment.overall_risk, RiskLevel.HIGH
             )
 
@@ -319,32 +310,32 @@ class RiskRater:
         level = oc.risk_level
         if oc.liquidity < 20_000:
             factors.append(f"Liquidity critically low (${oc.liquidity:,.0f})")
-            level = _max_risk(level, RiskLevel.HIGH)
+            level = max_risk(level, RiskLevel.HIGH)
         elif oc.liquidity < 50_000:
             factors.append(f"Liquidity moderate (${oc.liquidity:,.0f})")
-            level = _max_risk(level, RiskLevel.MEDIUM)
+            level = max_risk(level, RiskLevel.MEDIUM)
         if oc.top_10_concentration > 55:
             factors.append(f"Top 10 hold {oc.top_10_concentration:.0f}% – centralised")
-            level = _max_risk(level, RiskLevel.HIGH)
+            level = max_risk(level, RiskLevel.HIGH)
         elif oc.top_10_concentration > 40:
-            level = _max_risk(level, RiskLevel.MEDIUM)
+            level = max_risk(level, RiskLevel.MEDIUM)
         return level
 
     def _technical_risk(self, tech, factors: List[str]) -> RiskLevel:
         level = tech.risk_level
         if tech.rsi > 80:
             factors.append(f"RSI overbought ({tech.rsi:.0f})")
-            level = _max_risk(level, RiskLevel.HIGH)
+            level = max_risk(level, RiskLevel.HIGH)
         if tech.trend == "downtrend":
             factors.append("Active downtrend")
-            level = _max_risk(level, RiskLevel.MEDIUM)
+            level = max_risk(level, RiskLevel.MEDIUM)
         return level
 
     def _social_risk(self, soc, factors: List[str]) -> RiskLevel:
         level = soc.risk_level
         if soc.red_flags:
             factors.extend(soc.red_flags)
-            level = _max_risk(level, RiskLevel.HIGH)
+            level = max_risk(level, RiskLevel.HIGH)
         return level
 
     def _news_risk(self, news, factors: List[str]) -> RiskLevel:

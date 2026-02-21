@@ -150,10 +150,9 @@ def send_verification_email(to_email: str, username: str, token: str) -> bool:
     return _send_email(to_email, "Verify your NEXYPHER email", _base_template("Verify Your Email", content))
 
 
-def send_registration_email(to_email: str, username: str, password: str) -> bool:
-    """Send professional registration confirmation with credentials."""
+def send_registration_email(to_email: str, username: str) -> bool:
+    """Send professional registration confirmation (no credentials included)."""
     base_url = _cfg("APP_BASE_URL", "https://NEXYPHER.vercel.app")
-    masked_pw = password[:2] + "*" * (len(password) - 3) + password[-1] if len(password) > 3 else "***"
     content = f"""
     <p style="color: #ccc; line-height: 1.6;">
         Dear <strong>{username}</strong>,<br><br>
@@ -172,15 +171,12 @@ def send_registration_email(to_email: str, username: str, password: str) -> bool
                 <td style="color: #888; padding: 8px 0; font-size: 14px; border-top: 1px solid #2a2a3a; width: 90px;">Email</td>
                 <td style="color: #fff; padding: 8px 0; font-size: 14px; font-weight: 600; text-align: right; border-top: 1px solid #2a2a3a; word-break: break-all; overflow-wrap: break-word;">{to_email}</td>
             </tr>
-            <tr>
-                <td style="color: #888; padding: 8px 0; font-size: 14px; border-top: 1px solid #2a2a3a; width: 90px;">Password</td>
-                <td style="color: #fff; padding: 8px 0; font-size: 14px; font-weight: 600; text-align: right; border-top: 1px solid #2a2a3a; word-break: break-all; overflow-wrap: break-word;">{masked_pw}</td>
-            </tr>
         </table>
     </div>
 
     <p style="color: #aaa; font-size: 13px; line-height: 1.6;">
-        For your security, we recommend keeping your credentials safe and not sharing them with anyone.
+        For your security, we never include passwords in emails. If you forget your password,
+        you can reset it from the login page at any time.
     </p>
 
     <div style="text-align: center; margin: 28px 0;">

@@ -31,6 +31,14 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+from src.ta_utils import (
+    ema as _ta_ema,
+    ema_series as _ta_ema_series,
+    rsi_series as _ta_rsi_series,
+    macd_series as _ta_macd_series,
+    bollinger_series as _ta_bollinger_series,
+)
+
 logger = logging.getLogger(__name__)
 
 # ─── Constants ────────────────────────────────────────────────────
@@ -1279,99 +1287,20 @@ class BacktestEngine:
     # ══════════════════════════════════════════════════════════════
 
     def _compute_rsi_series(self, closes: List[float]) -> List[float]:
-        """Compute RSI for every data point."""
-        period = self.rsi_period
-        n = len(closes)
-        if n < period + 1:
-            return [50.0] * n
-
-        rsi_values = [50.0] * (period + 1)
-        deltas = [closes[i] - closes[i - 1] for i in range(1, n)]
-        gains = [max(d, 0) for d in deltas]
-        losses = [max(-d, 0) for d in deltas]
-
-        avg_gain = sum(gains[:period]) / period
-        avg_loss = sum(losses[:period]) / period
-
-        if avg_loss == 0:
-            rsi_values[period] = 100.0
-        else:
-            rs = avg_gain / avg_loss
-            rsi_values[period] = 100.0 - (100.0 / (1.0 + rs))
-
-        for i in range(period, len(deltas)):
-            avg_gain = (avg_gain * (period - 1) + gains[i]) / period
-            avg_loss = (avg_loss * (period - 1) + losses[i]) / period
-            if avg_loss == 0:
-                rsi_values.append(100.0)
-            else:
-                rs = avg_gain / avg_loss
-                rsi_values.append(100.0 - (100.0 / (1.0 + rs)))
-
-        while len(rsi_values) < n:
-            rsi_values.append(rsi_values[-1] if rsi_values else 50.0)
-
-        return rsi_values[:n]
+        """Compute RSI for every data point (delegates to ta_utils)."""
+        return _ta_rsi_series(closes, self.rsi_period)
 
     def _compute_macd_series(
         self, closes: List[float],
     ) -> Tuple[List[float], List[float], List[float]]:
-        """Compute MACD line, signal line, and histogram series."""
-        n = len(closes)
-        if n < self.macd_slow + self.macd_signal_period:
-            return [0.0] * n, [0.0] * n, [0.0] * n
-
-        ema_fast = self._ema_series(closes, self.macd_fast)
-        ema_slow = self._ema_series(closes, self.macd_slow)
-
-        macd_full = [0.0] * n
-        slow_start = self.macd_slow - 1
-        fast_start = self.macd_fast - 1
-        for i in range(slow_start, n):
-            ei_fast = i - fast_start
-            ei_slow = i - slow_start
-            if 0 <= ei_fast < len(ema_fast) and 0 <= ei_slow < len(ema_slow):
-                macd_full[i] = ema_fast[ei_fast] - ema_slow[ei_slow]
-
-        valid_macd = macd_full[slow_start:]
-        signal_raw = self._ema_series(valid_macd, self.macd_signal_period)
-
-        signal_full = [0.0] * n
-        sig_start = slow_start + self.macd_signal_period - 1
-        for i, v in enumerate(signal_raw):
-            idx = sig_start + i
-            if idx < n:
-                signal_full[idx] = v
-
-        histogram = [macd_full[i] - signal_full[i] for i in range(n)]
-
-        return macd_full, signal_full, histogram
+        """Compute MACD line, signal line, and histogram series (delegates to ta_utils)."""
+        return _ta_macd_series(closes, self.macd_fast, self.macd_slow, self.macd_signal_period)
 
     def _compute_bollinger_series(
         self, closes: List[float],
     ) -> Tuple[List[float], List[float], List[float]]:
-        """Compute upper, middle, lower Bollinger Bands."""
-        period = self.bb_period
-        n = len(closes)
-        upper = [0.0] * n
-        middle = [0.0] * n
-        lower = [0.0] * n
-
-        for i in range(period - 1, n):
-            window = closes[i - period + 1: i + 1]
-            sma = sum(window) / period
-            variance = sum((c - sma) ** 2 for c in window) / period
-            std = math.sqrt(variance)
-            middle[i] = sma
-            upper[i] = sma + self.bb_std * std
-            lower[i] = sma - self.bb_std * std
-
-        for i in range(period - 1):
-            middle[i] = closes[i]
-            upper[i] = closes[i]
-            lower[i] = closes[i]
-
-        return upper, middle, lower
+        """Compute upper, middle, lower Bollinger Bands (delegates to ta_utils)."""
+        return _ta_bollinger_series(closes, self.bb_period, self.bb_std)
 
     def _compute_atr(self, closes: List[float], period: int = 14) -> List[float]:
         """Compute Average True Range series."""
@@ -1708,29 +1637,13 @@ class BacktestEngine:
 
     @staticmethod
     def _ema(values: List[float], period: int) -> float:
-        """Latest EMA value."""
-        if not values:
-            return 0.0
-        if len(values) < period:
-            return sum(values) / len(values)
-        k = 2 / (period + 1)
-        ema = sum(values[:period]) / period
-        for v in values[period:]:
-            ema = v * k + ema * (1 - k)
-        return ema
+        """Latest EMA value (delegates to ta_utils)."""
+        return _ta_ema(values, period)
 
     @staticmethod
     def _ema_series(values: List[float], period: int) -> List[float]:
-        """Full EMA series."""
-        if len(values) < period:
-            return values[:]
-        k = 2 / (period + 1)
-        ema = sum(values[:period]) / period
-        result = [ema]
-        for v in values[period:]:
-            ema = v * k + ema * (1 - k)
-            result.append(ema)
-        return result
+        """Full EMA series (delegates to ta_utils)."""
+        return _ta_ema_series(values, period)
 
 
 # ─── Module-level singleton ───────────────────────────────────────

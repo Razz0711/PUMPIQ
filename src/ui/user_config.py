@@ -17,7 +17,7 @@ Covers all 8 settings categories from spec:
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -190,7 +190,7 @@ class AdvancedFilters(BaseModel):
 class WatchlistItem(BaseModel):
     """A single token on the user's watchlist."""
     token: str
-    added_at: datetime = Field(default_factory=datetime.utcnow)
+    added_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     alert_price: Optional[float] = None
     alert_type: AlertType = AlertType.TARGET_REACHED
     notes: str = ""
@@ -200,7 +200,7 @@ class PortfolioHolding(BaseModel):
     """A token the user currently holds."""
     token: str
     entry_price: float
-    entry_date: datetime = Field(default_factory=datetime.utcnow)
+    entry_date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     quantity: float = 0
     recommendation_id: Optional[str] = None
     notes: str = ""
@@ -228,7 +228,7 @@ class UserPreferences(BaseModel):
     filters: AdvancedFilters = Field(default_factory=AdvancedFilters)
     watchlist: List[WatchlistItem] = Field(default_factory=list)
     holdings: List[PortfolioHolding] = Field(default_factory=list)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     # ── Convenience helpers ───────────────────────────────────────
 

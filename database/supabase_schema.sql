@@ -40,8 +40,8 @@ CREATE TABLE IF NOT EXISTS portfolio (
     id            BIGSERIAL PRIMARY KEY,
     user_id       BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     coin_id       TEXT NOT NULL,
-    amount        DOUBLE PRECISION NOT NULL DEFAULT 0,
-    avg_buy_price DOUBLE PRECISION NOT NULL DEFAULT 0,
+    amount        NUMERIC(18,8) NOT NULL DEFAULT 0,
+    avg_buy_price NUMERIC(18,8) NOT NULL DEFAULT 0,
     notes         TEXT DEFAULT '',
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(user_id, coin_id)
@@ -52,8 +52,8 @@ CREATE TABLE IF NOT EXISTS trade_history (
     user_id        BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     coin_id        TEXT NOT NULL,
     action         TEXT NOT NULL,
-    amount         DOUBLE PRECISION NOT NULL,
-    price          DOUBLE PRECISION NOT NULL,
+    amount         NUMERIC(18,8) NOT NULL,
+    price          NUMERIC(18,8) NOT NULL,
     timestamp      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     wallet_address TEXT DEFAULT '',
     tx_hash        TEXT DEFAULT ''
@@ -84,7 +84,7 @@ CREATE TABLE IF NOT EXISTS bank_accounts (
 
 CREATE TABLE IF NOT EXISTS wallet_balance (
     user_id    BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-    balance    DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+    balance    NUMERIC(18,8) NOT NULL DEFAULT 0.0,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -92,7 +92,7 @@ CREATE TABLE IF NOT EXISTS wallet_transactions (
     id          BIGSERIAL PRIMARY KEY,
     user_id     BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     type        TEXT NOT NULL,
-    amount      DOUBLE PRECISION NOT NULL,
+    amount      NUMERIC(18,8) NOT NULL,
     bank_id     BIGINT,
     description TEXT DEFAULT '',
     tx_hash     TEXT NOT NULL DEFAULT '',
@@ -120,13 +120,13 @@ CREATE TABLE IF NOT EXISTS user_preferences (
 CREATE TABLE IF NOT EXISTS trade_settings (
     user_id              BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     auto_trade_enabled   BOOLEAN NOT NULL DEFAULT FALSE,
-    max_trade_pct        DOUBLE PRECISION NOT NULL DEFAULT 20.0,
-    daily_loss_limit_pct DOUBLE PRECISION NOT NULL DEFAULT 10.0,
+    max_trade_pct        NUMERIC(8,4) NOT NULL DEFAULT 20.0,
+    daily_loss_limit_pct NUMERIC(8,4) NOT NULL DEFAULT 10.0,
     max_open_positions   INTEGER NOT NULL DEFAULT 5,
-    stop_loss_pct        DOUBLE PRECISION NOT NULL DEFAULT 8.0,
-    take_profit_pct      DOUBLE PRECISION NOT NULL DEFAULT 20.0,
+    stop_loss_pct        NUMERIC(8,4) NOT NULL DEFAULT 8.0,
+    take_profit_pct      NUMERIC(8,4) NOT NULL DEFAULT 20.0,
     cooldown_minutes     INTEGER NOT NULL DEFAULT 5,
-    min_market_cap       DOUBLE PRECISION NOT NULL DEFAULT 1000000,
+    min_market_cap       NUMERIC(18,2) NOT NULL DEFAULT 1000000,
     risk_level           TEXT NOT NULL DEFAULT 'moderate',
     updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -138,16 +138,16 @@ CREATE TABLE IF NOT EXISTS trade_positions (
     coin_name       TEXT NOT NULL DEFAULT '',
     symbol          TEXT NOT NULL DEFAULT '',
     side            TEXT NOT NULL DEFAULT 'long',
-    entry_price     DOUBLE PRECISION NOT NULL,
-    current_price   DOUBLE PRECISION NOT NULL DEFAULT 0,
-    quantity        DOUBLE PRECISION NOT NULL,
-    invested_amount DOUBLE PRECISION NOT NULL,
-    current_value   DOUBLE PRECISION NOT NULL DEFAULT 0,
-    pnl             DOUBLE PRECISION NOT NULL DEFAULT 0,
-    pnl_pct         DOUBLE PRECISION NOT NULL DEFAULT 0,
+    entry_price     NUMERIC(18,8) NOT NULL,
+    current_price   NUMERIC(18,8) NOT NULL DEFAULT 0,
+    quantity        NUMERIC(18,8) NOT NULL,
+    invested_amount NUMERIC(18,8) NOT NULL,
+    current_value   NUMERIC(18,8) NOT NULL DEFAULT 0,
+    pnl             NUMERIC(18,8) NOT NULL DEFAULT 0,
+    pnl_pct         NUMERIC(8,4) NOT NULL DEFAULT 0,
     status          TEXT NOT NULL DEFAULT 'open',
-    stop_loss       DOUBLE PRECISION NOT NULL DEFAULT 0,
-    take_profit     DOUBLE PRECISION NOT NULL DEFAULT 0,
+    stop_loss       NUMERIC(18,8) NOT NULL DEFAULT 0,
+    take_profit     NUMERIC(18,8) NOT NULL DEFAULT 0,
     ai_reasoning    TEXT NOT NULL DEFAULT '',
     tx_hash         TEXT NOT NULL DEFAULT '',
     opened_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -161,9 +161,9 @@ CREATE TABLE IF NOT EXISTS trade_orders (
     coin_id      TEXT NOT NULL,
     symbol       TEXT NOT NULL DEFAULT '',
     action       TEXT NOT NULL,
-    price        DOUBLE PRECISION NOT NULL,
-    quantity     DOUBLE PRECISION NOT NULL,
-    amount       DOUBLE PRECISION NOT NULL,
+    price        NUMERIC(18,8) NOT NULL,
+    quantity     NUMERIC(18,8) NOT NULL,
+    amount       NUMERIC(18,8) NOT NULL,
     ai_score     INTEGER NOT NULL DEFAULT 0,
     ai_reasoning TEXT NOT NULL DEFAULT '',
     tx_hash      TEXT NOT NULL DEFAULT '',
@@ -181,13 +181,13 @@ CREATE TABLE IF NOT EXISTS trade_log (
 
 CREATE TABLE IF NOT EXISTS trade_stats (
     user_id        BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-    total_invested DOUBLE PRECISION NOT NULL DEFAULT 0,
-    total_pnl      DOUBLE PRECISION NOT NULL DEFAULT 0,
+    total_invested NUMERIC(18,8) NOT NULL DEFAULT 0,
+    total_pnl      NUMERIC(18,8) NOT NULL DEFAULT 0,
     total_trades   INTEGER NOT NULL DEFAULT 0,
     winning_trades INTEGER NOT NULL DEFAULT 0,
     losing_trades  INTEGER NOT NULL DEFAULT 0,
-    best_trade_pnl DOUBLE PRECISION NOT NULL DEFAULT 0,
-    worst_trade_pnl DOUBLE PRECISION NOT NULL DEFAULT 0,
+    best_trade_pnl NUMERIC(18,8) NOT NULL DEFAULT 0,
+    worst_trade_pnl NUMERIC(18,8) NOT NULL DEFAULT 0,
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -195,18 +195,36 @@ CREATE TABLE IF NOT EXISTS trade_stats (
 -- ─── RPC FUNCTIONS (atomic operations called via supabase.rpc()) ────────────
 
 -- Atomically adjust wallet balance (positive = credit, negative = debit)
+-- Raises an exception if a debit would make the balance negative.
 CREATE OR REPLACE FUNCTION update_wallet_balance(p_user_id BIGINT, p_delta DOUBLE PRECISION)
 RETURNS DOUBLE PRECISION AS $$
 DECLARE
     new_bal DOUBLE PRECISION;
+    cur_bal DOUBLE PRECISION;
 BEGIN
+    -- Ensure the row exists (idempotent)
     INSERT INTO wallet_balance (user_id, balance, updated_at)
-    VALUES (p_user_id, GREATEST(0, p_delta), NOW())
-    ON CONFLICT (user_id) DO UPDATE
-        SET balance = wallet_balance.balance + p_delta,
-            updated_at = NOW();
+    VALUES (p_user_id, 0, NOW())
+    ON CONFLICT (user_id) DO NOTHING;
 
-    SELECT balance INTO new_bal FROM wallet_balance WHERE user_id = p_user_id;
+    -- Lock the row and read current balance
+    SELECT balance INTO cur_bal
+    FROM wallet_balance
+    WHERE user_id = p_user_id
+    FOR UPDATE;
+
+    -- Guard: reject debits that exceed available balance
+    IF (cur_bal + p_delta) < 0 THEN
+        RAISE EXCEPTION 'Insufficient wallet balance. Current: %, Requested delta: %', cur_bal, p_delta;
+    END IF;
+
+    -- Apply the delta
+    UPDATE wallet_balance
+    SET balance = cur_bal + p_delta,
+        updated_at = NOW()
+    WHERE user_id = p_user_id;
+
+    new_bal := cur_bal + p_delta;
     RETURN new_bal;
 END;
 $$ LANGUAGE plpgsql;
@@ -273,14 +291,89 @@ CREATE INDEX IF NOT EXISTS idx_trade_orders_user          ON trade_orders(user_i
 CREATE INDEX IF NOT EXISTS idx_trade_log_user             ON trade_log(user_id);
 
 
--- ─── ROW LEVEL SECURITY (optional — uncomment for production) ───────────────
--- ALTER TABLE users ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE wallets ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE watchlist ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE portfolio ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE trade_history ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE email_tokens ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE bank_accounts ENABLE ROW LEVEL SECURITY;
+-- ─── ROW LEVEL SECURITY ─────────────────────────────────────────────────────
+-- Enable RLS on all user-facing tables to prevent cross-user data access.
+-- The backend service role bypasses RLS; direct client access is restricted.
+
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE wallets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE watchlist ENABLE ROW LEVEL SECURITY;
+ALTER TABLE portfolio ENABLE ROW LEVEL SECURITY;
+ALTER TABLE trade_history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE email_tokens ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bank_accounts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE wallet_balance ENABLE ROW LEVEL SECURITY;
+ALTER TABLE wallet_transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_preferences ENABLE ROW LEVEL SECURITY;
+ALTER TABLE trade_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE trade_positions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE trade_orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE trade_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE trade_stats ENABLE ROW LEVEL SECURITY;
+
+-- ─── RLS POLICIES ───────────────────────────────────────────────────────────
+-- Users can only read/write their own rows.  The service_role key (used by
+-- the backend) bypasses RLS automatically.
+
+-- users: allow read own row only
+CREATE POLICY users_self_access ON users
+    FOR ALL USING (id = current_setting('app.current_user_id', true)::BIGINT);
+
+-- wallets
+CREATE POLICY wallets_owner ON wallets
+    FOR ALL USING (user_id = current_setting('app.current_user_id', true)::BIGINT);
+
+-- watchlist
+CREATE POLICY watchlist_owner ON watchlist
+    FOR ALL USING (user_id = current_setting('app.current_user_id', true)::BIGINT);
+
+-- portfolio
+CREATE POLICY portfolio_owner ON portfolio
+    FOR ALL USING (user_id = current_setting('app.current_user_id', true)::BIGINT);
+
+-- trade_history
+CREATE POLICY trade_history_owner ON trade_history
+    FOR ALL USING (user_id = current_setting('app.current_user_id', true)::BIGINT);
+
+-- email_tokens
+CREATE POLICY email_tokens_owner ON email_tokens
+    FOR ALL USING (user_id = current_setting('app.current_user_id', true)::BIGINT);
+
+-- bank_accounts
+CREATE POLICY bank_accounts_owner ON bank_accounts
+    FOR ALL USING (user_id = current_setting('app.current_user_id', true)::BIGINT);
+
+-- wallet_balance
+CREATE POLICY wallet_balance_owner ON wallet_balance
+    FOR ALL USING (user_id = current_setting('app.current_user_id', true)::BIGINT);
+
+-- wallet_transactions
+CREATE POLICY wallet_transactions_owner ON wallet_transactions
+    FOR ALL USING (user_id = current_setting('app.current_user_id', true)::BIGINT);
+
+-- user_preferences
+CREATE POLICY user_preferences_owner ON user_preferences
+    FOR ALL USING (user_id = current_setting('app.current_user_id', true)::BIGINT);
+
+-- trade_settings
+CREATE POLICY trade_settings_owner ON trade_settings
+    FOR ALL USING (user_id = current_setting('app.current_user_id', true)::BIGINT);
+
+-- trade_positions
+CREATE POLICY trade_positions_owner ON trade_positions
+    FOR ALL USING (user_id = current_setting('app.current_user_id', true)::BIGINT);
+
+-- trade_orders
+CREATE POLICY trade_orders_owner ON trade_orders
+    FOR ALL USING (user_id = current_setting('app.current_user_id', true)::BIGINT);
+
+-- trade_log
+CREATE POLICY trade_log_owner ON trade_log
+    FOR ALL USING (user_id = current_setting('app.current_user_id', true)::BIGINT);
+
+-- trade_stats
+CREATE POLICY trade_stats_owner ON trade_stats
+    FOR ALL USING (user_id = current_setting('app.current_user_id', true)::BIGINT);
 -- ALTER TABLE wallet_balance ENABLE ROW LEVEL SECURITY;
 -- ALTER TABLE wallet_transactions ENABLE ROW LEVEL SECURITY;
 -- ALTER TABLE user_preferences ENABLE ROW LEVEL SECURITY;
