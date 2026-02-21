@@ -266,7 +266,7 @@ class LearningLoop:
         row = {
             "prediction_id": prediction_id,
             "user_id": user_id,
-            "token_ticker": token_ticker,
+            "token_ticker": token_ticker if len(token_ticker) <= 20 else token_ticker[:6] + "..." + token_ticker[-4:],
             "token_name": token_name,
             "verdict": verdict,
             "confidence": confidence,
