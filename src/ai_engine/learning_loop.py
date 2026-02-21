@@ -1,13 +1,21 @@
 """
-Continuous Learning & Feedback Loop
-======================================
+Continuous Learning & Feedback Loop  (Supabase Edition)
+=======================================================
 Tracks prediction accuracy, compares AI decisions with actual outcomes,
 and adapts strategies based on market regime changes.
 
+All data is persisted in **Supabase (PostgreSQL)** so it survives
+Render/Vercel deploys and service restarts.
+
+Tables (run database/supabase_schema.sql once):
+  - ll_predictions
+  - ll_strategy_adjustments
+  - ll_accuracy_snapshots
+
 Features:
   - Records every recommendation as a trackable prediction
-  - Evaluates predictions after 24h and 7d against actual prices
-  - Computes accuracy metrics per market regime, mode, and timeframe
+  - Evaluates predictions after 1 h (short-term) and 7 d against actual prices
+  - Computes accuracy metrics per market regime, direction, and timeframe
   - Generates strategy adjustments based on performance
   - Adapts confidence modifiers based on historical accuracy
 
@@ -19,138 +27,54 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
-import sqlite3
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-# Database path
-IS_VERCEL = bool(os.getenv("VERCEL"))
-DB_PATH = "/tmp/nexypher_learning.db" if IS_VERCEL else os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "nexypher_learning.db"
-)
+
+# ---------------------------------------------------------------------------
+# Supabase helper
+# ---------------------------------------------------------------------------
+
+def _sb():
+    """Return the Supabase client singleton (lazy import)."""
+    from supabase_db import get_supabase
+    return get_supabase()
 
 
-def _get_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    try:
-        conn.execute("PRAGMA journal_mode=WAL")
-    except sqlite3.OperationalError:
-        pass
-    return conn
-
-
-def init_learning_tables():
-    """Create tables for the continuous learning loop."""
-    conn = _get_db()
-    conn.executescript('''
-        CREATE TABLE IF NOT EXISTS predictions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            prediction_id TEXT UNIQUE NOT NULL,
-            user_id INTEGER DEFAULT 0,
-            token_ticker TEXT NOT NULL,
-            token_name TEXT NOT NULL DEFAULT '',
-            verdict TEXT NOT NULL,
-            confidence REAL NOT NULL,
-            composite_score REAL NOT NULL DEFAULT 0,
-            predicted_direction TEXT NOT NULL DEFAULT 'up',
-            price_at_prediction REAL NOT NULL,
-            target_price REAL NOT NULL DEFAULT 0,
-            stop_loss_price REAL NOT NULL DEFAULT 0,
-            market_condition TEXT NOT NULL DEFAULT 'sideways',
-            market_regime TEXT NOT NULL DEFAULT 'unknown',
-            risk_level TEXT NOT NULL DEFAULT 'MEDIUM',
-            enabled_modes TEXT NOT NULL DEFAULT '[]',
-            ai_thought_summary TEXT NOT NULL DEFAULT '',
-            -- Outcome fields (filled by evaluation)
-            actual_price_24h REAL DEFAULT NULL,
-            actual_price_7d REAL DEFAULT NULL,
-            direction_correct_24h INTEGER DEFAULT NULL,
-            direction_correct_7d INTEGER DEFAULT NULL,
-            pnl_pct_24h REAL DEFAULT NULL,
-            pnl_pct_7d REAL DEFAULT NULL,
-            target_hit INTEGER DEFAULT NULL,
-            stop_loss_hit INTEGER DEFAULT NULL,
-            -- Metadata
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            evaluated_24h_at TEXT DEFAULT NULL,
-            evaluated_7d_at TEXT DEFAULT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS strategy_adjustments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            adjustment_type TEXT NOT NULL,
-            description TEXT NOT NULL,
-            old_value TEXT NOT NULL DEFAULT '',
-            new_value TEXT NOT NULL DEFAULT '',
-            reason TEXT NOT NULL DEFAULT '',
-            market_regime TEXT NOT NULL DEFAULT '',
-            applied INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-
-        CREATE TABLE IF NOT EXISTS accuracy_snapshots (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            period TEXT NOT NULL,
-            total_predictions INTEGER NOT NULL DEFAULT 0,
-            correct_24h INTEGER NOT NULL DEFAULT 0,
-            correct_7d INTEGER NOT NULL DEFAULT 0,
-            accuracy_24h REAL NOT NULL DEFAULT 0,
-            accuracy_7d REAL NOT NULL DEFAULT 0,
-            avg_confidence_correct REAL NOT NULL DEFAULT 0,
-            avg_confidence_incorrect REAL NOT NULL DEFAULT 0,
-            best_mode TEXT NOT NULL DEFAULT '',
-            worst_mode TEXT NOT NULL DEFAULT '',
-            market_regime TEXT NOT NULL DEFAULT '',
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_predictions_ticker ON predictions(token_ticker);
-        CREATE INDEX IF NOT EXISTS idx_predictions_created ON predictions(created_at);
-        CREATE INDEX IF NOT EXISTS idx_predictions_evaluated ON predictions(evaluated_24h_at);
-    ''')
-    conn.commit()
-    conn.close()
-
-
-# Lazy initialization flag — tables are created on first use, not on import
-_tables_initialized = False
-
-
-def _ensure_tables():
-    """Initialize tables on first use (lazy, not at import time)."""
-    global _tables_initialized
-    if not _tables_initialized:
-        init_learning_tables()
-        _tables_initialized = True
-
+# ---------------------------------------------------------------------------
+# Main class
+# ---------------------------------------------------------------------------
 
 class LearningLoop:
     """
     Continuous learning engine that tracks and evaluates predictions.
+    Uses Supabase (PostgreSQL) for persistent storage.
 
     Usage::
 
         loop = LearningLoop()
-        # Record a new prediction
         loop.record_prediction(token_ticker="BTC", verdict="Strong Buy", ...)
-        # Later: evaluate against actual prices
         await loop.evaluate_pending(cg_collector)
-        # Get performance metrics
         stats = loop.get_performance_stats()
-        # Get strategy adjustments
         adjustments = loop.generate_adjustments()
     """
 
     def __init__(self):
-        _ensure_tables()
+        # Quick probe - warns if migration SQL hasn't been run yet
+        try:
+            _sb().table("ll_predictions").select("id", count="exact").limit(0).execute()
+        except Exception as e:
+            logger.warning(
+                "LearningLoop: ll_predictions table not found - run "
+                "database/supabase_schema.sql in your Supabase SQL Editor. (%s)",
+                e,
+            )
 
-    # ══════════════════════════════════════════════════════════════
+    # ==================================================================
     # Record Predictions
-    # ══════════════════════════════════════════════════════════════
+    # ==================================================================
 
     def record_prediction(
         self,
@@ -165,7 +89,7 @@ class LearningLoop:
         market_condition: str = "sideways",
         market_regime: str = "unknown",
         risk_level: str = "MEDIUM",
-        enabled_modes: List[str] = None,
+        enabled_modes: List[str] | None = None,
         ai_thought_summary: str = "",
         user_id: int = 0,
     ) -> str:
@@ -174,71 +98,85 @@ class LearningLoop:
             f"{token_ticker}|{price_at_prediction}|{datetime.now(timezone.utc).isoformat()}".encode()
         ).hexdigest()[:16]
 
-        conn = _get_db()
+        predicted_direction = (
+            "up" if verdict in ("Strong Buy", "Moderate Buy", "Cautious Buy")
+            else "down" if verdict in ("Sell", "Avoid")
+            else "flat"
+        )
+
+        row = {
+            "prediction_id": prediction_id,
+            "user_id": user_id,
+            "token_ticker": token_ticker,
+            "token_name": token_name,
+            "verdict": verdict,
+            "confidence": confidence,
+            "composite_score": composite_score,
+            "predicted_direction": predicted_direction,
+            "price_at_prediction": price_at_prediction,
+            "target_price": target_price,
+            "stop_loss_price": stop_loss_price,
+            "market_condition": market_condition,
+            "market_regime": market_regime,
+            "risk_level": risk_level,
+            "enabled_modes": json.dumps(enabled_modes or []),
+            "ai_thought_summary": ai_thought_summary,
+        }
+
         try:
-            predicted_direction = "up" if verdict in (
-                "Strong Buy", "Moderate Buy", "Cautious Buy"
-            ) else "down" if verdict in ("Sell", "Avoid") else "flat"
-
-            conn.execute('''
-                INSERT INTO predictions (
-                    prediction_id, user_id, token_ticker, token_name, verdict,
-                    confidence, composite_score, predicted_direction,
-                    price_at_prediction, target_price, stop_loss_price,
-                    market_condition, market_regime, risk_level,
-                    enabled_modes, ai_thought_summary
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                prediction_id, user_id, token_ticker, token_name, verdict,
-                confidence, composite_score, predicted_direction,
-                price_at_prediction, target_price, stop_loss_price,
-                market_condition, market_regime, risk_level,
-                json.dumps(enabled_modes or []), ai_thought_summary,
-            ))
-            conn.commit()
+            _sb().table("ll_predictions").insert(row).execute()
             logger.info(
-                "Recorded prediction %s for %s: %s @ $%.6f (conf=%.1f)",
-                prediction_id, token_ticker, verdict, price_at_prediction, confidence,
+                "Recorded prediction %s for %s: %s @ $%.6f (conf=%.2f)",
+                prediction_id, token_ticker, verdict,
+                price_at_prediction, confidence,
             )
-            return prediction_id
-        except sqlite3.IntegrityError:
-            logger.debug("Duplicate prediction_id %s (skipped)", prediction_id)
-            return prediction_id
-        finally:
-            conn.close()
+        except Exception as e:
+            err = str(e).lower()
+            if "duplicate" in err or "23505" in err:
+                logger.debug("Duplicate prediction_id %s (skipped)", prediction_id)
+            else:
+                logger.warning("Failed to record prediction: %s", e)
 
-    # ══════════════════════════════════════════════════════════════
+        return prediction_id
+
+    # ==================================================================
     # Evaluate Predictions Against Actual Outcomes
-    # ══════════════════════════════════════════════════════════════
+    # ==================================================================
 
     async def evaluate_pending(self, cg_collector) -> Dict[str, Any]:
         """
         Evaluate predictions that haven't been checked yet.
         Compares predicted direction against actual price movement.
         """
-        conn = _get_db()
+        sb = _sb()
         results = {"evaluated_24h": 0, "evaluated_7d": 0, "errors": 0}
 
         try:
-            # Short-term evaluations: predictions older than 1h not yet evaluated
-            # (matches our 1-hour max hold time)
             cutoff_24h = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
-            pending_24h = conn.execute('''
-                SELECT * FROM predictions
-                WHERE evaluated_24h_at IS NULL AND created_at < ?
-                ORDER BY created_at DESC LIMIT 50
-            ''', (cutoff_24h,)).fetchall()
+            res_24h = (
+                sb.table("ll_predictions")
+                .select("*")
+                .is_("evaluated_24h_at", "null")
+                .lt("created_at", cutoff_24h)
+                .order("created_at", desc=True)
+                .limit(50)
+                .execute()
+            )
+            pending_24h = res_24h.data or []
 
-            # 7d evaluations
             cutoff_7d = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
-            pending_7d = conn.execute('''
-                SELECT * FROM predictions
-                WHERE evaluated_7d_at IS NULL AND evaluated_24h_at IS NOT NULL
-                AND created_at < ?
-                ORDER BY created_at DESC LIMIT 50
-            ''', (cutoff_7d,)).fetchall()
+            res_7d = (
+                sb.table("ll_predictions")
+                .select("*")
+                .not_.is_("evaluated_24h_at", "null")
+                .is_("evaluated_7d_at", "null")
+                .lt("created_at", cutoff_7d)
+                .order("created_at", desc=True)
+                .limit(50)
+                .execute()
+            )
+            pending_7d = res_7d.data or []
 
-            # Batch: collect all unique tickers
             tickers_24h = list({row["token_ticker"].lower() for row in pending_24h})
             tickers_7d = list({row["token_ticker"].lower() for row in pending_7d})
             all_tickers = list(set(tickers_24h + tickers_7d))
@@ -246,67 +184,68 @@ class LearningLoop:
             if not all_tickers:
                 return results
 
-            # Fetch current prices
-            prices = {}
             try:
-                price_data = await cg_collector.get_simple_price(all_tickers)
-                prices = price_data
+                prices = await cg_collector.get_simple_price(all_tickers)
             except Exception as e:
                 logger.warning("Price fetch for evaluation failed: %s", e)
                 return results
 
-            # Evaluate 24h predictions
             for row in pending_24h:
                 ticker = row["token_ticker"].lower()
                 current_price = prices.get(ticker, 0)
                 if current_price <= 0:
                     continue
                 try:
-                    self._evaluate_24h(conn, dict(row), current_price)
+                    self._evaluate_24h(sb, row, current_price)
                     results["evaluated_24h"] += 1
                 except Exception as e:
                     logger.warning("24h eval failed for %s: %s", ticker, e)
                     results["errors"] += 1
 
-            # Evaluate 7d predictions
             for row in pending_7d:
                 ticker = row["token_ticker"].lower()
                 current_price = prices.get(ticker, 0)
                 if current_price <= 0:
                     continue
                 try:
-                    self._evaluate_7d(conn, dict(row), current_price)
+                    self._evaluate_7d(sb, row, current_price)
                     results["evaluated_7d"] += 1
                 except Exception as e:
                     logger.warning("7d eval failed for %s: %s", ticker, e)
                     results["errors"] += 1
 
-            conn.commit()
-        finally:
-            conn.close()
+        except Exception as e:
+            logger.error("evaluate_pending failed: %s", e)
 
         return results
 
-    def evaluate_trade_close(self, token_ticker: str, exit_price: float, pnl_pct: float) -> int:
+    def evaluate_trade_close(
+        self, token_ticker: str, exit_price: float, pnl_pct: float
+    ) -> int:
         """
         Immediately evaluate open predictions for a token when a trade closes.
         Called by the trading engine on every sell. Returns number of records updated.
         """
-        conn = _get_db()
+        sb = _sb()
         updated = 0
-        try:
-            rows = conn.execute('''
-                SELECT * FROM predictions
-                WHERE LOWER(token_ticker) = LOWER(?)
-                  AND evaluated_24h_at IS NULL
-                ORDER BY created_at DESC LIMIT 10
-            ''', (token_ticker,)).fetchall()
 
-            for row in rows:
-                pred = dict(row)
+        try:
+            res = (
+                sb.table("ll_predictions")
+                .select("*")
+                .ilike("token_ticker", token_ticker)
+                .is_("evaluated_24h_at", "null")
+                .order("created_at", desc=True)
+                .limit(10)
+                .execute()
+            )
+            rows = res.data or []
+
+            for pred in rows:
                 entry = pred["price_at_prediction"]
                 if entry <= 0:
                     continue
+
                 direction = pred["predicted_direction"]
                 if direction == "up":
                     correct = exit_price > entry
@@ -315,29 +254,32 @@ class LearningLoop:
                 else:
                     correct = abs(pnl_pct) < 2
 
-                conn.execute('''
-                    UPDATE predictions SET
-                        actual_price_24h = ?,
-                        direction_correct_24h = ?,
-                        pnl_pct_24h = ?,
-                        evaluated_24h_at = datetime('now')
-                    WHERE prediction_id = ?
-                ''', (exit_price, 1 if correct else 0, round(pnl_pct, 2), pred["prediction_id"]))
+                sb.table("ll_predictions").update({
+                    "actual_price_24h": exit_price,
+                    "direction_correct_24h": correct,
+                    "pnl_pct_24h": round(pnl_pct, 2),
+                    "evaluated_24h_at": datetime.now(timezone.utc).isoformat(),
+                }).eq("prediction_id", pred["prediction_id"]).execute()
                 updated += 1
 
-            conn.commit()
             if updated:
                 logger.info(
-                    "Learning loop: immediately evaluated %d predictions for %s "
+                    "Learning loop: evaluated %d predictions for %s "
                     "(exit=$%.4f, P&L=%.2f%%)",
-                    updated, token_ticker, exit_price, pnl_pct
+                    updated, token_ticker, exit_price, pnl_pct,
                 )
-        finally:
-            conn.close()
+        except Exception as e:
+            logger.warning("evaluate_trade_close failed: %s", e)
+
         return updated
 
-    def _evaluate_24h(self, conn, pred: dict, actual_price: float):
-        """Evaluate a prediction after 24 hours."""
+    # Alias for backward compatibility with trading_engine.py
+    def evaluate_predictions_with_price(self, token_ticker: str, actual_price: float, **kwargs) -> int:
+        return self.evaluate_trade_close(token_ticker, actual_price, pnl_pct=0.0)
+
+    # ------------------------------------------------------------------
+
+    def _evaluate_24h(self, sb, pred: dict, actual_price: float):
         entry = pred["price_at_prediction"]
         pnl_pct = ((actual_price - entry) / entry) * 100
 
@@ -347,19 +289,16 @@ class LearningLoop:
         elif direction == "down":
             correct = actual_price < entry
         else:
-            correct = abs(pnl_pct) < 2  # within 2% = "flat" is correct
+            correct = abs(pnl_pct) < 2
 
-        conn.execute('''
-            UPDATE predictions SET
-                actual_price_24h = ?,
-                direction_correct_24h = ?,
-                pnl_pct_24h = ?,
-                evaluated_24h_at = datetime('now')
-            WHERE prediction_id = ?
-        ''', (actual_price, 1 if correct else 0, round(pnl_pct, 2), pred["prediction_id"]))
+        sb.table("ll_predictions").update({
+            "actual_price_24h": actual_price,
+            "direction_correct_24h": correct,
+            "pnl_pct_24h": round(pnl_pct, 2),
+            "evaluated_24h_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("prediction_id", pred["prediction_id"]).execute()
 
-    def _evaluate_7d(self, conn, pred: dict, actual_price: float):
-        """Evaluate a prediction after 7 days."""
+    def _evaluate_7d(self, sb, pred: dict, actual_price: float):
         entry = pred["price_at_prediction"]
         pnl_pct = ((actual_price - entry) / entry) * 100
 
@@ -371,303 +310,268 @@ class LearningLoop:
         else:
             correct = abs(pnl_pct) < 5
 
-        # Check target/stop-loss hit
-        target_hit = actual_price >= pred["target_price"] if pred["target_price"] > 0 else None
-        stop_hit = actual_price <= pred["stop_loss_price"] if pred["stop_loss_price"] > 0 else None
+        target_price = pred.get("target_price") or 0
+        stop_loss_price = pred.get("stop_loss_price") or 0
+        target_hit = actual_price >= target_price if target_price > 0 else None
+        stop_hit = actual_price <= stop_loss_price if stop_loss_price > 0 else None
 
-        conn.execute('''
-            UPDATE predictions SET
-                actual_price_7d = ?,
-                direction_correct_7d = ?,
-                pnl_pct_7d = ?,
-                target_hit = ?,
-                stop_loss_hit = ?,
-                evaluated_7d_at = datetime('now')
-            WHERE prediction_id = ?
-        ''', (
-            actual_price, 1 if correct else 0, round(pnl_pct, 2),
-            1 if target_hit else 0 if target_hit is not None else None,
-            1 if stop_hit else 0 if stop_hit is not None else None,
-            pred["prediction_id"],
-        ))
+        sb.table("ll_predictions").update({
+            "actual_price_7d": actual_price,
+            "direction_correct_7d": correct,
+            "pnl_pct_7d": round(pnl_pct, 2),
+            "target_hit": target_hit,
+            "stop_loss_hit": stop_hit,
+            "evaluated_7d_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("prediction_id", pred["prediction_id"]).execute()
 
-    # ══════════════════════════════════════════════════════════════
+    # ==================================================================
     # Performance Metrics
-    # ══════════════════════════════════════════════════════════════
+    # ==================================================================
 
     def get_performance_stats(self, days: int = 30) -> Dict[str, Any]:
-        """Get aggregate performance statistics."""
-        conn = _get_db()
+        """Get aggregate performance statistics (computed in Python)."""
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+
         try:
-            cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+            res = (
+                _sb().table("ll_predictions")
+                .select("*")
+                .gte("created_at", cutoff)
+                .order("created_at", desc=True)
+                .limit(5000)
+                .execute()
+            )
+            rows = res.data or []
+        except Exception as e:
+            logger.warning("get_performance_stats query failed: %s", e)
+            rows = []
 
-            # Overall accuracy
-            total = conn.execute(
-                "SELECT COUNT(*) as cnt FROM predictions WHERE created_at > ?", (cutoff,)
-            ).fetchone()["cnt"]
+        total = len(rows)
 
-            evaluated_24h = conn.execute(
-                "SELECT COUNT(*) as cnt FROM predictions WHERE evaluated_24h_at IS NOT NULL AND created_at > ?",
-                (cutoff,)
-            ).fetchone()["cnt"]
+        eval_24h = [r for r in rows if r.get("evaluated_24h_at")]
+        eval_7d = [r for r in rows if r.get("evaluated_7d_at")]
+        correct_24h = [r for r in eval_24h if r.get("direction_correct_24h") is True]
+        correct_7d = [r for r in eval_7d if r.get("direction_correct_7d") is True]
 
-            correct_24h = conn.execute(
-                "SELECT COUNT(*) as cnt FROM predictions WHERE direction_correct_24h = 1 AND created_at > ?",
-                (cutoff,)
-            ).fetchone()["cnt"]
+        evaluated_24h_cnt = len(eval_24h)
+        evaluated_7d_cnt = len(eval_7d)
 
-            evaluated_7d = conn.execute(
-                "SELECT COUNT(*) as cnt FROM predictions WHERE evaluated_7d_at IS NOT NULL AND created_at > ?",
-                (cutoff,)
-            ).fetchone()["cnt"]
+        conf_correct = [r["confidence"] for r in correct_24h if r.get("confidence") is not None]
+        incorrect_24h = [r for r in eval_24h if r.get("direction_correct_24h") is False]
+        conf_incorrect = [r["confidence"] for r in incorrect_24h if r.get("confidence") is not None]
 
-            correct_7d = conn.execute(
-                "SELECT COUNT(*) as cnt FROM predictions WHERE direction_correct_7d = 1 AND created_at > ?",
-                (cutoff,)
-            ).fetchone()["cnt"]
+        avg_conf_correct = sum(conf_correct) / len(conf_correct) if conf_correct else 0
+        avg_conf_incorrect = sum(conf_incorrect) / len(conf_incorrect) if conf_incorrect else 0
 
-            # Confidence analysis
-            avg_conf_correct = conn.execute(
-                "SELECT AVG(confidence) as avg FROM predictions WHERE direction_correct_24h = 1 AND created_at > ?",
-                (cutoff,)
-            ).fetchone()["avg"] or 0
-
-            avg_conf_incorrect = conn.execute(
-                "SELECT AVG(confidence) as avg FROM predictions WHERE direction_correct_24h = 0 AND created_at > ?",
-                (cutoff,)
-            ).fetchone()["avg"] or 0
-
-            # Per-regime accuracy
-            regime_stats = {}
-            regimes = conn.execute(
-                "SELECT DISTINCT market_regime FROM predictions WHERE created_at > ?", (cutoff,)
-            ).fetchall()
-            for r in regimes:
-                regime = r["market_regime"]
-                r_total = conn.execute(
-                    "SELECT COUNT(*) as cnt FROM predictions WHERE market_regime = ? AND evaluated_24h_at IS NOT NULL AND created_at > ?",
-                    (regime, cutoff)
-                ).fetchone()["cnt"]
-                r_correct = conn.execute(
-                    "SELECT COUNT(*) as cnt FROM predictions WHERE market_regime = ? AND direction_correct_24h = 1 AND created_at > ?",
-                    (regime, cutoff)
-                ).fetchone()["cnt"]
-                regime_stats[regime] = {
-                    "total": r_total,
-                    "correct": r_correct,
-                    "accuracy": round(r_correct / max(r_total, 1) * 100, 1),
-                }
-
-            # Average P&L
-            avg_pnl = conn.execute(
-                "SELECT AVG(pnl_pct_24h) as avg FROM predictions WHERE pnl_pct_24h IS NOT NULL AND created_at > ?",
-                (cutoff,)
-            ).fetchone()["avg"] or 0
-
-            # Per-direction accuracy (LONG=up, SHORT=down, RANGE=flat)
-            direction_stats = {}
-            direction_map = {"up": "LONG", "down": "SHORT", "flat": "RANGE"}
-            for db_dir, label in direction_map.items():
-                d_total = conn.execute(
-                    "SELECT COUNT(*) as cnt FROM predictions WHERE predicted_direction = ? AND evaluated_24h_at IS NOT NULL AND created_at > ?",
-                    (db_dir, cutoff)
-                ).fetchone()["cnt"]
-                d_correct = conn.execute(
-                    "SELECT COUNT(*) as cnt FROM predictions WHERE predicted_direction = ? AND direction_correct_24h = 1 AND created_at > ?",
-                    (db_dir, cutoff)
-                ).fetchone()["cnt"]
-                d_pnl = conn.execute(
-                    "SELECT AVG(pnl_pct_24h) as avg FROM predictions WHERE predicted_direction = ? AND pnl_pct_24h IS NOT NULL AND created_at > ?",
-                    (db_dir, cutoff)
-                ).fetchone()["avg"] or 0
-                direction_stats[label] = {
-                    "total": d_total,
-                    "correct": d_correct,
-                    "accuracy": round(d_correct / max(d_total, 1) * 100, 1),
-                    "avg_pnl": round(d_pnl, 2),
-                }
-
-            # Best / worst predictions
-            best = conn.execute(
-                "SELECT token_ticker, verdict, pnl_pct_7d FROM predictions WHERE pnl_pct_7d IS NOT NULL AND created_at > ? ORDER BY pnl_pct_7d DESC LIMIT 3",
-                (cutoff,)
-            ).fetchall()
-
-            worst = conn.execute(
-                "SELECT token_ticker, verdict, pnl_pct_7d FROM predictions WHERE pnl_pct_7d IS NOT NULL AND created_at > ? ORDER BY pnl_pct_7d ASC LIMIT 3",
-                (cutoff,)
-            ).fetchall()
-
-            return {
-                "period_days": days,
-                "total_predictions": total,
-                "evaluated_24h": evaluated_24h,
-                "evaluated_7d": evaluated_7d,
-                "accuracy_24h": round(correct_24h / max(evaluated_24h, 1) * 100, 1),
-                "accuracy_7d": round(correct_7d / max(evaluated_7d, 1) * 100, 1),
-                "avg_confidence_correct": round(avg_conf_correct, 1),
-                "avg_confidence_incorrect": round(avg_conf_incorrect, 1),
-                "avg_pnl_24h": round(avg_pnl, 2),
-                "regime_accuracy": regime_stats,
-                "direction_accuracy": direction_stats,
-                "best_predictions": [dict(b) for b in best],
-                "worst_predictions": [dict(w) for w in worst],
+        regime_stats = {}
+        regimes = {r.get("market_regime", "unknown") for r in rows}
+        for regime in regimes:
+            r_eval = [r for r in eval_24h if r.get("market_regime") == regime]
+            r_correct = [r for r in r_eval if r.get("direction_correct_24h") is True]
+            r_total = len(r_eval)
+            regime_stats[regime] = {
+                "total": r_total,
+                "correct": len(r_correct),
+                "accuracy": round(len(r_correct) / max(r_total, 1) * 100, 1),
             }
-        finally:
-            conn.close()
+
+        pnl_vals = [r["pnl_pct_24h"] for r in rows if r.get("pnl_pct_24h") is not None]
+        avg_pnl = sum(pnl_vals) / len(pnl_vals) if pnl_vals else 0
+
+        direction_map = {"up": "LONG", "down": "SHORT", "flat": "RANGE"}
+        direction_stats = {}
+        for db_dir, label in direction_map.items():
+            d_eval = [r for r in eval_24h if r.get("predicted_direction") == db_dir]
+            d_correct = [r for r in d_eval if r.get("direction_correct_24h") is True]
+            d_pnl = [r["pnl_pct_24h"] for r in d_eval if r.get("pnl_pct_24h") is not None]
+            d_total = len(d_eval)
+            direction_stats[label] = {
+                "total": d_total,
+                "correct": len(d_correct),
+                "accuracy": round(len(d_correct) / max(d_total, 1) * 100, 1),
+                "avg_pnl": round(sum(d_pnl) / len(d_pnl), 2) if d_pnl else 0,
+            }
+
+        with_7d_pnl = sorted(
+            [r for r in rows if r.get("pnl_pct_7d") is not None],
+            key=lambda r: r["pnl_pct_7d"],
+            reverse=True,
+        )
+        best = [
+            {"token_ticker": r["token_ticker"], "verdict": r["verdict"], "pnl_pct_7d": r["pnl_pct_7d"]}
+            for r in with_7d_pnl[:3]
+        ]
+        worst = [
+            {"token_ticker": r["token_ticker"], "verdict": r["verdict"], "pnl_pct_7d": r["pnl_pct_7d"]}
+            for r in with_7d_pnl[-3:]
+        ]
+
+        return {
+            "period_days": days,
+            "total_predictions": total,
+            "evaluated_24h": evaluated_24h_cnt,
+            "evaluated_7d": evaluated_7d_cnt,
+            "accuracy_24h": round(len(correct_24h) / max(evaluated_24h_cnt, 1) * 100, 1),
+            "accuracy_7d": round(len(correct_7d) / max(evaluated_7d_cnt, 1) * 100, 1),
+            "avg_confidence_correct": round(avg_conf_correct, 1),
+            "avg_confidence_incorrect": round(avg_conf_incorrect, 1),
+            "avg_pnl_24h": round(avg_pnl, 2),
+            "regime_accuracy": regime_stats,
+            "direction_accuracy": direction_stats,
+            "best_predictions": best,
+            "worst_predictions": worst,
+        }
 
     def get_historical_accuracy(self) -> float:
         """
         Get the overall historical accuracy rate (0-1) for use by
         the ConfidenceScorer's historical_accuracy_modifier.
         """
-        conn = _get_db()
         try:
-            total = conn.execute(
-                "SELECT COUNT(*) as cnt FROM predictions WHERE evaluated_24h_at IS NOT NULL"
-            ).fetchone()["cnt"]
-            correct = conn.execute(
-                "SELECT COUNT(*) as cnt FROM predictions WHERE direction_correct_24h = 1"
-            ).fetchone()["cnt"]
+            res = (
+                _sb().table("ll_predictions")
+                .select("direction_correct_24h")
+                .not_.is_("evaluated_24h_at", "null")
+                .limit(5000)
+                .execute()
+            )
+            rows = res.data or []
+            total = len(rows)
             if total < 10:
-                return 0.5  # Not enough data to adjust
+                return 0.5
+            correct = sum(1 for r in rows if r.get("direction_correct_24h") is True)
             return correct / total
-        finally:
-            conn.close()
+        except Exception as e:
+            logger.warning("get_historical_accuracy failed: %s", e)
+            return 0.5
 
-    # ══════════════════════════════════════════════════════════════
+    # ==================================================================
     # Strategy Adjustments (Adaptive Learning)
-    # ══════════════════════════════════════════════════════════════
+    # ==================================================================
 
     def generate_adjustments(self) -> List[Dict[str, Any]]:
         """
         Analyze performance and generate strategy adjustment recommendations.
-        These can be applied to modify confidence scoring, weight allocation, etc.
         """
         stats = self.get_performance_stats(days=14)
         adjustments: List[Dict[str, Any]] = []
-        conn = _get_db()
+        sb = _sb()
 
         try:
-            # Adjustment 1: If accuracy is low in a regime, suggest weight changes
-            for regime, regime_data in stats.get("regime_accuracy", {}).items():
-                if regime_data["total"] >= 5 and regime_data["accuracy"] < 40:
+            for regime, rdata in stats.get("regime_accuracy", {}).items():
+                if rdata["total"] >= 5 and rdata["accuracy"] < 40:
                     adj = {
-                        "type": "regime_weight_adjustment",
-                        "description": f"Low accuracy ({regime_data['accuracy']}%) in {regime} market — reduce confidence in this regime",
+                        "adjustment_type": "regime_weight_adjustment",
+                        "description": f"Low accuracy ({rdata['accuracy']}%) in {regime} - reduce confidence",
                         "old_value": "standard_weights",
                         "new_value": "conservative_weights",
-                        "reason": f"Only {regime_data['correct']}/{regime_data['total']} correct in {regime} regime",
+                        "reason": f"Only {rdata['correct']}/{rdata['total']} correct in {regime} regime",
                         "market_regime": regime,
                     }
                     adjustments.append(adj)
-                    conn.execute('''
-                        INSERT INTO strategy_adjustments (adjustment_type, description, old_value, new_value, reason, market_regime)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    ''', (adj["type"], adj["description"], adj["old_value"], adj["new_value"], adj["reason"], adj["market_regime"]))
+                    sb.table("ll_strategy_adjustments").insert(adj).execute()
 
-            # Adjustment 2: If confidence is poorly calibrated
             if stats["avg_confidence_correct"] > 0 and stats["avg_confidence_incorrect"] > 0:
                 gap = stats["avg_confidence_correct"] - stats["avg_confidence_incorrect"]
                 if gap < 1.0 and stats["evaluated_24h"] >= 10:
                     adj = {
-                        "type": "confidence_calibration",
-                        "description": f"Confidence gap too small ({gap:.1f}) — correct and incorrect predictions have similar confidence",
+                        "adjustment_type": "confidence_calibration",
+                        "description": f"Confidence gap too small ({gap:.1f})",
                         "old_value": f"gap={gap:.1f}",
                         "new_value": "widen_confidence_spread",
-                        "reason": "The model doesn't distinguish high-confidence from low-confidence well enough",
+                        "reason": "Model doesn't distinguish high/low confidence well enough",
                         "market_regime": "",
                     }
                     adjustments.append(adj)
-                    conn.execute('''
-                        INSERT INTO strategy_adjustments (adjustment_type, description, old_value, new_value, reason, market_regime)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    ''', (adj["type"], adj["description"], adj["old_value"], adj["new_value"], adj["reason"], adj["market_regime"]))
+                    sb.table("ll_strategy_adjustments").insert(adj).execute()
 
-            # Adjustment 3: If overall accuracy drops below threshold
             if stats["evaluated_24h"] >= 20 and stats["accuracy_24h"] < 45:
                 adj = {
-                    "type": "global_confidence_reduction",
-                    "description": f"Overall accuracy ({stats['accuracy_24h']}%) is below acceptable threshold — reducing base confidence",
+                    "adjustment_type": "global_confidence_reduction",
+                    "description": f"Overall accuracy ({stats['accuracy_24h']}%) below threshold",
                     "old_value": "base_confidence=5.0",
                     "new_value": "base_confidence=4.5",
                     "reason": "Below 45% accuracy suggests systematic overconfidence",
                     "market_regime": "",
                 }
                 adjustments.append(adj)
-                conn.execute('''
-                    INSERT INTO strategy_adjustments (adjustment_type, description, old_value, new_value, reason, market_regime)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                ''', (adj["type"], adj["description"], adj["old_value"], adj["new_value"], adj["reason"], adj["market_regime"]))
+                sb.table("ll_strategy_adjustments").insert(adj).execute()
 
-            conn.commit()
-        finally:
-            conn.close()
+        except Exception as e:
+            logger.warning("generate_adjustments failed: %s", e)
 
         return adjustments
 
     def get_recent_adjustments(self, limit: int = 20) -> List[Dict[str, Any]]:
         """Get recently generated strategy adjustments."""
-        conn = _get_db()
         try:
-            rows = conn.execute(
-                "SELECT * FROM strategy_adjustments ORDER BY created_at DESC LIMIT ?",
-                (limit,)
-            ).fetchall()
-            return [dict(r) for r in rows]
-        finally:
-            conn.close()
+            res = (
+                _sb().table("ll_strategy_adjustments")
+                .select("*")
+                .order("created_at", desc=True)
+                .limit(limit)
+                .execute()
+            )
+            return res.data or []
+        except Exception as e:
+            logger.warning("get_recent_adjustments failed: %s", e)
+            return []
 
     def get_token_track_record(self, ticker: str) -> Dict[str, Any]:
         """Get the track record for a specific token."""
-        conn = _get_db()
         try:
-            preds = conn.execute(
-                "SELECT * FROM predictions WHERE token_ticker = ? ORDER BY created_at DESC LIMIT 20",
-                (ticker.upper(),)
-            ).fetchall()
+            res = (
+                _sb().table("ll_predictions")
+                .select("*")
+                .eq("token_ticker", ticker.upper())
+                .order("created_at", desc=True)
+                .limit(20)
+                .execute()
+            )
+            preds = res.data or []
+        except Exception as e:
+            logger.warning("get_token_track_record failed: %s", e)
+            preds = []
 
-            if not preds:
-                return {"ticker": ticker, "predictions": 0, "accuracy": None}
+        if not preds:
+            return {"ticker": ticker, "predictions": 0, "accuracy": None}
 
-            total = len(preds)
-            evaluated = [p for p in preds if p["evaluated_24h_at"]]
-            correct = sum(1 for p in evaluated if p["direction_correct_24h"])
+        total = len(preds)
+        evaluated = [p for p in preds if p.get("evaluated_24h_at")]
+        correct = sum(1 for p in evaluated if p.get("direction_correct_24h") is True)
+        pnl_vals = [p["pnl_pct_24h"] for p in evaluated if p.get("pnl_pct_24h") is not None]
 
-            return {
-                "ticker": ticker.upper(),
-                "predictions": total,
-                "evaluated": len(evaluated),
-                "correct": correct,
-                "accuracy": round(correct / max(len(evaluated), 1) * 100, 1) if evaluated else None,
-                "avg_pnl_24h": round(
-                    sum(p["pnl_pct_24h"] for p in evaluated if p["pnl_pct_24h"] is not None) /
-                    max(len([p for p in evaluated if p["pnl_pct_24h"] is not None]), 1), 2
-                ),
-                "recent": [dict(p) for p in preds[:5]],
-            }
-        finally:
-            conn.close()
+        return {
+            "ticker": ticker.upper(),
+            "predictions": total,
+            "evaluated": len(evaluated),
+            "correct": correct,
+            "accuracy": round(correct / max(len(evaluated), 1) * 100, 1) if evaluated else None,
+            "avg_pnl_24h": round(sum(pnl_vals) / max(len(pnl_vals), 1), 2) if pnl_vals else 0,
+            "recent": preds[:5],
+        }
 
     def snapshot_accuracy(self) -> Dict[str, Any]:
         """Take a point-in-time snapshot of accuracy for historical tracking."""
         stats = self.get_performance_stats(days=7)
-        conn = _get_db()
         try:
-            conn.execute('''
-                INSERT INTO accuracy_snapshots (
-                    period, total_predictions, correct_24h, correct_7d,
-                    accuracy_24h, accuracy_7d,
-                    avg_confidence_correct, avg_confidence_incorrect
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                "7d", stats["total_predictions"],
-                int(stats["accuracy_24h"] * stats["evaluated_24h"] / 100) if stats["evaluated_24h"] > 0 else 0,
-                int(stats["accuracy_7d"] * stats["evaluated_7d"] / 100) if stats["evaluated_7d"] > 0 else 0,
-                stats["accuracy_24h"], stats["accuracy_7d"],
-                stats["avg_confidence_correct"], stats["avg_confidence_incorrect"],
-            ))
-            conn.commit()
-        finally:
-            conn.close()
+            _sb().table("ll_accuracy_snapshots").insert({
+                "period": "7d",
+                "total_predictions": stats["total_predictions"],
+                "correct_24h": (
+                    int(stats["accuracy_24h"] * stats["evaluated_24h"] / 100)
+                    if stats["evaluated_24h"] > 0 else 0
+                ),
+                "correct_7d": (
+                    int(stats["accuracy_7d"] * stats["evaluated_7d"] / 100)
+                    if stats["evaluated_7d"] > 0 else 0
+                ),
+                "accuracy_24h": stats["accuracy_24h"],
+                "accuracy_7d": stats["accuracy_7d"],
+                "avg_confidence_correct": stats["avg_confidence_correct"],
+                "avg_confidence_incorrect": stats["avg_confidence_incorrect"],
+            }).execute()
+        except Exception as e:
+            logger.warning("snapshot_accuracy insert failed: %s", e)
+
         return stats

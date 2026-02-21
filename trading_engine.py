@@ -392,35 +392,13 @@ def execute_sell(user_id, position_id, current_price, reason="manual"):
         ll = _get_learning_loop()
         if ll:
             try:
-                ll.evaluate_predictions_with_price(
+                ll.evaluate_trade_close(
                     token_ticker=pos["coin_id"],
-                    actual_price=current_price,
+                    exit_price=current_price,
+                    pnl_pct=pnl_pct,
                 )
             except Exception:
-                # Fallback: try direct DB update if method doesn't exist
-                try:
-                    import sqlite3 as _sq
-                    _ldb = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                        "NEXYPHER_learning.db")
-                    if os.path.exists(_ldb):
-                        _lconn = _sq.connect(_ldb)
-                        _lconn.execute("""
-                            UPDATE predictions SET
-                                actual_price_7d = ?,
-                                direction_correct_7d = CASE
-                                    WHEN predicted_direction = 'up' AND ? > price_at_prediction THEN 1
-                                    WHEN predicted_direction = 'down' AND ? < price_at_prediction THEN 1
-                                    ELSE 0 END,
-                                pnl_pct_7d = ?,
-                                evaluated_7d_at = datetime('now')
-                            WHERE token_ticker = ?
-                              AND evaluated_7d_at IS NULL
-                        """, (current_price, current_price, current_price,
-                              round(pnl_pct, 2), pos["coin_id"]))
-                        _lconn.commit()
-                        _lconn.close()
-                except Exception:
-                    pass
+                pass
 
         return {"success": True, "pnl": round(pnl, 2), "pnl_pct": round(pnl_pct, 2), "amount": round(current_value, 2), "tx_hash": tx_hash}
     except Exception as e:
@@ -1079,7 +1057,7 @@ async def continuous_trading_loop(cg_collector, dex_collector, gemini_client=Non
             ll = _get_learning_loop()
             if ll:
                 try:
-                    evaluated = ll.evaluate_pending(cg_collector)
+                    evaluated = await ll.evaluate_pending(cg_collector)
                     if evaluated:
                         logger.info(
                             "Learning loop evaluated %d pending predictions",
