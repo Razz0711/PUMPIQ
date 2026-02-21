@@ -1005,6 +1005,7 @@ async def get_ai_recommendations(
 ):
     pairs = await dex.search_pairs("SOL")
     tokens_scored: List[AITokenScore] = []
+    token_prices: Dict[str, float] = {}  # address → price_usd for learning loop
     seen = set()
 
     for p in (pairs or [])[:20]:
@@ -1087,8 +1088,27 @@ async def get_ai_recommendations(
             risk_flags=flags,
             verdict=verdict,
         ))
+        token_prices[p.base_token_address] = p.price_usd
 
     tokens_scored.sort(key=lambda x: x.score, reverse=True)
+
+    # ── Record predictions in the learning loop ───────────────────
+    ll = _get_ll()
+    if ll:
+        for t in tokens_scored:
+            try:
+                ll.record_prediction(
+                    token_ticker=t.symbol,
+                    token_name=t.name,
+                    verdict=t.verdict,
+                    confidence=t.score / 100.0,
+                    composite_score=float(t.score),
+                    price_at_prediction=token_prices.get(t.address, 0.0),
+                    risk_level="HIGH" if t.risk_flags else "MEDIUM",
+                    ai_thought_summary=t.summary,
+                )
+            except Exception:
+                pass
 
     avg_score = sum(t.score for t in tokens_scored) / max(len(tokens_scored), 1)
     strong = len([t for t in tokens_scored if t.score >= 60])
