@@ -2700,6 +2700,47 @@ async def get_learning_stats(user=Depends(require_user)):
     return stats
 
 
+@app.get("/api/ai/learning/health")
+async def learning_health_check():
+    """No-auth diagnostic: shows what the learning loop sees in the DB.
+    Use this to debug zero-stats issues on deployed servers."""
+    import traceback as _tb
+    diag = {"ll_init": False, "table_exists": False, "row_count": 0,
+            "sample_row": None, "error": None, "supabase_ok": False}
+    try:
+        from supabase_db import get_supabase
+        sb = get_supabase()
+        diag["supabase_ok"] = True
+    except Exception as e:
+        diag["error"] = f"supabase init: {e}"
+        return diag
+
+    try:
+        res = sb.table("ll_predictions").select("id,token_ticker,predicted_direction,direction_correct_24h,pnl_pct_24h").limit(50).execute()
+        rows = res.data or []
+        diag["table_exists"] = True
+        diag["row_count"] = len(rows)
+        if rows:
+            diag["sample_row"] = rows[0]
+        diag["evaluated"] = len([r for r in rows if r.get("direction_correct_24h") is not None])
+    except Exception as e:
+        diag["error"] = f"query: {e}"
+        return diag
+
+    try:
+        ll = _get_ll()
+        diag["ll_init"] = ll is not None
+        if ll:
+            stats = ll.get_performance_stats()
+            diag["stats_total"] = stats.get("total_predictions", -1)
+            diag["stats_eval24"] = stats.get("evaluated_24h", -1)
+            diag["stats_accuracy"] = stats.get("accuracy_24h", -1)
+    except Exception as e:
+        diag["error"] = f"stats: {e}\n{_tb.format_exc()}"
+
+    return diag
+
+
 @app.post("/api/ai/learning/backfill")
 async def trigger_learning_backfill(user=Depends(require_user)):
     """Manually trigger backfill of predictions from trade history."""

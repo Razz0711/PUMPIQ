@@ -241,18 +241,18 @@ class DexScreenerCollector:
 
             client = self._get_client()
             resp = await client.post(
-                    run_url, json=body, headers=headers,
-                    timeout=60,
+                run_url, json=body, headers=headers,
+                timeout=60,
+            )
+            if resp.status_code == 200:
+                items = resp.json()
+                logger.info("Apify returned %d items for '%s'", len(items), query)
+                return items if isinstance(items, list) else []
+            else:
+                logger.warning(
+                    "Apify DexScreener actor returned %d: %s",
+                    resp.status_code, resp.text[:200],
                 )
-                if resp.status_code == 200:
-                    items = resp.json()
-                    logger.info("Apify returned %d items for '%s'", len(items), query)
-                    return items if isinstance(items, list) else []
-                else:
-                    logger.warning(
-                        "Apify DexScreener actor returned %d: %s",
-                        resp.status_code, resp.text[:200],
-                    )
         except Exception as exc:
             logger.warning("Apify DexScreener enrichment error: %s", exc)
 
