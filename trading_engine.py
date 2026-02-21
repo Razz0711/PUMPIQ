@@ -797,119 +797,98 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
         results["effective_min_score"] = effective_min_score
         results["risk_profile"] = risk_profile
 
-        # ── ALL-IN ROTATION: if best coin is different from current, SELL current and switch ──
-        if opportunities:
-            opp = opportunities[0]  # highest-scoring coin
+        # ── DIVERSIFIED PORTFOLIO: top-15 score-weighted allocation ──
+        MAX_PORTFOLIO_SLOTS = 15         # up to 15 simultaneous positions
+        MIN_POSITION_AMOUNT = 500        # minimum $ per position
+        RESERVE = 100                    # always keep $100 as buffer
 
-            # Check if we're already holding this exact coin
-            current_coin_ids = {p["coin_id"] for p in open_positions}
-            best_coin_id = opp["coin_id"]
+        # Filter out coins we already hold
+        current_coin_ids = {p["coin_id"] for p in open_positions}
+        new_opportunities = [o for o in opportunities if o["coin_id"] not in current_coin_ids]
 
-            # If we have positions in a DIFFERENT coin, sell them all first
-            if open_positions and best_coin_id not in current_coin_ids:
-                for pos in open_positions:
-                    try:
-                        # Get live price for this position
-                        pos_coin_id = pos.get("coin_id", "")
-                        px = pos["current_price"]
-                        if pos_coin_id and not pos_coin_id.startswith("0x") and len(pos_coin_id) <= 20:
-                            try:
-                                px_data = await cg_collector.get_simple_price([pos_coin_id])
-                                px = px_data.get(pos_coin_id, px)
-                            except Exception:
-                                pass
-                        sell_rsn = (
-                            f"ROTATION: Switching from {pos['symbol']} to {opp['symbol']} "
-                            f"(better opportunity, score {opp['score']}/100). "
-                            f"P&L: {pos.get('pnl_pct', 0):+.1f}%."
-                        )
-                        sell_r = execute_sell(user_id, pos["id"], px, sell_rsn)
-                        if sell_r["success"]:
-                            results["actions"].append(
-                                f"Rotation-sell: {pos['symbol']} -> {opp['symbol']} (P&L: {pos.get('pnl_pct', 0):+.1f}%)"
-                            )
-                    except Exception as e:
-                        logger.warning("Rotation sell failed for %s: %s", pos.get("coin_id"), e)
+        # How many new slots can we open?
+        open_count = len(open_positions)
+        available_slots = max(0, MAX_PORTFOLIO_SLOTS - open_count)
 
-                # Refresh balance after sells
-                balance = _get_wallet_balance(user_id)
+        if new_opportunities and available_slots > 0 and balance > (MIN_POSITION_AMOUNT + RESERVE):
+            # Top candidates by score
+            top_picks = new_opportunities[:available_slots]
 
-            # If already holding the best coin, skip buy
-            if best_coin_id in current_coin_ids:
-                logger.info("Already holding %s — no rotation needed", opp['symbol'])
-                results["status"] = "holding"
-                results["message"] = f"Holding {opp['symbol']} — still best coin (score {opp['score']}/100)"
-                return results
-
-            trade_amount = balance - 100  # keep $100 reserve
-            if trade_amount < 50:
-                trade_amount = balance
+            # ── Score-weighted allocation ──
+            # Higher-scoring coins get proportionally more capital
+            investable = balance - RESERVE
+            total_score = sum(max(o["score"], 1) for o in top_picks)
+            score_weights = {o["coin_id"]: max(o["score"], 1) / total_score for o in top_picks}
 
             effective_sl = max(1.0, settings["stop_loss_pct"] + mods["stop_loss_add"])
 
-            # Build detailed AI reasoning for the buy (includes backtest verification)
-            bt_stats = opp.get("backtest_stats", {})
-            bt_direction = opp.get("backtest_strategy_direction", "LONG")
-            bt_trend = opp.get("backtest_detected_trend", "unknown")
-            bt_summary = ""
-            if bt_stats:
-                bt_summary = (
-                    f"BACKTEST VERIFIED ({bt_direction} strategy, {bt_trend} trend): "
-                    f"{bt_stats.get('win_rate', 0):.1f}% win rate, "
-                    f"{bt_stats.get('total_return', 0):.1f}% return, "
-                    f"{bt_stats.get('max_drawdown', 0):.1f}% max DD, "
-                    f"Sharpe {bt_stats.get('sharpe_ratio', 0):.2f}, "
-                    f"{bt_stats.get('total_trades', 0)} trades over "
-                    f"{bt_stats.get('days_covered', 0)} days. "
+            for opp in top_picks:
+                if balance - RESERVE < MIN_POSITION_AMOUNT:
+                    break   # ran out of deployable capital
+
+                # Allocate proportional to score, floor at MIN_POSITION_AMOUNT
+                trade_amount = max(
+                    investable * score_weights[opp["coin_id"]],
+                    MIN_POSITION_AMOUNT
                 )
+                trade_amount = min(trade_amount, balance - RESERVE)
 
-            detailed_reasoning = (
-                f"BUY SIGNAL for {opp['name']} ({opp['symbol']}): "
-                f"Price ${opp['price']:,.6f} | 24h: {opp['change_24h']:+.1f}% | "
-                f"Market Cap: ${opp['market_cap']:,.0f} | Volume: ${opp['volume_24h']:,.0f} | "
-                f"Score: {opp['score']}/100 (threshold: {effective_min_score}). "
-                f"{bt_summary}"
-                f"Risk profile: {risk_profile} | Confidence gate: {confidence_threshold}/10. "
-                f"Analysis: {opp['reasoning']}. "
-                f"Investing ${trade_amount:,.2f} ({trade_amount/balance*100:.1f}% of wallet) with "
-                f"stop-loss at -{effective_sl}% and take-profit at +{settings['take_profit_pct']}%."
-            )
-            if opp.get("ai_analysis"):
-                detailed_reasoning += f" AI Insight: {opp['ai_analysis'][:200]}"
+                # Build AI reasoning for this buy
+                bt_stats = opp.get("backtest_stats", {})
+                bt_direction = opp.get("backtest_strategy_direction", "LONG")
+                bt_trend = opp.get("backtest_detected_trend", "unknown")
+                bt_summary = ""
+                if bt_stats:
+                    bt_summary = (
+                        f"BACKTEST ({bt_direction}, {bt_trend}): "
+                        f"{bt_stats.get('win_rate', 0):.1f}% WR, "
+                        f"{bt_stats.get('total_return', 0):.1f}% ret. "
+                    )
 
-            buy_result = execute_buy(
-                user_id=user_id, coin_id=opp["coin_id"], coin_name=opp["name"],
-                symbol=opp["symbol"], price=opp["price"], amount=trade_amount,
-                ai_score=opp["score"], ai_reasoning=detailed_reasoning,
-                stop_loss_pct=effective_sl, take_profit_pct=settings["take_profit_pct"],
-            )
-            if buy_result["success"]:
-                results["new_trades"] += 1
-                balance -= trade_amount
-                results["actions"].append(
-                    f"Bought {opp['symbol']} at ${opp['price']:,.2f} (${trade_amount:,.0f}) "
-                    f"| Score: {opp['score']}/100 | Strategy: {bt_direction} "
-                    f"| Profile: {risk_profile} "
-                    f"| TX: {buy_result['tx_hash'][:16]}..."
+                detailed_reasoning = (
+                    f"BUY {opp['name']} ({opp['symbol']}): "
+                    f"${opp['price']:,.6f} | 24h: {opp['change_24h']:+.1f}% | "
+                    f"Score: {opp['score']}/100. {bt_summary}"
+                    f"Investing ${trade_amount:,.0f} | SL: -{effective_sl}% | TP: +{settings['take_profit_pct']}%."
                 )
+                if opp.get("ai_analysis"):
+                    detailed_reasoning += f" {opp['ai_analysis'][:150]}"
 
-                # Record in learning loop
-                ll = _get_learning_loop()
-                if ll:
-                    try:
-                        ll.record_prediction(
-                            token_ticker=opp["coin_id"],
-                            token_name=opp["name"],
-                            verdict=bt_direction or "bullish",
-                            confidence=opp["score"] / 10.0,
-                            composite_score=opp["score"],
-                            price_at_prediction=opp["price"],
-                            market_regime="unknown",
-                        )
-                    except Exception:
-                        pass
+                buy_result = execute_buy(
+                    user_id=user_id, coin_id=opp["coin_id"], coin_name=opp["name"],
+                    symbol=opp["symbol"], price=opp["price"], amount=trade_amount,
+                    ai_score=opp["score"], ai_reasoning=detailed_reasoning,
+                    stop_loss_pct=effective_sl, take_profit_pct=settings["take_profit_pct"],
+                )
+                if buy_result["success"]:
+                    results["new_trades"] += 1
+                    balance -= trade_amount
+                    results["actions"].append(
+                        f"Bought {opp['symbol']} at ${opp['price']:,.4f} (${trade_amount:,.0f}) "
+                        f"| Score: {opp['score']}/100 | {bt_direction} "
+                        f"| TX: {buy_result['tx_hash'][:16]}..."
+                    )
+                    # Record in learning loop
+                    ll = _get_learning_loop()
+                    if ll:
+                        try:
+                            ll.record_prediction(
+                                token_ticker=opp["coin_id"],
+                                token_name=opp["name"],
+                                verdict=bt_direction or "bullish",
+                                confidence=opp["score"] / 10.0,
+                                composite_score=opp["score"],
+                                price_at_prediction=opp["price"],
+                                market_regime="unknown",
+                            )
+                        except Exception:
+                            pass
+
+        elif not new_opportunities:
+            logger.info("Portfolio full or no new opportunities — holding existing positions")
 
     return results
+
 
 
 # -- Performance Stats ---------------------------------------------------------
