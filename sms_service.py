@@ -56,6 +56,33 @@ def _format_phone(phone_number: str) -> str:
     return "+" + clean
 
 
+def send_alert_sms(phone_number: str, message: str) -> dict:
+    """
+    Send a plain SMS alert (not OTP) to a phone number via Twilio Messaging.
+    Used for trade notifications, auto-close warnings, etc.
+
+    Requires TWILIO_FROM_NUMBER in .env (a Twilio phone number for sending SMS).
+    """
+    from_number = os.getenv("TWILIO_FROM_NUMBER", "")
+    if not is_configured() or not from_number:
+        logger.warning("Twilio SMS not configured for alerts")
+        return {"success": False, "error": "SMS alert service not configured"}
+
+    e164 = _format_phone(phone_number)
+    try:
+        client = _get_client()
+        sms = client.messages.create(
+            body=f"[NexYpher] {message}",
+            from_=from_number,
+            to=e164,
+        )
+        logger.info("Alert SMS sent to ****%s: sid=%s", e164[-4:], sms.sid)
+        return {"success": True, "message": "SMS sent", "sid": sms.sid}
+    except Exception as e:
+        logger.error("Alert SMS failed for ****%s: %s", e164[-4:], e)
+        return {"success": False, "error": str(e)}
+
+
 def send_otp(phone_number: str) -> dict:
     """
     Send OTP via Twilio Verify. Twilio generates and sends the code itself.

@@ -8501,25 +8501,83 @@
             }
         }
 
+        // Auto-refresh trader dashboard every 30 seconds when on Auto Trader page
+        let _traderRefreshInterval = null;
+        function startTraderAutoRefresh() {
+            stopTraderAutoRefresh();
+            _traderRefreshInterval = setInterval(() => {
+                const traderPage = document.getElementById('page-autotrader');
+                if (traderPage && traderPage.classList.contains('active') && currentUser) {
+                    loadTraderDashboard();
+                }
+            }, 30000); // 30 seconds
+        }
+        function stopTraderAutoRefresh() {
+            if (_traderRefreshInterval) { clearInterval(_traderRefreshInterval); _traderRefreshInterval = null; }
+        }
+        // Start auto-refresh when page loads
+        document.addEventListener('DOMContentLoaded', startTraderAutoRefresh);
+
         function renderTraderPositions(positions) {
             const el = document.getElementById('traderPositions');
             if (!positions.length) {
-                el.innerHTML = '<div class="empty-state" style="padding:20px"><p>No open positions — the bot will buy when it finds opportunities</p></div>';
+                el.innerHTML = '<div class="empty-state" style="padding:20px"><p>No open positions — the bot scans every 30s and will execute automatically</p></div>';
                 return;
             }
-            el.innerHTML = positions.map(p => {
+
+            // Portfolio summary bar
+            const longs = positions.filter(p => (p.side || 'long') === 'long').length;
+            const shorts = positions.filter(p => (p.side || 'long') === 'short').length;
+            const totalInvested = positions.reduce((s, p) => s + p.invested_amount, 0);
+            const totalPnl = positions.reduce((s, p) => s + p.pnl, 0);
+            const summaryHtml = `
+            <div style="display:flex;gap:12px;margin-bottom:14px;padding:10px 14px;background:var(--bg-secondary);border-radius:10px;font-size:13px;flex-wrap:wrap;align-items:center">
+                <span style="color:var(--text-muted)">📊 Portfolio:</span>
+                <span style="color:var(--green)">▲ ${longs} LONG</span>
+                <span style="color:var(--red)">▼ ${shorts} SHORT</span>
+                <span style="color:var(--text-muted)">|</span>
+                <span>Invested: <strong>$${formatUSD(totalInvested)}</strong></span>
+                <span style="color:${totalPnl >= 0 ? 'var(--green)' : 'var(--red)'}">P&L: <strong>${totalPnl >= 0 ? '+' : ''}$${formatUSD(Math.abs(totalPnl))}</strong></span>
+                <span style="color:var(--text-muted)">| Slots: ${positions.length}/15</span>
+            </div>`;
+
+            el.innerHTML = summaryHtml + positions.map(p => {
                 const pnlCls = p.pnl >= 0 ? 'profit' : 'loss';
                 const pnlSign = p.pnl >= 0 ? '+' : '';
                 const posHash = p.tx_hash || '';
                 const posShortHash = posHash ? posHash.slice(0, 8) + '…' + posHash.slice(-6) : '';
+                const side = (p.side || 'long').toUpperCase();
+                const sideColor = side === 'SHORT' ? 'var(--red)' : 'var(--green)';
+                const sideIcon = side === 'SHORT' ? '▼' : '▲';
+                const closeLabel = side === 'SHORT' ? 'Cover' : 'Sell';
+
+                // Countdown timer calculation
+                const openedAt = new Date(p.opened_at || p.created_at);
+                const expiresAt = new Date(openedAt.getTime() + 60 * 60 * 1000); // 1 hour
+                const now = new Date();
+                const msRemaining = Math.max(0, expiresAt - now);
+                const minRemaining = Math.floor(msRemaining / 60000);
+                const secRemaining = Math.floor((msRemaining % 60000) / 1000);
+                const timeStr = msRemaining > 0 ? `${minRemaining}m ${secRemaining}s` : 'EXPIRED';
+                const timeColor = minRemaining <= 5 ? 'var(--red)' : minRemaining <= 15 ? '#f39c12' : 'var(--green)';
+                const timeBg = minRemaining <= 5 ? 'rgba(255,71,87,0.12)' : 'transparent';
+
                 return `
-        <div class="position-card">
+        <div class="position-card" style="border-left:3px solid ${sideColor}">
             <div class="position-header">
-                <div class="position-coin">${p.symbol} <span style="color:var(--text-muted);font-weight:400;font-size:13px">${p.coin_name}</span></div>
+                <div class="position-coin">
+                    <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;color:#fff;background:${sideColor};margin-right:6px">${sideIcon} ${side}</span>
+                    ${p.symbol} <span style="color:var(--text-muted);font-weight:400;font-size:13px">${p.coin_name}</span>
+                </div>
                 <div style="display:flex;align-items:center;gap:10px">
                     <span class="position-badge ${pnlCls}">${pnlSign}$${Math.abs(p.pnl).toFixed(2)} (${p.pnl_pct >= 0 ? '+' : ''}${p.pnl_pct.toFixed(1)}%)</span>
-                    <button class="btn btn-sm btn-danger" onclick="sellPosition(${p.id})">Sell</button>
+                    <button class="btn btn-sm btn-danger" onclick="sellPosition(${p.id})">${closeLabel}</button>
                 </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;margin:6px 0;padding:5px 10px;background:${timeBg};border-radius:6px;font-size:12px">
+                <span style="color:var(--text-muted)">⏱ Auto-close in:</span>
+                <strong style="color:${timeColor}" data-countdown="${expiresAt.toISOString()}">${timeStr}</strong>
+                ${minRemaining <= 5 && msRemaining > 0 ? '<span style="color:var(--red);font-size:11px">⚠️ Closing soon!</span>' : ''}
             </div>
             <div class="position-details">
                 <div><span>Entry Price</span><strong>$${p.entry_price.toFixed(2)}</strong></div>
@@ -8538,6 +8596,30 @@
             </div>
         </div>`;
             }).join('');
+
+            // Start countdown timer updates
+            _startCountdownTimers();
+        }
+
+        // Live countdown timers for position auto-close
+        let _countdownInterval = null;
+        function _startCountdownTimers() {
+            if (_countdownInterval) clearInterval(_countdownInterval);
+            _countdownInterval = setInterval(() => {
+                document.querySelectorAll('[data-countdown]').forEach(el => {
+                    const expires = new Date(el.dataset.countdown);
+                    const ms = Math.max(0, expires - new Date());
+                    const min = Math.floor(ms / 60000);
+                    const sec = Math.floor((ms % 60000) / 1000);
+                    if (ms <= 0) {
+                        el.textContent = 'CLOSING...';
+                        el.style.color = 'var(--red)';
+                    } else {
+                        el.textContent = `${min}m ${sec}s`;
+                        el.style.color = min <= 5 ? 'var(--red)' : min <= 15 ? '#f39c12' : 'var(--green)';
+                    }
+                });
+            }, 1000);
         }
 
         async function toggleAutoTrade() {
@@ -8631,10 +8713,16 @@
                 }
                 el.innerHTML = data.opportunities.map(o => {
                     const scoreCls = o.score >= 60 ? 'high' : o.score >= 35 ? 'mid' : 'low';
+                    const side = (o.side || 'long').toUpperCase();
+                    const sideColor = side === 'SHORT' ? '#ff4757' : '#2ed573';
+                    const sideIcon = side === 'SHORT' ? '▼' : '▲';
                     return `
-            <div class="opp-card">
+            <div class="opp-card" style="border-left:3px solid ${sideColor}">
                 <div class="opp-info">
-                    <div class="opp-name">${o.symbol} <span style="color:var(--text-muted);font-weight:400">${o.name}</span></div>
+                    <div class="opp-name">
+                        <span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:700;color:#fff;background:${sideColor};margin-right:4px">${sideIcon} ${side}</span>
+                        ${o.symbol} <span style="color:var(--text-muted);font-weight:400">${o.name}</span>
+                    </div>
                     <div class="opp-detail">$${o.price.toFixed(4)} | 24h: ${o.change_24h >= 0 ? '+' : ''}${o.change_24h.toFixed(1)}% | Vol: $${(o.volume_24h / 1000).toFixed(0)}K</div>
                     <div class="opp-detail" style="margin-top:4px">💡 ${o.reasoning}</div>
                 </div>
@@ -8735,11 +8823,11 @@
                 </div>
                 <div class="setting-item">
                     <div class="setting-label">Take Profit (%)</div>
-                    <input class="setting-input" id="setTakeProfit" type="number" value="${s.take_profit_pct}" min="5" max="200">
+                    <input class="setting-input" id="setTakeProfit" type="number" value="${s.take_profit_pct}" min="1" max="200">
                 </div>
                 <div class="setting-item">
                     <div class="setting-label">Cooldown (minutes)</div>
-                    <input class="setting-input" id="setCooldown" type="number" value="${s.cooldown_minutes}" min="1" max="60">
+                    <input class="setting-input" id="setCooldown" type="number" value="${s.cooldown_minutes}" min="0" max="60">
                 </div>
                 <div class="setting-item">
                     <div class="setting-label">Min Market Cap ($)</div>
@@ -8749,9 +8837,12 @@
                     <div class="setting-label">Risk Level</div>
                     <select class="setting-input" id="setRiskLevel">
                         <option value="conservative" ${s.risk_level === 'conservative' ? 'selected' : ''}>Conservative</option>
-                        <option value="moderate" ${s.risk_level === 'moderate' ? 'selected' : ''}>Moderate</option>
+                        <option value="balanced" ${s.risk_level === 'balanced' || s.risk_level === 'moderate' ? 'selected' : ''}>Balanced</option>
                         <option value="aggressive" ${s.risk_level === 'aggressive' ? 'selected' : ''}>Aggressive</option>
                     </select>
+                    <div style="font-size:11px;color:var(--text-muted);margin-top:4px">
+                        Aggressive = bypass backtest gate, lower score threshold, faster trades
+                    </div>
                 </div>
             </div>
             <button class="btn btn-primary" style="width:100%;margin-top:16px" onclick="saveTraderSettings()">Save Settings</button>
@@ -8885,10 +8976,16 @@
                     const sign = p.pnl >= 0 ? '+' : '';
                     const clHash = p.tx_hash || '';
                     const clShortHash = clHash ? clHash.slice(0, 8) + '…' + clHash.slice(-6) : '';
+                    const side = (p.side || 'long').toUpperCase();
+                    const sideColor = side === 'SHORT' ? 'var(--red)' : 'var(--green)';
+                    const sideIcon = side === 'SHORT' ? '▼' : '▲';
                     return `
-            <div class="position-card">
+            <div class="position-card" style="border-left:3px solid ${sideColor}">
                 <div class="position-header">
-                    <div class="position-coin">${p.symbol} <span style="color:var(--text-muted);font-weight:400;font-size:13px">${p.coin_name}</span></div>
+                    <div class="position-coin">
+                        <span style="display:inline-block;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;color:#fff;background:${sideColor};margin-right:4px">${sideIcon} ${side}</span>
+                        ${p.symbol} <span style="color:var(--text-muted);font-weight:400;font-size:13px">${p.coin_name}</span>
+                    </div>
                     <span class="position-badge ${pnlCls}">${sign}$${Math.abs(p.pnl).toFixed(2)} (${p.pnl_pct >= 0 ? '+' : ''}${p.pnl_pct.toFixed(1)}%)</span>
                 </div>
                 <div class="position-details">

@@ -1476,9 +1476,9 @@ def _send_trade_cycle_emails(user_id: int, cycle_result: dict):
 # ══════════════════════════════════════════════════════════════════
 
 async def _auto_trade_loop():
-    """Background loop — auto-trades only for users who enabled the toggle."""
-    await asyncio.sleep(10)  # Wait for startup
-    logger.info("Auto-trade background loop started")
+    """Background loop — scans markets every 30 seconds for all users with auto-trade enabled."""
+    await asyncio.sleep(5)  # Wait for startup
+    logger.info("Auto-trade background loop started (30s interval)")
     while True:
         try:
             sb = get_supabase()
@@ -1505,7 +1505,7 @@ async def _auto_trade_loop():
         except Exception as e:
             logger.warning("Auto-trade loop error: %s", e)
 
-        await asyncio.sleep(300)  # Run every 5 minutes
+        await asyncio.sleep(30)  # Run every 30 seconds — continuous market scanning
 
 
 # ══════════════════════════════════════════════════════════════════

@@ -1,21 +1,22 @@
-"""
-NEXYPHER Autonomous Trading Engine
+"""NEXYPHER Autonomous Trading Engine v2.0
 ============================================================
 AI-powered autonomous crypto trading bot that:
 1. Checks REAL wallet balance (deposited from bank account)
-2. Researches market opportunities using CoinGecko + DexScreener + Gemini AI
-3. Makes buy/sell decisions with risk management
+2. Researches market opportunities every 30 seconds (continuous scanning)
+3. Makes LONG & SHORT decisions with risk management
 4. Executes trades using real wallet funds
 5. Tracks P&L and performance
+6. Auto-closes ALL positions within 1 hour max
+7. Sends SMS warnings 5 minutes before auto-close
 
-Safety Controls:
-- Max trade size: 20% of wallet per trade
-- Daily loss limit: 10% of wallet
-- Max open positions: 5
-- Stop-loss: -8% per position
-- Take-profit: +20% per position
-- Cooldown: 5 min between trades
-- Only trades top coins (whitelist or market cap > $1M)
+Trading Rules:
+- Portfolio: 10-15 simultaneous positions (diversified)
+- No single token > 15% of total portfolio
+- Bidirectional: LONG (buy) + SHORT (sell) simultaneously
+- 1-hour max hold time with forced exit
+- Stop-loss & take-profit per position
+- Auto-trader ON by default (hands-free)
+- 30-second scan interval for real-time opportunity detection
 """
 
 from __future__ import annotations
@@ -39,8 +40,13 @@ logger = logging.getLogger(__name__)
 # ── System auto-trader (always-on background bot) ──
 SYSTEM_USER_ID = 1  # trades under the primary user account so dashboard shows activity
 SYSTEM_INITIAL_BALANCE = 10_000_000.0  # ₹1,00,00,000 (1 Cr)
-AUTO_TRADE_INTERVAL_SECONDS = 60   # 1 minute between cycles for hyper-active trading
+AUTO_TRADE_INTERVAL_SECONDS = 30   # 30 seconds — continuous market scanning
 MAX_HOLD_HOURS = 1                  # auto-sell if TP/SL not hit within 1 hour
+WARNING_MINUTES_BEFORE_CLOSE = 5    # SMS warning 5 min before auto-close
+MAX_PORTFOLIO_SLOTS = 15            # 10-15 simultaneous positions
+MAX_POSITION_PCT = 15.0             # no single token > 15% of portfolio
+MIN_POSITION_AMOUNT = 100           # minimum $ per position (lowered for small wallets)
+RESERVE_AMOUNT = 50                 # always keep $50 as buffer
 STABLECOINS = {"tether", "usd-coin", "dai", "usd1-wlfi", "binance-usd", "true-usd", "first-digital-usd"}
 _autotrader_task = None  # reference to the background asyncio task
 _autotrader_running = False
@@ -115,9 +121,9 @@ def get_trade_settings(user_id: int) -> Dict[str, Any]:
     return {
         "user_id": user_id, "auto_trade_enabled": 1,  # ON by default
         "max_trade_pct": 20.0, "daily_loss_limit_pct": 10.0,
-        "max_open_positions": 5, "stop_loss_pct": 8.0,
-        "take_profit_pct": 20.0, "cooldown_minutes": 5,
-        "min_market_cap": 1000000, "risk_level": "moderate",
+        "max_open_positions": 15, "stop_loss_pct": 5.0,
+        "take_profit_pct": 10.0, "cooldown_minutes": 0,
+        "min_market_cap": 1000000, "risk_level": "aggressive",
     }
 
 
@@ -253,7 +259,36 @@ def _log_event(user_id: int, event: str, details: str):
 
 # -- Core Trading Logic --------------------------------------------------------
 
-def execute_buy(user_id, coin_id, coin_name, symbol, price, amount, ai_score, ai_reasoning, stop_loss_pct=8.0, take_profit_pct=20.0):
+def _send_trade_sms(user_id: int, message: str):
+    """Send an SMS notification to a user about a trade event."""
+    try:
+        import sms_service
+        if not sms_service.is_configured():
+            return
+        sb = get_supabase()
+        user_row = sb.table("users").select("phone").eq("id", user_id).execute()
+        if user_row.data and user_row.data[0].get("phone"):
+            phone = user_row.data[0]["phone"]
+            # Use Twilio messaging (not verify OTP)
+            from twilio.rest import Client
+            import os
+            sid = os.getenv("TWILIO_ACCOUNT_SID", "")
+            token = os.getenv("TWILIO_AUTH_TOKEN", "")
+            from_number = os.getenv("TWILIO_FROM_NUMBER", "")
+            if sid and token and from_number:
+                client = Client(sid, token)
+                client.messages.create(
+                    body=f"[NexYpher] {message}",
+                    from_=from_number,
+                    to=sms_service._format_phone(phone)
+                )
+                logger.info("SMS sent to user %d: %s", user_id, message[:50])
+    except Exception as e:
+        logger.warning("SMS send failed for user %d: %s", user_id, e)
+
+
+def execute_buy(user_id, coin_id, coin_name, symbol, price, amount, ai_score, ai_reasoning, stop_loss_pct=8.0, take_profit_pct=20.0, side="long"):
+    """Execute a buy (LONG) or short-sell (SHORT) order."""
     sb = get_supabase()
     try:
         bal = sb.table("wallet_balance").select("balance").eq("user_id", user_id).execute()
@@ -266,11 +301,17 @@ def execute_buy(user_id, coin_id, coin_name, symbol, price, amount, ai_score, ai
             return {"success": False, "error": "Invalid amount"}
 
         quantity = amount / price
-        stop_loss = price * (1 - stop_loss_pct / 100)
-        take_profit = price * (1 + take_profit_pct / 100)
+        # For SHORT positions: stop-loss is ABOVE entry, take-profit is BELOW entry
+        if side == "short":
+            stop_loss = price * (1 + stop_loss_pct / 100)
+            take_profit = price * (1 - take_profit_pct / 100)
+        else:
+            stop_loss = price * (1 - stop_loss_pct / 100)
+            take_profit = price * (1 + take_profit_pct / 100)
 
         timestamp = datetime.now(timezone.utc).isoformat()
-        tx_hash = generate_tx_hash(user_id, 'BUY', coin_id, symbol.upper(), price, quantity, amount, timestamp)
+        action_label = 'SHORT' if side == 'short' else 'BUY'
+        tx_hash = generate_tx_hash(user_id, action_label, coin_id, symbol.upper(), price, quantity, amount, timestamp)
 
         # Insert position
         pos_result = sb.table("trade_positions").insert({
@@ -278,6 +319,7 @@ def execute_buy(user_id, coin_id, coin_name, symbol, price, amount, ai_score, ai
             "coin_id": coin_id,
             "coin_name": coin_name,
             "symbol": symbol.upper(),
+            "side": side,
             "entry_price": price,
             "current_price": price,
             "quantity": quantity,
@@ -296,7 +338,7 @@ def execute_buy(user_id, coin_id, coin_name, symbol, price, amount, ai_score, ai
             "position_id": position_id,
             "coin_id": coin_id,
             "symbol": symbol.upper(),
-            "action": "BUY",
+            "action": action_label,
             "price": price,
             "quantity": quantity,
             "amount": amount,
@@ -306,7 +348,7 @@ def execute_buy(user_id, coin_id, coin_name, symbol, price, amount, ai_score, ai
             "created_at": timestamp,
         }).execute()
 
-        # Deduct wallet balance
+        # Deduct wallet balance (margin for both LONG and SHORT)
         _deduct_wallet(user_id, amount)
 
         # Update trade stats
@@ -316,59 +358,72 @@ def execute_buy(user_id, coin_id, coin_name, symbol, price, amount, ai_score, ai
             "p_trades": 1,
         }).execute()
 
-        _log_event(user_id, "BUY", f"Bought {quantity:.6f} {symbol.upper()} at ${price:,.2f} (${amount:,.0f}) | Score: {ai_score}/100 | Hash: {tx_hash[:16]}... | {ai_reasoning[:180]}")
+        side_label = "SHORTED" if side == "short" else "Bought"
+        _log_event(user_id, action_label, f"{side_label} {quantity:.6f} {symbol.upper()} at ${price:,.2f} (${amount:,.0f}) | Score: {ai_score}/100 | Hash: {tx_hash[:16]}... | {ai_reasoning[:180]}")
 
         # Record on blockchain (async, non-blocking)
-        blockchain.record_transaction_async(tx_hash, "BUY", symbol.upper(), amount)
+        blockchain.record_transaction_async(tx_hash, action_label, symbol.upper(), amount)
 
-        return {"success": True, "position_id": position_id, "quantity": quantity, "amount": amount, "tx_hash": tx_hash}
+        return {"success": True, "position_id": position_id, "quantity": quantity, "amount": amount, "tx_hash": tx_hash, "side": side}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 
 def execute_sell(user_id, position_id, current_price, reason="manual"):
+    """Close a position (LONG or SHORT) at the given price."""
     sb = get_supabase()
     try:
         pos_result = sb.table("trade_positions").select("*").eq("id", position_id).eq("user_id", user_id).eq("status", "open").execute()
         if not pos_result.data:
             return {"success": False, "error": "Position not found or already closed"}
         pos = pos_result.data[0]
+        side = pos.get("side", "long")
 
-        current_value = pos["quantity"] * current_price
-        pnl = current_value - pos["invested_amount"]
-        pnl_pct = (pnl / pos["invested_amount"]) * 100
+        # P&L calculation depends on side
+        if side == "short":
+            # SHORT: profit when price goes DOWN
+            current_value = pos["invested_amount"] + (pos["entry_price"] - current_price) * pos["quantity"]
+            pnl = current_value - pos["invested_amount"]
+        else:
+            # LONG: profit when price goes UP
+            current_value = pos["quantity"] * current_price
+            pnl = current_value - pos["invested_amount"]
+        pnl_pct = (pnl / pos["invested_amount"]) * 100 if pos["invested_amount"] > 0 else 0
 
         timestamp = datetime.now(timezone.utc).isoformat()
-        tx_hash = generate_tx_hash(user_id, 'SELL', pos["coin_id"], pos["symbol"], current_price, pos["quantity"], current_value, timestamp)
+        close_action = 'COVER' if side == 'short' else 'SELL'
+        tx_hash = generate_tx_hash(user_id, close_action, pos["coin_id"], pos["symbol"], current_price, pos["quantity"], current_value, timestamp)
 
         # Close the position
         sb.table("trade_positions").update({
             "status": "closed",
             "current_price": current_price,
-            "current_value": current_value,
+            "current_value": max(0, current_value),
             "pnl": pnl,
             "pnl_pct": pnl_pct,
             "tx_hash": tx_hash,
             "closed_at": datetime.now(timezone.utc).isoformat(),
         }).eq("id", position_id).execute()
 
-        # Insert sell order
+        # Insert close order
         sb.table("trade_orders").insert({
             "user_id": user_id,
             "position_id": position_id,
             "coin_id": pos["coin_id"],
             "symbol": pos["symbol"],
-            "action": "SELL",
+            "action": close_action,
             "price": current_price,
             "quantity": pos["quantity"],
-            "amount": current_value,
+            "amount": max(0, current_value),
             "ai_reasoning": reason,
             "tx_hash": tx_hash,
             "created_at": timestamp,
         }).execute()
 
-        # Credit wallet
-        _credit_wallet(user_id, current_value, f"Sold {pos['symbol']} — P&L: ${pnl:,.2f} ({pnl_pct:+.1f}%)")
+        # Credit wallet (return margin + P&L)
+        credit_amount = max(0, current_value)
+        side_label = "Covered short" if side == "short" else "Sold"
+        _credit_wallet(user_id, credit_amount, f"{side_label} {pos['symbol']} — P&L: ${pnl:,.2f} ({pnl_pct:+.1f}%)")
 
         # Update trade stats
         win_inc = 1 if pnl > 0 else 0
@@ -383,10 +438,10 @@ def execute_sell(user_id, position_id, current_price, reason="manual"):
             "p_worst": pnl if pnl < 0 else 0,
         }).execute()
 
-        _log_event(user_id, "SELL", f"Sold {pos['quantity']:.6f} {pos['symbol']} at ${current_price:,.2f} | P&L: ${pnl:,.2f} ({pnl_pct:+.1f}%) | Hash: {tx_hash[:16]}... | Reason: {reason}")
+        _log_event(user_id, close_action, f"{side_label} {pos['quantity']:.6f} {pos['symbol']} ({side.upper()}) at ${current_price:,.2f} | P&L: ${pnl:,.2f} ({pnl_pct:+.1f}%) | Hash: {tx_hash[:16]}... | Reason: {reason}")
 
         # Record on blockchain (async, non-blocking)
-        blockchain.record_transaction_async(tx_hash, "SELL", pos["symbol"], current_value)
+        blockchain.record_transaction_async(tx_hash, close_action, pos["symbol"], credit_amount)
 
         # Feed outcome back to AI learning loop (evaluate prediction)
         ll = _get_learning_loop()
@@ -400,7 +455,7 @@ def execute_sell(user_id, position_id, current_price, reason="manual"):
             except Exception:
                 pass
 
-        return {"success": True, "pnl": round(pnl, 2), "pnl_pct": round(pnl_pct, 2), "amount": round(current_value, 2), "tx_hash": tx_hash}
+        return {"success": True, "pnl": round(pnl, 2), "pnl_pct": round(pnl_pct, 2), "amount": round(max(0, current_value), 2), "tx_hash": tx_hash, "side": side}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -408,51 +463,84 @@ def execute_sell(user_id, position_id, current_price, reason="manual"):
 # -- AI Research Engine --------------------------------------------------------
 
 async def research_opportunities(cg_collector, dex_collector, gemini_client=None):
+    """Research and score trading opportunities (LONG and SHORT signals)."""
     opportunities = []
     try:
-        top_coins = await cg_collector.get_top_coins(limit=30)
+        top_coins = await cg_collector.get_top_coins(limit=50)  # Increased from 30 to 50 for more diversity
         trending = await cg_collector.get_trending()
         trending_ids = {t.coin_id for t in trending} if trending else set()
 
         for coin in top_coins:
-            score = 0
-            reasons = []
-            change_24h = coin.price_change_pct_24h
-            if 3 < change_24h < 15:
-                score += 25; reasons.append(f"Strong 24h momentum: {change_24h:+.1f}%")
-            elif 1 < change_24h <= 3:
-                score += 15; reasons.append(f"Positive momentum: {change_24h:+.1f}%")
-            elif change_24h < -10:
-                score -= 10; reasons.append(f"Heavy decline: {change_24h:+.1f}%")
-            if coin.market_cap > 0:
-                vol_ratio = coin.total_volume_24h / coin.market_cap
-                if vol_ratio > 0.3:
-                    score += 20; reasons.append(f"High volume/mcap ratio: {vol_ratio:.2f}")
-                elif vol_ratio > 0.1:
-                    score += 10; reasons.append(f"Healthy volume: {vol_ratio:.2f}")
-            if coin.coin_id in trending_ids:
-                score += 15; reasons.append("Trending on CoinGecko")
-            if coin.market_cap > 10_000_000_000:
-                score += 10; reasons.append("Large cap - lower risk")
-            elif coin.market_cap > 1_000_000_000:
-                score += 5; reasons.append("Mid cap")
-            if hasattr(coin, 'ath') and coin.ath > 0:
-                ath_ratio = coin.current_price / coin.ath
-                if 0.3 < ath_ratio < 0.7:
-                    score += 10; reasons.append(f"Room to grow - {(1-ath_ratio)*100:.0f}% below ATH")
-            score = max(0, min(100, score))
             # Skip stablecoins — they don't move
             if coin.coin_id in STABLECOINS:
                 continue
             # Skip coins with invalid prices
             if coin.current_price <= 0.001:
                 continue
-            if score >= 25:
+
+            change_24h = coin.price_change_pct_24h
+
+            # ── LONG SIGNAL SCORING ──
+            long_score = 0
+            long_reasons = []
+            if 3 < change_24h < 15:
+                long_score += 25; long_reasons.append(f"Strong 24h momentum: {change_24h:+.1f}%")
+            elif 1 < change_24h <= 3:
+                long_score += 15; long_reasons.append(f"Positive momentum: {change_24h:+.1f}%")
+            if coin.market_cap > 0:
+                vol_ratio = coin.total_volume_24h / coin.market_cap
+                if vol_ratio > 0.3:
+                    long_score += 20; long_reasons.append(f"High volume/mcap ratio: {vol_ratio:.2f}")
+                elif vol_ratio > 0.1:
+                    long_score += 10; long_reasons.append(f"Healthy volume: {vol_ratio:.2f}")
+            if coin.coin_id in trending_ids:
+                long_score += 15; long_reasons.append("Trending on CoinGecko")
+            if coin.market_cap > 10_000_000_000:
+                long_score += 10; long_reasons.append("Large cap - lower risk")
+            elif coin.market_cap > 1_000_000_000:
+                long_score += 5; long_reasons.append("Mid cap")
+            if hasattr(coin, 'ath') and coin.ath > 0:
+                ath_ratio = coin.current_price / coin.ath
+                if 0.3 < ath_ratio < 0.7:
+                    long_score += 10; long_reasons.append(f"Room to grow - {(1-ath_ratio)*100:.0f}% below ATH")
+            long_score = max(0, min(100, long_score))
+
+            if long_score >= 25:
                 opportunities.append({
                     "coin_id": coin.coin_id, "name": coin.name, "symbol": coin.symbol.upper(),
                     "price": coin.current_price, "change_24h": change_24h,
                     "market_cap": coin.market_cap, "volume_24h": coin.total_volume_24h,
-                    "score": score, "reasons": reasons, "reasoning": " | ".join(reasons), "source": "coingecko",
+                    "score": long_score, "reasons": long_reasons, "reasoning": " | ".join(long_reasons),
+                    "source": "coingecko", "side": "long",
+                })
+
+            # ── SHORT SIGNAL SCORING ──
+            short_score = 0
+            short_reasons = []
+            if change_24h < -5:
+                short_score += 25; short_reasons.append(f"Bearish momentum: {change_24h:+.1f}%")
+            elif -5 <= change_24h < -2:
+                short_score += 15; short_reasons.append(f"Declining: {change_24h:+.1f}%")
+            if coin.market_cap > 0:
+                vol_ratio = coin.total_volume_24h / coin.market_cap
+                if vol_ratio > 0.3:
+                    short_score += 15; short_reasons.append(f"Panic volume: {vol_ratio:.2f}")
+            if hasattr(coin, 'ath') and coin.ath > 0:
+                ath_ratio = coin.current_price / coin.ath
+                if ath_ratio > 0.9:
+                    short_score += 15; short_reasons.append(f"Near ATH ({ath_ratio*100:.0f}%) — likely pullback")
+            # Large sell pressure — more sells than buys indicates dump
+            if change_24h < -3 and coin.market_cap > 1_000_000_000:
+                short_score += 10; short_reasons.append("Large cap decline — shorting opportunity")
+            short_score = max(0, min(100, short_score))
+
+            if short_score >= 25:
+                opportunities.append({
+                    "coin_id": coin.coin_id, "name": coin.name, "symbol": coin.symbol.upper(),
+                    "price": coin.current_price, "change_24h": change_24h,
+                    "market_cap": coin.market_cap, "volume_24h": coin.total_volume_24h,
+                    "score": short_score, "reasons": short_reasons, "reasoning": " | ".join(short_reasons),
+                    "source": "coingecko", "side": "short",
                 })
     except Exception as e:
         logger.warning("CoinGecko research failed: %s", e)
@@ -628,10 +716,11 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
     # Risk profile modifiers
     risk_modifiers = {
         "conservative": {"max_trade_pct_mult": 0.5, "min_score": 70, "stop_loss_add": 2},
+        "moderate":     {"max_trade_pct_mult": 1.0, "min_score": 50, "stop_loss_add": 0},
         "balanced":     {"max_trade_pct_mult": 1.0, "min_score": 50, "stop_loss_add": 0},
         "aggressive":   {"max_trade_pct_mult": 1.5, "min_score": 30, "stop_loss_add": -2},
     }
-    mods = risk_modifiers.get(risk_profile, risk_modifiers["balanced"])
+    mods = risk_modifiers.get(risk_profile, risk_modifiers["aggressive"])
 
     balance = _get_wallet_balance(user_id)
     stats = _get_trade_stats(user_id)
@@ -653,6 +742,7 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
     for pos in open_positions:
         try:
             coin_id = pos.get("coin_id", "")
+            side = pos.get("side", "long")
             if coin_id and not coin_id.startswith("0x") and len(coin_id) <= 20:
                 try:
                     prices = await cg_collector.get_simple_price([coin_id])
@@ -662,30 +752,36 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
             else:
                 current_price = pos["current_price"]
 
-            current_value = pos["quantity"] * current_price if current_price > 0 else 0
-            pnl = current_value - pos["invested_amount"]
+            # P&L calculation based on side
+            if side == "short":
+                current_value = pos["invested_amount"] + (pos["entry_price"] - current_price) * pos["quantity"]
+                pnl = current_value - pos["invested_amount"]
+            else:
+                current_value = pos["quantity"] * current_price if current_price > 0 else 0
+                pnl = current_value - pos["invested_amount"]
             pnl_pct = (pnl / pos["invested_amount"]) * 100 if pos["invested_amount"] > 0 else 0
 
             # Update position in DB
             sb.table("trade_positions").update({
                 "current_price": current_price,
-                "current_value": current_value,
+                "current_value": max(0, current_value),
                 "pnl": pnl,
                 "pnl_pct": pnl_pct,
             }).eq("id", pos["id"]).execute()
             results["positions_updated"] += 1
 
-            # Check stop-loss
+            # Check stop-loss (works for both LONG and SHORT)
             if pnl_pct <= -settings["stop_loss_pct"]:
+                side_verb = "covered" if side == "short" else "sold"
                 sell_reason = (
-                    f"STOP-LOSS: {pos['symbol']} dropped {pnl_pct:.1f}% "
+                    f"STOP-LOSS ({side.upper()}): {pos['symbol']} lost {pnl_pct:.1f}% "
                     f"(entry ${pos['entry_price']:.4f} -> ${current_price:.4f}). "
                     f"Loss ${abs(pnl):,.0f}. Cutting losses."
                 )
                 sell_result = execute_sell(user_id, pos["id"], current_price, sell_reason)
                 if sell_result["success"]:
                     results["actions"].append(
-                        f"Stop-loss: Sold {pos['symbol']} at ${current_price:,.4f} (P&L: {pnl_pct:+.1f}%)"
+                        f"Stop-loss: {side_verb} {pos['symbol']} ({side.upper()}) at ${current_price:,.4f} (P&L: {pnl_pct:+.1f}%)"
                     )
                     ll = _get_learning_loop()
                     if ll:
@@ -695,15 +791,16 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
 
             # Check take-profit
             if pnl_pct >= settings["take_profit_pct"]:
+                side_verb = "covered" if side == "short" else "sold"
                 sell_reason = (
-                    f"TAKE-PROFIT: {pos['symbol']} gained {pnl_pct:.1f}% "
+                    f"TAKE-PROFIT ({side.upper()}): {pos['symbol']} gained {pnl_pct:.1f}% "
                     f"(entry ${pos['entry_price']:.4f} -> ${current_price:.4f}). "
                     f"Profit ${pnl:,.0f}. Locking in gains."
                 )
                 sell_result = execute_sell(user_id, pos["id"], current_price, sell_reason)
                 if sell_result["success"]:
                     results["actions"].append(
-                        f"Take-profit: Sold {pos['symbol']} at ${current_price:,.4f} (P&L: {pnl_pct:+.1f}%)"
+                        f"Take-profit: {side_verb} {pos['symbol']} ({side.upper()}) at ${current_price:,.4f} (P&L: {pnl_pct:+.1f}%)"
                     )
                     ll = _get_learning_loop()
                     if ll:
@@ -711,23 +808,50 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
                         except Exception: pass
                 continue
 
-            # Check auto-exit (max hold time)
+            # Check auto-exit (max hold time = 1 hour) + 5-minute SMS warning
             opened_at_str = pos.get("opened_at") or pos.get("created_at", "")
             if opened_at_str:
                 try:
                     opened_at = datetime.fromisoformat(opened_at_str.replace("Z", "+00:00"))
                     if opened_at.tzinfo is None:
                         opened_at = opened_at.replace(tzinfo=timezone.utc)
-                    hours_held = (datetime.now(timezone.utc) - opened_at).total_seconds() / 3600
+                    seconds_held = (datetime.now(timezone.utc) - opened_at).total_seconds()
+                    hours_held = seconds_held / 3600
+                    minutes_remaining = (MAX_HOLD_HOURS * 60) - (seconds_held / 60)
+
+                    # ── 5-minute SMS warning before auto-close ──
+                    if 0 < minutes_remaining <= WARNING_MINUTES_BEFORE_CLOSE:
+                        warning_key = f"warned_{pos['id']}"
+                        if warning_key not in results:
+                            results[warning_key] = True
+                            side_verb = "cover" if side == "short" else "close"
+                            _send_trade_sms(
+                                user_id,
+                                f"⚠️ {pos['symbol']} ({side.upper()}) will auto-{side_verb} in {minutes_remaining:.0f}min! "
+                                f"P&L: {pnl_pct:+.1f}% (${pnl:,.0f}). "
+                                f"Entry: ${pos['entry_price']:.4f} → Now: ${current_price:.4f}"
+                            )
+                            results["actions"].append(
+                                f"⚠️ SMS warning: {pos['symbol']} ({side.upper()}) closing in {minutes_remaining:.0f}min"
+                            )
+
+                    # ── FORCE EXIT after 1 hour ──
                     if hours_held >= MAX_HOLD_HOURS:
+                        side_verb = "covered" if side == "short" else "sold"
                         sell_reason = (
-                            f"AUTO-EXIT: {pos['symbol']} held {hours_held:.1f}h "
-                            f"(max {MAX_HOLD_HOURS}h). P&L: {pnl_pct:+.1f}%."
+                            f"AUTO-EXIT ({side.upper()}): {pos['symbol']} held {hours_held:.1f}h "
+                            f"(max {MAX_HOLD_HOURS}h). P&L: {pnl_pct:+.1f}%. FORCED CLOSE."
                         )
                         sell_result = execute_sell(user_id, pos["id"], current_price, sell_reason)
                         if sell_result["success"]:
                             results["actions"].append(
-                                f"Auto-exit: Sold {pos['symbol']} after {hours_held:.1f}h (P&L: {pnl_pct:+.1f}%)"
+                                f"Auto-exit: {side_verb} {pos['symbol']} ({side.upper()}) after {hours_held:.1f}h (P&L: {pnl_pct:+.1f}%)"
+                            )
+                            # Send SMS notification for auto-close
+                            _send_trade_sms(
+                                user_id,
+                                f"🔴 AUTO-CLOSED {pos['symbol']} ({side.upper()}) after {hours_held:.1f}h | "
+                                f"P&L: {pnl_pct:+.1f}% (${pnl:,.0f})"
                             )
                             ll = _get_learning_loop()
                             if ll:
@@ -740,14 +864,14 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
         except Exception as e:
             logger.warning("Position update failed for %s: %s", pos.get("coin_id"), e)
 
-    # ── STEP 2: ALL-IN ROTATION — sell current position if a better coin is found ──
-    # Re-fetch balance and open positions after step 1 closes may have sold some
+    # ── STEP 2: DIVERSIFIED PORTFOLIO — open new LONG and SHORT positions ──
+    # Re-fetch balance and open positions after step 1 (some may have closed)
     balance = _get_wallet_balance(user_id)
     open_positions = get_open_positions(user_id)
 
     # Check daily trade count limit
     today_start = datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00+00:00")
-    today_orders = sb.table("trade_orders").select("id").eq("user_id", user_id).eq("action", "BUY").gte("created_at", today_start).execute()
+    today_orders = sb.table("trade_orders").select("id").eq("user_id", user_id).gte("created_at", today_start).execute()
     trades_today = len(today_orders.data) if today_orders.data else 0
 
     if trades_today < max_daily:
@@ -760,7 +884,6 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
 
         # ── BACKTEST GATE ──
         # Aggressive: allow all coins (skip backtest gate for maximum trading)
-        # Conservative/Balanced: only allow backtest-verified tokens
         if risk_profile != "aggressive":
             verified_opportunities = []
             for o in opportunities:
@@ -777,55 +900,73 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
         else:
             logger.info("Aggressive mode — backtest gate BYPASSED, %d coins eligible", len(opportunities))
 
-        # Apply confidence threshold — convert score (0-100) to confidence (0-10)
+        # Apply confidence threshold
         min_score = mods["min_score"]
-        confidence_min_score = int(confidence_threshold * 10)  # e.g. 7.0 → 70
-        # Aggressive mode uses its own lower min_score to allow more trades
+        confidence_min_score = int(confidence_threshold * 10)
         effective_min_score = min_score if risk_profile == "aggressive" else max(min_score, confidence_min_score)
         opportunities = [o for o in opportunities if o["score"] >= effective_min_score]
         results["confidence_threshold"] = confidence_threshold
         results["effective_min_score"] = effective_min_score
         results["risk_profile"] = risk_profile
 
-        # ── DIVERSIFIED PORTFOLIO: top-15 score-weighted allocation ──
-        MAX_PORTFOLIO_SLOTS = 15         # up to 15 simultaneous positions
-        MIN_POSITION_AMOUNT = 500        # minimum $ per position
-        RESERVE = 100                    # always keep $100 as buffer
+        # ── DIVERSIFIED PORTFOLIO: 10-15 positions, balanced LONG/SHORT ──
 
-        # Filter out coins we already hold
-        current_coin_ids = {p["coin_id"] for p in open_positions}
-        new_opportunities = [o for o in opportunities if o["coin_id"] not in current_coin_ids]
+        # Filter out coins we already hold (same coin + same side)
+        current_positions_key = {(p["coin_id"], p.get("side", "long")) for p in open_positions}
+        new_opportunities = [o for o in opportunities if (o["coin_id"], o.get("side", "long")) not in current_positions_key]
 
-        # How many new slots can we open?
+        # Separate LONG and SHORT opportunities
+        long_opps = [o for o in new_opportunities if o.get("side", "long") == "long"]
+        short_opps = [o for o in new_opportunities if o.get("side") == "short"]
+
+        # Count existing LONG/SHORT positions for balance
+        current_longs = sum(1 for p in open_positions if p.get("side", "long") == "long")
+        current_shorts = sum(1 for p in open_positions if p.get("side") == "short")
         open_count = len(open_positions)
         available_slots = max(0, MAX_PORTFOLIO_SLOTS - open_count)
 
-        if new_opportunities and available_slots > 0 and balance > (MIN_POSITION_AMOUNT + RESERVE):
-            # Top candidates by score
-            top_picks = new_opportunities[:available_slots]
+        # Calculate total portfolio value for max position % check
+        total_portfolio = balance + sum(p.get("invested_amount", 0) for p in open_positions)
 
+        # Balance LONG/SHORT: aim for ~60% LONG, ~40% SHORT
+        target_longs = int(MAX_PORTFOLIO_SLOTS * 0.6)
+        target_shorts = MAX_PORTFOLIO_SLOTS - target_longs
+        long_slots = max(0, min(available_slots, target_longs - current_longs))
+        short_slots = max(0, min(available_slots - long_slots, target_shorts - current_shorts))
+
+        # Merge top picks: take best LONGs and best SHORTs
+        picks = []
+        picks.extend([(o, "long") for o in long_opps[:long_slots]])
+        picks.extend([(o, "short") for o in short_opps[:short_slots]])
+        # Fill remaining slots with any remaining best-scored opportunities
+        remaining_slots = available_slots - len(picks)
+        if remaining_slots > 0:
+            used_ids = {(o["coin_id"], s) for o, s in picks}
+            remaining = [o for o in new_opportunities if (o["coin_id"], o.get("side", "long")) not in used_ids]
+            picks.extend([(o, o.get("side", "long")) for o in remaining[:remaining_slots]])
+
+        if picks and balance > (MIN_POSITION_AMOUNT + RESERVE_AMOUNT):
             # ── Score-weighted allocation ──
-            # Higher-scoring coins get proportionally more capital
-            investable = balance - RESERVE
-            total_score = sum(max(o["score"], 1) for o in top_picks)
-            score_weights = {o["coin_id"]: max(o["score"], 1) / total_score for o in top_picks}
-
+            investable = balance - RESERVE_AMOUNT
+            total_score = sum(max(o["score"], 1) for o, _ in picks)
             effective_sl = max(1.0, settings["stop_loss_pct"] + mods["stop_loss_add"])
 
-            for opp in top_picks:
-                if balance - RESERVE < MIN_POSITION_AMOUNT:
-                    break   # ran out of deployable capital
+            for opp, trade_side in picks:
+                if balance - RESERVE_AMOUNT < MIN_POSITION_AMOUNT:
+                    break
 
                 # Allocate proportional to score, floor at MIN_POSITION_AMOUNT
-                trade_amount = max(
-                    investable * score_weights[opp["coin_id"]],
-                    MIN_POSITION_AMOUNT
-                )
-                trade_amount = min(trade_amount, balance - RESERVE)
+                weight = max(opp["score"], 1) / total_score
+                trade_amount = max(investable * weight, MIN_POSITION_AMOUNT)
+                trade_amount = min(trade_amount, balance - RESERVE_AMOUNT)
 
-                # Build AI reasoning for this buy
+                # Enforce max position % (no single token > 15% of portfolio)
+                max_allowed = total_portfolio * (MAX_POSITION_PCT / 100)
+                trade_amount = min(trade_amount, max_allowed)
+
+                # Build AI reasoning
                 bt_stats = opp.get("backtest_stats", {})
-                bt_direction = opp.get("backtest_strategy_direction", "LONG")
+                bt_direction = opp.get("backtest_strategy_direction", trade_side.upper())
                 bt_trend = opp.get("backtest_detected_trend", "unknown")
                 bt_summary = ""
                 if bt_stats:
@@ -835,8 +976,9 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
                         f"{bt_stats.get('total_return', 0):.1f}% ret. "
                     )
 
+                side_label = "SHORT" if trade_side == "short" else "BUY"
                 detailed_reasoning = (
-                    f"BUY {opp['name']} ({opp['symbol']}): "
+                    f"{side_label} {opp['name']} ({opp['symbol']}): "
                     f"${opp['price']:,.6f} | 24h: {opp['change_24h']:+.1f}% | "
                     f"Score: {opp['score']}/100. {bt_summary}"
                     f"Investing ${trade_amount:,.0f} | SL: -{effective_sl}% | TP: +{settings['take_profit_pct']}%."
@@ -849,23 +991,25 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
                     symbol=opp["symbol"], price=opp["price"], amount=trade_amount,
                     ai_score=opp["score"], ai_reasoning=detailed_reasoning,
                     stop_loss_pct=effective_sl, take_profit_pct=settings["take_profit_pct"],
+                    side=trade_side,
                 )
                 if buy_result["success"]:
                     results["new_trades"] += 1
                     balance -= trade_amount
+                    action_verb = "Shorted" if trade_side == "short" else "Bought"
                     results["actions"].append(
-                        f"Bought {opp['symbol']} at ${opp['price']:,.4f} (${trade_amount:,.0f}) "
-                        f"| Score: {opp['score']}/100 | {bt_direction} "
-                        f"| TX: {buy_result['tx_hash'][:16]}..."
+                        f"{action_verb} {opp['symbol']} ({trade_side.upper()}) at ${opp['price']:,.4f} (${trade_amount:,.0f}) "
+                        f"| Score: {opp['score']}/100 | TX: {buy_result['tx_hash'][:16]}..."
                     )
                     # Record in learning loop
                     ll = _get_learning_loop()
                     if ll:
                         try:
+                            verdict = "bearish" if trade_side == "short" else "bullish"
                             ll.record_prediction(
                                 token_ticker=opp["coin_id"],
                                 token_name=opp["name"],
-                                verdict=bt_direction or "bullish",
+                                verdict=verdict,
                                 confidence=opp["score"] / 10.0,
                                 composite_score=opp["score"],
                                 price_at_prediction=opp["price"],
@@ -874,8 +1018,17 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
                         except Exception:
                             pass
 
-        elif not new_opportunities:
+        elif not picks:
             logger.info("Portfolio full or no new opportunities — holding existing positions")
+
+    # Add portfolio summary to results
+    results["portfolio_summary"] = {
+        "total_positions": len(open_positions),
+        "long_positions": sum(1 for p in open_positions if p.get("side", "long") == "long"),
+        "short_positions": sum(1 for p in open_positions if p.get("side") == "short"),
+        "max_slots": MAX_PORTFOLIO_SLOTS,
+        "available_balance": balance,
+    }
 
     return results
 
@@ -976,14 +1129,14 @@ def ensure_system_wallet():
                 "auto_trade_enabled": True,
                 "max_trade_pct": 20.0,
                 "daily_loss_limit_pct": 10.0,
-                "max_open_positions": 1,
+                "max_open_positions": 15,
                 "stop_loss_pct": 3.0,
                 "take_profit_pct": 5.0,
-                "cooldown_minutes": 1,
+                "cooldown_minutes": 0,
                 "min_market_cap": 1000000,
                 "risk_level": "aggressive",
             }).execute()
-            logger.info("Created system auto-trader settings (auto_trade=ON, aggressive, SL=3%, TP=5%)")
+            logger.info("Created system auto-trader settings (auto_trade=ON, aggressive, SL=3%%, TP=5%%, 15 positions)")
         else:
             # Always force-update key settings on startup
             sb.table("trade_settings").update({
@@ -991,10 +1144,10 @@ def ensure_system_wallet():
                 "risk_level": "aggressive",
                 "stop_loss_pct": 3.0,
                 "take_profit_pct": 5.0,
-                "max_open_positions": 1,
-                "cooldown_minutes": 1,
+                "max_open_positions": 15,
+                "cooldown_minutes": 0,
             }).eq("user_id", SYSTEM_USER_ID).execute()
-            logger.info("Updated system auto-trader: SL=3%%, TP=5%%, max_positions=1, cooldown=1min")
+            logger.info("Updated system auto-trader: SL=3%%, TP=5%%, max_positions=15, cooldown=0")
 
         # Ensure trade_stats row exists
         stats = sb.table("trade_stats").select("*").eq("user_id", SYSTEM_USER_ID).execute()
