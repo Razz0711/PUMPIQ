@@ -156,11 +156,22 @@ class LearningLoop:
                     verdict = "bullish"
                     predicted_direction = "up"
 
+                # Resolve a readable ticker name:
+                # Prefer position's coin_name/symbol over raw coin_id
+                pos_for_name = positions.get(position_id) if position_id else None
+                display_ticker = (
+                    (pos_for_name.get("symbol") or pos_for_name.get("coin_name") or coin_id)
+                    if pos_for_name else (symbol or coin_id)
+                )
+                # Shorten contract addresses
+                if len(display_ticker) > 20:
+                    display_ticker = display_ticker[:6] + "..." + display_ticker[-4:]
+
                 row = {
                     "prediction_id": prediction_id,
                     "user_id": user_id,
-                    "token_ticker": coin_id,
-                    "token_name": symbol,
+                    "token_ticker": display_ticker,
+                    "token_name": symbol or (pos_for_name.get("coin_name", "") if pos_for_name else ""),
                     "verdict": verdict,
                     "confidence": ai_score / 10.0 if ai_score > 0 else 5.0,
                     "composite_score": float(ai_score),
