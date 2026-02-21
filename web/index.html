@@ -6407,7 +6407,7 @@
         let feedStatus = 'all';
         let feedData = [];
 
-        const API = location.hostname === 'localhost' ? '' : 'https://nexypher-api.onrender.com';
+        const API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '' : 'https://nexypher-api.onrender.com';
 
         // ── TradingView Symbol Mapping ────────────────────────────────
         const TV_SYMBOL_MAP = {
@@ -8006,7 +8006,9 @@
         // ── Learning Page ─────────────────────────────────────────────
         async function loadLearningStats() {
             try {
+                console.log('[Learning] Fetching stats from:', API + '/api/ai/learning/stats');
                 const stats = await api('/api/ai/learning/stats');
+                console.log('[Learning] Got stats:', JSON.stringify(stats));
 
                 // Stats values
                 const total = stats.total_predictions || 0;
