@@ -709,6 +709,10 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
                     results["actions"].append(
                         f"Stop-loss: Sold {pos['symbol']} at ${current_price:,.4f} (P&L: {pnl_pct:+.1f}%)"
                     )
+                    ll = _get_learning_loop()
+                    if ll:
+                        try: ll.evaluate_trade_close(pos["coin_id"], current_price, pnl_pct)
+                        except Exception: pass
                 continue
 
             # Check take-profit
@@ -723,6 +727,10 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
                     results["actions"].append(
                         f"Take-profit: Sold {pos['symbol']} at ${current_price:,.4f} (P&L: {pnl_pct:+.1f}%)"
                     )
+                    ll = _get_learning_loop()
+                    if ll:
+                        try: ll.evaluate_trade_close(pos["coin_id"], current_price, pnl_pct)
+                        except Exception: pass
                 continue
 
             # Check auto-exit (max hold time)
@@ -743,6 +751,10 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
                             results["actions"].append(
                                 f"Auto-exit: Sold {pos['symbol']} after {hours_held:.1f}h (P&L: {pnl_pct:+.1f}%)"
                             )
+                            ll = _get_learning_loop()
+                            if ll:
+                                try: ll.evaluate_trade_close(pos["coin_id"], current_price, pnl_pct)
+                                except Exception: pass
                         continue
                 except Exception:
                     pass

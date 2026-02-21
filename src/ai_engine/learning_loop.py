@@ -212,8 +212,9 @@ class LearningLoop:
         results = {"evaluated_24h": 0, "evaluated_7d": 0, "errors": 0}
 
         try:
-            # 24h evaluations: predictions older than 24h not yet evaluated
-            cutoff_24h = (datetime.utcnow() - timedelta(hours=24)).isoformat()
+            # Short-term evaluations: predictions older than 1h not yet evaluated
+            # (matches our 1-hour max hold time)
+            cutoff_24h = (datetime.utcnow() - timedelta(hours=1)).isoformat()
             pending_24h = conn.execute('''
                 SELECT * FROM predictions
                 WHERE evaluated_24h_at IS NULL AND created_at < ?
@@ -277,6 +278,55 @@ class LearningLoop:
             conn.close()
 
         return results
+
+    def evaluate_trade_close(self, token_ticker: str, exit_price: float, pnl_pct: float) -> int:
+        """
+        Immediately evaluate open predictions for a token when a trade closes.
+        Called by the trading engine on every sell. Returns number of records updated.
+        """
+        conn = _get_db()
+        updated = 0
+        try:
+            rows = conn.execute('''
+                SELECT * FROM predictions
+                WHERE LOWER(token_ticker) = LOWER(?)
+                  AND evaluated_24h_at IS NULL
+                ORDER BY created_at DESC LIMIT 10
+            ''', (token_ticker,)).fetchall()
+
+            for row in rows:
+                pred = dict(row)
+                entry = pred["price_at_prediction"]
+                if entry <= 0:
+                    continue
+                direction = pred["predicted_direction"]
+                if direction == "up":
+                    correct = exit_price > entry
+                elif direction == "down":
+                    correct = exit_price < entry
+                else:
+                    correct = abs(pnl_pct) < 2
+
+                conn.execute('''
+                    UPDATE predictions SET
+                        actual_price_24h = ?,
+                        direction_correct_24h = ?,
+                        pnl_pct_24h = ?,
+                        evaluated_24h_at = datetime('now')
+                    WHERE prediction_id = ?
+                ''', (exit_price, 1 if correct else 0, round(pnl_pct, 2), pred["prediction_id"]))
+                updated += 1
+
+            conn.commit()
+            if updated:
+                logger.info(
+                    "Learning loop: immediately evaluated %d predictions for %s "
+                    "(exit=$%.4f, P&L=%.2f%%)",
+                    updated, token_ticker, exit_price, pnl_pct
+                )
+        finally:
+            conn.close()
+        return updated
 
     def _evaluate_24h(self, conn, pred: dict, actual_price: float):
         """Evaluate a prediction after 24 hours."""
