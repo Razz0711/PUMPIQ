@@ -172,6 +172,7 @@ class AdvancedFilters(BaseModel):
     token_age: TokenAgeFilter = TokenAgeFilter.ANY
     min_liquidity: float = Field(default=10_000, ge=0)
     min_holders: int = Field(default=500, ge=0)
+    min_confidence_score: float = Field(default=0.65, ge=0, le=1)
 
     # Required conditions (AND logic)
     require_positive_news_24h: bool = False

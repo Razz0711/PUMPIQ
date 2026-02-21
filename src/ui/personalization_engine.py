@@ -80,7 +80,7 @@ def _build_user_config(prefs: UserPreferences):
         mode_weights=weights,
         risk_tolerance=risk,
         timeframe=timeframe,
-        min_confidence=prefs.filters.min_liquidity / 100_000 if prefs.filters.min_liquidity else 0.65,
+        min_confidence=prefs.filters.min_confidence_score,
         max_recommendations=prefs.portfolio.max_concurrent_positions or 10,
         min_liquidity=prefs.filters.min_liquidity,
     )
