@@ -2,7 +2,7 @@
 
 ## Overview
 
-NexYpher is an AI-powered cryptocurrency trading recommendation system that aggregates data from multiple sources, synthesizes insights using GPT-4o, and provides actionable trading recommendations to users.
+NexYpher is an AI-powered cryptocurrency trading recommendation system that aggregates data from multiple sources, synthesizes insights using Gemini / GPT-4o, and provides actionable trading recommendations to users.
 
 ## Architecture Diagram
 
@@ -54,8 +54,8 @@ NexYpher is an AI-powered cryptocurrency trading recommendation system that aggr
 │                         AI SYNTHESIS ENGINE                              │
 │                                                                          │
 │  ┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐ │
-│  │  Data Aggregator │ -> │  GPT-4o Analysis │ -> │  Recommendation  │ │
-│  │                  │    │                  │    │    Generator     │ │
+│  │  Data Aggregator │ -> │ Gemini / GPT-4o  │ -> │  Recommendation  │ │
+│  │                  │    │    Analysis      │    │    Generator     │ │
 │  └──────────────────┘    └──────────────────┘    └──────────────────┘ │
 └────────────────────────────────┬────────────────────────────────────────┘
                                  │
@@ -158,10 +158,10 @@ Recommendation Created
 - APScheduler for scheduling
 
 **Key Files:**
-- `src/orchestrator/main.py` - Main orchestrator logic
-- `src/orchestrator/scheduler.py` - Task scheduling
-- `src/orchestrator/cache_manager.py` - Cache strategy
-- `src/orchestrator/workflow.py` - Analysis workflows
+- `src/ai_engine/orchestrator.py` - Main orchestrator logic
+- `src/ai_engine/confidence_scorer.py` - Confidence scoring
+- `cache.py` - Cache strategy
+- `src/data_collectors/data_pipeline.py` - Data collection workflows
 
 ### 2. Data Collectors
 

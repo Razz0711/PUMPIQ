@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 /**
- * @title PumpIQ Transaction Registry
+ * @title NexYpher Transaction Registry
  * @notice Records transaction hashes on-chain for verifiable trading history.
  *         Deployed first on Base Sepolia (testnet), then Base mainnet, then Ethereum.
  * @dev    Each transaction stores a SHA-256 digest computed off-chain plus metadata.

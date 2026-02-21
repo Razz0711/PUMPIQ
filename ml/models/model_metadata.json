@@ -59,7 +59,7 @@
     "tree_method": "hist"
   },
   "model_24h": {
-    "path": "C:\\Users\\RAJ\\OneDrive\\Documents\\Desktop\\PumpIQ\\ml\\models\\model_24h_1d_20260218_171936.pkl",
+    "path": "ml/models/model_24h_1d_20260218_171936.pkl",
     "cv_mean": 0.6393,
     "cv_scores": [
       0.6419,
@@ -113,7 +113,7 @@
     ]
   },
   "model_7d": {
-    "path": "C:\\Users\\RAJ\\OneDrive\\Documents\\Desktop\\PumpIQ\\ml\\models\\model_7d_1d_20260218_171936.pkl",
+    "path": "ml/models/model_7d_1d_20260218_171936.pkl",
     "cv_mean": 0.6116,
     "cv_scores": [
       0.5989,
@@ -167,7 +167,7 @@
     ]
   },
   "model_dir": {
-    "path": "C:\\Users\\RAJ\\OneDrive\\Documents\\Desktop\\PumpIQ\\ml\\models\\model_dir_1d_20260218_171936.pkl",
+    "path": "ml/models/model_dir_1d_20260218_171936.pkl",
     "cv_mean": 0.396,
     "direction_classes": [
       "DOWN",

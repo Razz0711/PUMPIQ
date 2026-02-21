@@ -39,9 +39,9 @@ def event_loop():
 
 @pytest.fixture(scope="session")
 def app():
-    """Create the FastAPI app once for all tests."""
-    from src.api.app import create_app
-    return create_app()
+    """Import the FastAPI app once for all tests."""
+    from web_app import app as _app
+    return _app
 
 
 @pytest.fixture(scope="session")

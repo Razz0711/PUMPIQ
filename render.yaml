@@ -23,7 +23,7 @@ services:
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_MODEL
-        value: "gemini-3-flash-preview"
+        value: "gemini-2.0-flash"
       - key: OPENAI_API_KEY
         sync: false
       - key: OPENAI_MODEL
@@ -71,7 +71,7 @@ services:
       - key: SMTP_USE_TLS
         value: "true"
       - key: SMTP_FROM_NAME
-        value: "PumpIQ"
+        value: "NexYpher"
       - key: APP_BASE_URL
         sync: false
 

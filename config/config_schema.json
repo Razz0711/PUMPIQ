@@ -176,7 +176,7 @@
       }
     },
     
-    "robinpump_specific": {
+    "dexscreener_specific": {
       "type": "object",
       "properties": {
         "min_bonding_curve_percent": {"type": "number", "minimum": 0, "maximum": 100},
