@@ -39,8 +39,8 @@ logger = logging.getLogger(__name__)
 # ── System auto-trader (always-on background bot) ──
 SYSTEM_USER_ID = 1  # trades under the primary user account so dashboard shows activity
 SYSTEM_INITIAL_BALANCE = 10_000_000.0  # ₹1,00,00,000 (1 Cr)
-AUTO_TRADE_INTERVAL_SECONDS = 120  # 2 minutes between cycles for active trading
-MAX_HOLD_HOURS = 4  # auto-sell positions held longer than this
+AUTO_TRADE_INTERVAL_SECONDS = 60   # 1 minute between cycles for hyper-active trading
+MAX_HOLD_HOURS = 1                  # auto-sell if TP/SL not hit within 1 hour
 STABLECOINS = {"tether", "usd-coin", "dai", "usd1-wlfi", "binance-usd", "true-usd", "first-digital-usd"}
 _autotrader_task = None  # reference to the background asyncio task
 _autotrader_running = False
@@ -668,61 +668,27 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
             _log_event(user_id, "SAFETY", f"Daily loss limit hit: {loss_pct:.1f}%")
             return {"status": "paused", "message": f"Daily loss limit reached ({loss_pct:.1f}%)"}
 
-    last_trade = sb.table("trade_orders").select("created_at").eq("user_id", user_id).order("created_at", desc=True).limit(1).execute()
-    if last_trade.data:
-        last_time = datetime.fromisoformat(last_trade.data[0]["created_at"].replace("Z", "+00:00"))
-        if last_time.tzinfo is None:
-            last_time = last_time.replace(tzinfo=timezone.utc)
-        cooldown = timedelta(minutes=settings["cooldown_minutes"])
-        if datetime.now(timezone.utc) - last_time < cooldown:
-            return {"status": "cooldown", "message": f"Cooldown active ({settings['cooldown_minutes']}min)"}
+    # (No cooldown for always-on all-in bot — we sell and rebuy every cycle)
 
-    # ── AUTO-EXIT: sell positions held too long ──
+    # ── STEP 1: Update all open positions with live prices & check stop/take/auto-exit ──
     open_positions = get_open_positions(user_id)
     for pos in open_positions:
         try:
-            opened_at_str = pos.get("opened_at") or pos.get("created_at", "")
-            if opened_at_str:
-                opened_at = datetime.fromisoformat(opened_at_str.replace("Z", "+00:00"))
-                if opened_at.tzinfo is None:
-                    opened_at = opened_at.replace(tzinfo=timezone.utc)
-                hours_held = (datetime.now(timezone.utc) - opened_at).total_seconds() / 3600
-                if hours_held >= MAX_HOLD_HOURS:
-                    # Auto-exit — sell at current price
-                    coin_id = pos.get("coin_id", "")
+            coin_id = pos.get("coin_id", "")
+            if coin_id and not coin_id.startswith("0x") and len(coin_id) <= 20:
+                try:
+                    prices = await cg_collector.get_simple_price([coin_id])
+                    current_price = prices.get(coin_id, pos["current_price"])
+                except Exception:
                     current_price = pos["current_price"]
-                    if coin_id and not coin_id.startswith("0x"):
-                        try:
-                            prices = await cg_collector.get_simple_price([coin_id])
-                            current_price = prices.get(coin_id, current_price)
-                        except Exception:
-                            pass
-                    sell_reason = (
-                        f"AUTO-EXIT: {pos['symbol']} held for {hours_held:.1f}h "
-                        f"(max {MAX_HOLD_HOURS}h). Entry: ${pos['entry_price']:.2f}, "
-                        f"Current: ${current_price:.2f}. Short-term hold expired."
-                    )
-                    sell_result = execute_sell(user_id, pos["id"], current_price, sell_reason)
-                    if sell_result["success"]:
-                        pnl_pct = sell_result.get('pnl_pct', 0)
-                        results["actions"].append(
-                            f"Auto-exit: Sold {pos['symbol']} after {hours_held:.1f}h "
-                            f"(P&L: {pnl_pct:+.1f}%)"
-                        )
-                        results["positions_updated"] += 1
-                    continue  # Skip normal position update
-        except Exception as e:
-            logger.warning("Auto-exit check failed for position %s: %s", pos.get('id'), e)
-    for pos in open_positions:
-        try:
-            if pos["coin_id"] and not pos["coin_id"].startswith("0x"):
-                prices = await cg_collector.get_simple_price([pos["coin_id"]])
-                current_price = prices.get(pos["coin_id"], pos["current_price"])
             else:
                 current_price = pos["current_price"]
-            current_value = pos["quantity"] * current_price
+
+            current_value = pos["quantity"] * current_price if current_price > 0 else 0
             pnl = current_value - pos["invested_amount"]
-            pnl_pct = (pnl / pos["invested_amount"]) * 100
+            pnl_pct = (pnl / pos["invested_amount"]) * 100 if pos["invested_amount"] > 0 else 0
+
+            # Update position in DB
             sb.table("trade_positions").update({
                 "current_price": current_price,
                 "current_value": current_value,
@@ -730,38 +696,75 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
                 "pnl_pct": pnl_pct,
             }).eq("id", pos["id"]).execute()
             results["positions_updated"] += 1
-            if pnl_pct <= -settings["stop_loss_pct"]:
-                sell_reason = (f"STOP-LOSS TRIGGERED: {pos['symbol']} dropped {pnl_pct:.1f}% from entry price ${pos['entry_price']:.2f} to ${current_price:.2f}. "
-                               f"Loss of ${abs(pnl):.2f} on ${pos['invested_amount']:.2f} invested. Selling to prevent further losses.")
-                sell_result = execute_sell(user_id, pos["id"], current_price, sell_reason)
-                if sell_result["success"]:
-                    results["actions"].append(f"Stop-loss: Sold {pos['symbol']} at ${current_price:,.2f} (P&L: {pnl_pct:+.1f}%) \u2014 TX: {sell_result['tx_hash'][:16]}...")
-                continue
-            if pnl_pct >= settings["take_profit_pct"]:
-                sell_reason = (f"TAKE-PROFIT TRIGGERED: {pos['symbol']} gained {pnl_pct:.1f}% from entry ${pos['entry_price']:.2f} to ${current_price:.2f}. "
-                               f"Profit of ${pnl:.2f} on ${pos['invested_amount']:.2f} invested. Locking in profits at target.")
-                sell_result = execute_sell(user_id, pos["id"], current_price, sell_reason)
-                if sell_result["success"]:
-                    results["actions"].append(f"Take-profit: Sold {pos['symbol']} at ${current_price:,.2f} (P&L: {pnl_pct:+.1f}%) \u2014 TX: {sell_result['tx_hash'][:16]}...")
-                continue
-        except Exception as e:
-            logger.warning("Position update failed for %s: %s", pos["coin_id"], e)
 
+            # Check stop-loss
+            if pnl_pct <= -settings["stop_loss_pct"]:
+                sell_reason = (
+                    f"STOP-LOSS: {pos['symbol']} dropped {pnl_pct:.1f}% "
+                    f"(entry ${pos['entry_price']:.4f} -> ${current_price:.4f}). "
+                    f"Loss ${abs(pnl):,.0f}. Cutting losses."
+                )
+                sell_result = execute_sell(user_id, pos["id"], current_price, sell_reason)
+                if sell_result["success"]:
+                    results["actions"].append(
+                        f"Stop-loss: Sold {pos['symbol']} at ${current_price:,.4f} (P&L: {pnl_pct:+.1f}%)"
+                    )
+                continue
+
+            # Check take-profit
+            if pnl_pct >= settings["take_profit_pct"]:
+                sell_reason = (
+                    f"TAKE-PROFIT: {pos['symbol']} gained {pnl_pct:.1f}% "
+                    f"(entry ${pos['entry_price']:.4f} -> ${current_price:.4f}). "
+                    f"Profit ${pnl:,.0f}. Locking in gains."
+                )
+                sell_result = execute_sell(user_id, pos["id"], current_price, sell_reason)
+                if sell_result["success"]:
+                    results["actions"].append(
+                        f"Take-profit: Sold {pos['symbol']} at ${current_price:,.4f} (P&L: {pnl_pct:+.1f}%)"
+                    )
+                continue
+
+            # Check auto-exit (max hold time)
+            opened_at_str = pos.get("opened_at") or pos.get("created_at", "")
+            if opened_at_str:
+                try:
+                    opened_at = datetime.fromisoformat(opened_at_str.replace("Z", "+00:00"))
+                    if opened_at.tzinfo is None:
+                        opened_at = opened_at.replace(tzinfo=timezone.utc)
+                    hours_held = (datetime.now(timezone.utc) - opened_at).total_seconds() / 3600
+                    if hours_held >= MAX_HOLD_HOURS:
+                        sell_reason = (
+                            f"AUTO-EXIT: {pos['symbol']} held {hours_held:.1f}h "
+                            f"(max {MAX_HOLD_HOURS}h). P&L: {pnl_pct:+.1f}%."
+                        )
+                        sell_result = execute_sell(user_id, pos["id"], current_price, sell_reason)
+                        if sell_result["success"]:
+                            results["actions"].append(
+                                f"Auto-exit: Sold {pos['symbol']} after {hours_held:.1f}h (P&L: {pnl_pct:+.1f}%)"
+                            )
+                        continue
+                except Exception:
+                    pass
+
+        except Exception as e:
+            logger.warning("Position update failed for %s: %s", pos.get("coin_id"), e)
+
+    # ── STEP 2: ALL-IN ROTATION — sell current position if a better coin is found ──
+    # Re-fetch balance and open positions after step 1 closes may have sold some
     balance = _get_wallet_balance(user_id)
+    open_positions = get_open_positions(user_id)
 
     # Check daily trade count limit
     today_start = datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00+00:00")
     today_orders = sb.table("trade_orders").select("id").eq("user_id", user_id).eq("action", "BUY").gte("created_at", today_start).execute()
     trades_today = len(today_orders.data) if today_orders.data else 0
 
-    if balance > 100 and trades_today < max_daily:
+    if trades_today < max_daily:
         opportunities = await research_opportunities(cg_collector, dex_collector, gemini_client)
-        held_coins = {p["coin_id"] for p in get_open_positions(user_id)}
-        opportunities = [o for o in opportunities if o["coin_id"] not in held_coins]
 
-        # Skip DEX tokens for auto-trader — only CoinGecko coins have reliable price feeds
+        # Skip DEX tokens (unreliable prices) and stablecoins
         opportunities = [o for o in opportunities if o.get("source") != "dexscreener"]
-        # Skip coins with $0 or near-zero prices
         opportunities = [o for o in opportunities if o.get("price", 0) > 0.001]
         opportunities = [o for o in opportunities if o["market_cap"] >= settings["min_market_cap"]]
 
@@ -794,9 +797,50 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
         results["effective_min_score"] = effective_min_score
         results["risk_profile"] = risk_profile
 
-        # ── ALL-IN STRATEGY: pick the SINGLE best coin, invest entire balance ──
+        # ── ALL-IN ROTATION: if best coin is different from current, SELL current and switch ──
         if opportunities:
             opp = opportunities[0]  # highest-scoring coin
+
+            # Check if we're already holding this exact coin
+            current_coin_ids = {p["coin_id"] for p in open_positions}
+            best_coin_id = opp["coin_id"]
+
+            # If we have positions in a DIFFERENT coin, sell them all first
+            if open_positions and best_coin_id not in current_coin_ids:
+                for pos in open_positions:
+                    try:
+                        # Get live price for this position
+                        pos_coin_id = pos.get("coin_id", "")
+                        px = pos["current_price"]
+                        if pos_coin_id and not pos_coin_id.startswith("0x") and len(pos_coin_id) <= 20:
+                            try:
+                                px_data = await cg_collector.get_simple_price([pos_coin_id])
+                                px = px_data.get(pos_coin_id, px)
+                            except Exception:
+                                pass
+                        sell_rsn = (
+                            f"ROTATION: Switching from {pos['symbol']} to {opp['symbol']} "
+                            f"(better opportunity, score {opp['score']}/100). "
+                            f"P&L: {pos.get('pnl_pct', 0):+.1f}%."
+                        )
+                        sell_r = execute_sell(user_id, pos["id"], px, sell_rsn)
+                        if sell_r["success"]:
+                            results["actions"].append(
+                                f"Rotation-sell: {pos['symbol']} -> {opp['symbol']} (P&L: {pos.get('pnl_pct', 0):+.1f}%)"
+                            )
+                    except Exception as e:
+                        logger.warning("Rotation sell failed for %s: %s", pos.get("coin_id"), e)
+
+                # Refresh balance after sells
+                balance = _get_wallet_balance(user_id)
+
+            # If already holding the best coin, skip buy
+            if best_coin_id in current_coin_ids:
+                logger.info("Already holding %s — no rotation needed", opp['symbol'])
+                results["status"] = "holding"
+                results["message"] = f"Holding {opp['symbol']} — still best coin (score {opp['score']}/100)"
+                return results
+
             trade_amount = balance - 100  # keep $100 reserve
             if trade_amount < 50:
                 trade_amount = balance
@@ -963,20 +1007,25 @@ def ensure_system_wallet():
                 "auto_trade_enabled": True,
                 "max_trade_pct": 20.0,
                 "daily_loss_limit_pct": 10.0,
-                "max_open_positions": 8,
-                "stop_loss_pct": 8.0,
-                "take_profit_pct": 20.0,
-                "cooldown_minutes": 5,
+                "max_open_positions": 1,
+                "stop_loss_pct": 3.0,
+                "take_profit_pct": 5.0,
+                "cooldown_minutes": 1,
                 "min_market_cap": 1000000,
                 "risk_level": "aggressive",
             }).execute()
-            logger.info("Created system auto-trader settings (auto_trade=ON, aggressive)")
+            logger.info("Created system auto-trader settings (auto_trade=ON, aggressive, SL=3%, TP=5%)")
         else:
-            # Make sure it's enabled and aggressive for auto-trading
-            update_data = {"auto_trade_enabled": True, "risk_level": "aggressive"}
-            if not settings.data[0].get("auto_trade_enabled") or settings.data[0].get("risk_level") != "aggressive":
-                sb.table("trade_settings").update(update_data).eq("user_id", SYSTEM_USER_ID).execute()
-                logger.info("Updated system auto-trader: enabled=ON, risk_level=aggressive")
+            # Always force-update key settings on startup
+            sb.table("trade_settings").update({
+                "auto_trade_enabled": True,
+                "risk_level": "aggressive",
+                "stop_loss_pct": 3.0,
+                "take_profit_pct": 5.0,
+                "max_open_positions": 1,
+                "cooldown_minutes": 1,
+            }).eq("user_id", SYSTEM_USER_ID).execute()
+            logger.info("Updated system auto-trader: SL=3%%, TP=5%%, max_positions=1, cooldown=1min")
 
         # Ensure trade_stats row exists
         stats = sb.table("trade_stats").select("*").eq("user_id", SYSTEM_USER_ID).execute()
