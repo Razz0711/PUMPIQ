@@ -71,6 +71,151 @@ class LearningLoop:
                 "database/supabase_schema.sql in your Supabase SQL Editor. (%s)",
                 e,
             )
+        self._backfill_done = False
+
+    # ==================================================================
+    # Backfill — Seed ll_predictions from existing trade history
+    # ==================================================================
+
+    def backfill_from_trades(self) -> int:
+        """
+        Populate ll_predictions from trade_orders + trade_positions.
+        Creates one prediction per BUY/SHORT order and immediately evaluates
+        it if the position is already closed (has an exit price + P&L).
+
+        Safe to call multiple times — uses prediction_id dedup (SHA-256 of
+        coin_id + entry_price + timestamp).
+
+        Returns number of predictions created.
+        """
+        if self._backfill_done:
+            return 0
+
+        sb = _sb()
+        created = 0
+
+        try:
+            # 1. Get ALL buy/short orders (the entry trades)
+            res = (
+                sb.table("trade_orders")
+                .select("*")
+                .in_("action", ["BUY", "SHORT"])
+                .order("created_at", desc=True)
+                .limit(500)
+                .execute()
+            )
+            orders = res.data or []
+            if not orders:
+                self._backfill_done = True
+                return 0
+
+            # 2. Get ALL positions (both open and closed) for matching
+            pos_res = (
+                sb.table("trade_positions")
+                .select("*")
+                .order("opened_at", desc=True)
+                .limit(500)
+                .execute()
+            )
+            positions = {p["id"]: p for p in (pos_res.data or [])}
+
+            # 3. Check which prediction_ids already exist to avoid duplicates
+            existing_ids = set()
+            try:
+                ex_res = sb.table("ll_predictions").select("prediction_id").limit(5000).execute()
+                existing_ids = {r["prediction_id"] for r in (ex_res.data or [])}
+            except Exception:
+                pass
+
+            for order in orders:
+                coin_id = order.get("coin_id", "")
+                price = float(order.get("price", 0))
+                ts = order.get("created_at", "")
+                action = order.get("action", "BUY")
+                ai_score = int(order.get("ai_score", 0))
+                symbol = order.get("symbol", "")
+                user_id = order.get("user_id", 0)
+                position_id = order.get("position_id")
+
+                if price <= 0 or not coin_id:
+                    continue
+
+                # Generate deterministic prediction_id from order data
+                prediction_id = hashlib.sha256(
+                    f"{coin_id}|{price}|{ts}".encode()
+                ).hexdigest()[:16]
+
+                if prediction_id in existing_ids:
+                    continue  # already backfilled
+
+                # Determine verdict/direction from action
+                if action == "SHORT":
+                    verdict = "bearish"
+                    predicted_direction = "down"
+                else:
+                    verdict = "bullish"
+                    predicted_direction = "up"
+
+                row = {
+                    "prediction_id": prediction_id,
+                    "user_id": user_id,
+                    "token_ticker": coin_id,
+                    "token_name": symbol,
+                    "verdict": verdict,
+                    "confidence": ai_score / 10.0 if ai_score > 0 else 5.0,
+                    "composite_score": float(ai_score),
+                    "predicted_direction": predicted_direction,
+                    "price_at_prediction": price,
+                    "target_price": 0,
+                    "stop_loss_price": 0,
+                    "market_condition": "unknown",
+                    "market_regime": "unknown",
+                    "risk_level": "MEDIUM",
+                    "enabled_modes": json.dumps([]),
+                    "ai_thought_summary": order.get("ai_reasoning", "")[:500],
+                    "created_at": ts,
+                }
+
+                # If the position is closed, we can immediately evaluate
+                pos = positions.get(position_id) if position_id else None
+                if pos and pos.get("status") == "closed":
+                    exit_price = float(pos.get("current_price", 0))
+                    pnl_pct = float(pos.get("pnl_pct", 0))
+                    closed_at = pos.get("closed_at", datetime.now(timezone.utc).isoformat())
+
+                    if exit_price > 0:
+                        if predicted_direction == "up":
+                            correct = exit_price > price
+                        elif predicted_direction == "down":
+                            correct = exit_price < price
+                        else:
+                            correct = abs(pnl_pct) < 2
+
+                        row["actual_price_24h"] = exit_price
+                        row["direction_correct_24h"] = correct
+                        row["pnl_pct_24h"] = round(pnl_pct, 2)
+                        row["evaluated_24h_at"] = closed_at
+
+                try:
+                    sb.table("ll_predictions").insert(row).execute()
+                    created += 1
+                    existing_ids.add(prediction_id)
+                except Exception as e:
+                    err = str(e).lower()
+                    if "duplicate" not in err and "23505" not in err:
+                        logger.warning("Backfill insert failed: %s", e)
+
+            self._backfill_done = True
+            if created:
+                logger.info(
+                    "Learning loop backfill: created %d predictions from trade history",
+                    created,
+                )
+
+        except Exception as e:
+            logger.error("backfill_from_trades failed: %s", e)
+
+        return created
 
     # ==================================================================
     # Record Predictions
@@ -350,7 +495,8 @@ class LearningLoop:
     # ==================================================================
 
     def get_performance_stats(self, days: int = 30) -> Dict[str, Any]:
-        """Get aggregate performance statistics (computed in Python)."""
+        """Get aggregate performance statistics (computed in Python).
+        Auto-backfills from trade history on first call if table is empty."""
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
 
         try:
@@ -366,6 +512,23 @@ class LearningLoop:
         except Exception as e:
             logger.warning("get_performance_stats query failed: %s", e)
             rows = []
+
+        # Auto-backfill: if table is empty, seed from trade history
+        if not rows and not self._backfill_done:
+            backfilled = self.backfill_from_trades()
+            if backfilled > 0:
+                try:
+                    res = (
+                        _sb().table("ll_predictions")
+                        .select("*")
+                        .gte("created_at", cutoff)
+                        .order("created_at", desc=True)
+                        .limit(5000)
+                        .execute()
+                    )
+                    rows = res.data or []
+                except Exception:
+                    pass
 
         total = len(rows)
 

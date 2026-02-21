@@ -2691,7 +2691,8 @@ def _get_ll():
 
 @app.get("/api/ai/learning/stats")
 async def get_learning_stats(user=Depends(require_user)):
-    """Get AI prediction accuracy & performance statistics."""
+    """Get AI prediction accuracy & performance statistics.
+    Auto-backfills from trade history if ll_predictions is empty."""
     ll = _get_ll()
     if not ll:
         raise HTTPException(503, "Learning loop not available")
@@ -2699,14 +2700,34 @@ async def get_learning_stats(user=Depends(require_user)):
     return stats
 
 
-@app.post("/api/ai/learning/evaluate")
-async def trigger_learning_evaluation(user=Depends(require_user)):
-    """Trigger evaluation of pending predictions against actual prices."""
+@app.post("/api/ai/learning/backfill")
+async def trigger_learning_backfill(user=Depends(require_user)):
+    """Manually trigger backfill of predictions from trade history."""
     ll = _get_ll()
     if not ll:
         raise HTTPException(503, "Learning loop not available")
+    ll._backfill_done = False  # Force re-run
+    created = ll.backfill_from_trades()
+    return {"backfilled": created, "message": f"Created {created} predictions from trade history"}
+
+
+@app.post("/api/ai/learning/evaluate")
+async def trigger_learning_evaluation(user=Depends(require_user)):
+    """Trigger evaluation of pending predictions against actual prices.
+    Also backfills from trade history if needed."""
+    ll = _get_ll()
+    if not ll:
+        raise HTTPException(503, "Learning loop not available")
+    # Ensure predictions exist before evaluating
+    if not ll._backfill_done:
+        ll.backfill_from_trades()
     evaluated = await ll.evaluate_pending(cg)
-    return {"evaluated": evaluated, "message": f"Evaluated {evaluated} pending predictions"}
+    eval_24h = evaluated.get("evaluated_24h", 0) if isinstance(evaluated, dict) else 0
+    eval_7d = evaluated.get("evaluated_7d", 0) if isinstance(evaluated, dict) else 0
+    return {
+        "evaluated": evaluated,
+        "message": f"Evaluated {eval_24h} (24h) and {eval_7d} (7d) predictions",
+    }
 
 
 @app.get("/api/ai/learning/adjustments")
