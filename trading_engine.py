@@ -1145,7 +1145,7 @@ def get_today_quick_stats(user_id: int) -> Dict[str, Any]:
         today_closed = closed.data or []
 
         # Open positions — unrealized P&L
-        open_pos = sb.table("trade_positions").select("pnl,amount").eq("user_id", user_id).eq("status", "open").execute()
+        open_pos = sb.table("trade_positions").select("pnl,invested_amount").eq("user_id", user_id).eq("status", "open").execute()
         open_positions = open_pos.data or []
         unrealized_pnl = sum(p.get("pnl", 0) or 0 for p in open_positions)
         open_count = len(open_positions)
@@ -1196,7 +1196,8 @@ def get_today_quick_stats(user_id: int) -> Dict[str, Any]:
             "open_count": open_count,
         }
     except Exception as e:
-        logger.warning("get_today_quick_stats error: %s", e)
+        logger.warning("get_today_quick_stats error: %s (type: %s)", e, type(e).__name__)
+        import traceback; logger.warning("Traceback: %s", traceback.format_exc())
         return {
             "today_trades": 0, "today_buys": 0, "today_sells": 0,
             "today_pnl": 0, "realized_pnl": 0, "unrealized_pnl": 0,
