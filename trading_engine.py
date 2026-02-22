@@ -168,6 +168,13 @@ def _get_learning_adjustments() -> Dict[str, Any]:
             elif adj_type == "regime_weight_reduction":
                 adjustments["global_score_offset"] += 10
 
+        # ── HARD CAP: prevent stacked adjustments from blocking ALL trades ──
+        # Without this cap, 27+ global_confidence_reduction records stack to +415,
+        # making effective_min_score = 40 + 415 = 455 (impossible to reach).
+        # Cap at +15 means: worst case min_score goes from 40 -> 55 (aggressive).
+        adjustments["global_score_offset"] = min(adjustments["global_score_offset"], 15)
+        adjustments["sl_modifier"] = min(adjustments["sl_modifier"], 3.0)
+
         # Additionally: penalize tokens in worst predictions
         try:
             stats = ll.get_performance_stats(days=7)
@@ -186,6 +193,10 @@ def _get_learning_adjustments() -> Dict[str, Any]:
                     )
         except Exception:
             pass
+
+        # Cap per-token penalties at -25 (don't completely zero out a coin)
+        for token in adjustments["token_penalties"]:
+            adjustments["token_penalties"][token] = max(adjustments["token_penalties"][token], -25)
 
     except Exception as e:
         logger.warning("Failed to fetch learning adjustments: %s", e)
