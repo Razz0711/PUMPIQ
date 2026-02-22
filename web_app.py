@@ -1774,21 +1774,21 @@ async def get_trader_log(limit: int = Query(50), user=Depends(require_user)):
 
 
 @app.get("/api/trader/today-stats")
-async def get_today_stats(user=Depends(require_user)):
-    """Today's quick stats: trades, P&L, avg hold time, best/worst."""
-    return trading_engine.get_today_quick_stats(user.id)
+async def get_today_stats():
+    """Today's quick stats for the system auto-trader (user_id=1)."""
+    return trading_engine.get_today_quick_stats(trading_engine.SYSTEM_USER_ID)
 
 
 @app.get("/api/trader/pnl-chart")
-async def get_pnl_chart(days: int = Query(14), user=Depends(require_user)):
-    """Daily P&L chart data for the last N days."""
-    return trading_engine.get_pnl_chart_data(user.id, min(days, 90))
+async def get_pnl_chart(days: int = Query(14)):
+    """Daily P&L chart data for the last N days (system auto-trader)."""
+    return trading_engine.get_pnl_chart_data(trading_engine.SYSTEM_USER_ID, min(days, 90))
 
 
 @app.get("/api/trader/live-feed")
-async def get_live_feed(limit: int = Query(20), user=Depends(require_user)):
-    """Most recent trade actions for the live feed."""
-    return trading_engine.get_live_feed(user.id, min(limit, 50))
+async def get_live_feed(limit: int = Query(20)):
+    """Most recent trade actions for the live feed (system auto-trader)."""
+    return trading_engine.get_live_feed(trading_engine.SYSTEM_USER_ID, min(limit, 50))
 
 
 @app.get("/api/trader/cycle-log")

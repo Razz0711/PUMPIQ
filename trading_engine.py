@@ -1144,7 +1144,14 @@ def get_today_quick_stats(user_id: int) -> Dict[str, Any]:
         closed = sb.table("trade_positions").select("*").eq("user_id", user_id).eq("status", "closed").gte("closed_at", today).execute()
         today_closed = closed.data or []
 
-        today_pnl = sum(p.get("pnl", 0) for p in today_closed)
+        # Open positions — unrealized P&L
+        open_pos = sb.table("trade_positions").select("pnl,amount").eq("user_id", user_id).eq("status", "open").execute()
+        open_positions = open_pos.data or []
+        unrealized_pnl = sum(p.get("pnl", 0) or 0 for p in open_positions)
+        open_count = len(open_positions)
+
+        realized_pnl = sum(p.get("pnl", 0) for p in today_closed)
+        today_pnl = realized_pnl + unrealized_pnl
         today_trades = len(today_orders)
         wins = sum(1 for p in today_closed if p.get("pnl", 0) > 0)
         losses = sum(1 for p in today_closed if p.get("pnl", 0) <= 0)
@@ -1177,6 +1184,8 @@ def get_today_quick_stats(user_id: int) -> Dict[str, Any]:
             "today_buys": buys,
             "today_sells": sells,
             "today_pnl": round(today_pnl, 2),
+            "realized_pnl": round(realized_pnl, 2),
+            "unrealized_pnl": round(unrealized_pnl, 2),
             "today_wins": wins,
             "today_losses": losses,
             "today_best": round(best, 2),
@@ -1184,14 +1193,16 @@ def get_today_quick_stats(user_id: int) -> Dict[str, Any]:
             "avg_hold_minutes": avg_hold_min,
             "today_volume": round(volume, 2),
             "today_closed_count": len(today_closed),
+            "open_count": open_count,
         }
     except Exception as e:
         logger.warning("get_today_quick_stats error: %s", e)
         return {
             "today_trades": 0, "today_buys": 0, "today_sells": 0,
-            "today_pnl": 0, "today_wins": 0, "today_losses": 0,
+            "today_pnl": 0, "realized_pnl": 0, "unrealized_pnl": 0,
+            "today_wins": 0, "today_losses": 0,
             "today_best": 0, "today_worst": 0, "avg_hold_minutes": 0,
-            "today_volume": 0, "today_closed_count": 0,
+            "today_volume": 0, "today_closed_count": 0, "open_count": 0,
         }
 
 

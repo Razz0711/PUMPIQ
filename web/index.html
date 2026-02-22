@@ -8668,19 +8668,20 @@
         // ── TODAY'S QUICK STATS ──────────────────────────────────
         async function loadTodayQuickStats() {
             try {
-                const s = await api('/api/trader/today-stats');
+                const s = await fetch(API + '/api/trader/today-stats').then(r => r.ok ? r.json() : null).catch(() => null);
+                if (!s) return;
                 document.getElementById('qsTrades').textContent = s.today_trades;
                 document.getElementById('qsBuySell').textContent = `${s.today_buys} buys / ${s.today_sells} sells`;
                 const pnlEl = document.getElementById('qsPnl');
                 pnlEl.textContent = `${s.today_pnl >= 0 ? '+' : ''}$${formatUSD(Math.abs(s.today_pnl))}`;
                 pnlEl.style.color = s.today_pnl >= 0 ? 'var(--green)' : 'var(--red)';
                 document.getElementById('qsWinLoss').textContent = `${s.today_wins}W / ${s.today_losses}L`;
-                document.getElementById('qsHoldTime').textContent = s.avg_hold_minutes > 0 ? `${s.avg_hold_minutes}m` : '--';
+                document.getElementById('qsHoldTime').textContent = s.avg_hold_minutes > 0 ? `${s.avg_hold_minutes}m` : s.open_count > 0 ? `${s.open_count} open` : '--';
                 const bestEl = document.getElementById('qsBest');
-                bestEl.textContent = s.today_best > 0 ? `+$${formatUSD(s.today_best)}` : '$0';
-                bestEl.style.color = s.today_best > 0 ? 'var(--green)' : 'var(--text-muted)';
+                bestEl.textContent = s.today_best > 0 ? `+$${formatUSD(s.today_best)}` : (s.unrealized_pnl ? `$${formatUSD(s.unrealized_pnl)}` : '$0');
+                bestEl.style.color = s.today_best > 0 ? 'var(--green)' : s.unrealized_pnl > 0 ? 'var(--green)' : s.unrealized_pnl < 0 ? 'var(--red)' : 'var(--text-muted)';
                 document.getElementById('qsVolume').textContent = `$${formatUSD(s.today_volume)}`;
-                document.getElementById('qsClosed').textContent = `${s.today_closed_count} closed`;
+                document.getElementById('qsClosed').textContent = s.today_closed_count > 0 ? `${s.today_closed_count} closed` : `${s.open_count || 0} open`;
                 document.getElementById('todayStatsTime').textContent = `Updated ${new Date().toLocaleTimeString()}`;
             } catch (e) { console.warn('Quick stats load failed:', e); }
         }
@@ -8688,7 +8689,7 @@
         // ── LIVE TRADE FEED ──────────────────────────────────────
         async function loadLiveFeed() {
             try {
-                const feed = await api('/api/trader/live-feed?limit=15');
+                const feed = await fetch(API + '/api/trader/live-feed?limit=15').then(r => r.ok ? r.json() : []).catch(() => []);
                 const el = document.getElementById('liveFeedContainer');
                 if (!feed.length) {
                     el.innerHTML = '<div class="empty-state" style="padding:20px"><p>No trades yet — the bot is scanning markets...</p></div>';
@@ -8712,7 +8713,11 @@
                         <span class="feed-time">${ago}</span>
                     </div>`;
                 }).join('');
-            } catch (e) { console.warn('Live feed load failed:', e); }
+            } catch (e) {
+                console.warn('Live feed load failed:', e);
+                const el = document.getElementById('liveFeedContainer');
+                if (el) el.innerHTML = '<div class="empty-state" style="padding:20px"><p>No trades yet — the bot is scanning markets...</p></div>';
+            }
         }
 
         function _timeAgo(date) {
@@ -8728,7 +8733,7 @@
         async function loadPnlChart() {
             try {
                 const days = parseInt(document.getElementById('chartDaysSelect').value) || 14;
-                const data = await api(`/api/trader/pnl-chart?days=${days}`);
+                const data = await fetch(API + `/api/trader/pnl-chart?days=${days}`).then(r => r.ok ? r.json() : []).catch(() => []);
                 const canvas = document.getElementById('pnlChart');
                 const emptyEl = document.getElementById('pnlChartEmpty');
 
@@ -8797,7 +8802,13 @@
                         },
                     },
                 });
-            } catch (e) { console.warn('P&L chart load failed:', e); }
+            } catch (e) {
+                console.warn('P&L chart load failed:', e);
+                const emptyEl = document.getElementById('pnlChartEmpty');
+                if (emptyEl) { emptyEl.style.display = 'block'; emptyEl.textContent = 'No P&L data yet — trades will appear here'; }
+                const canvas = document.getElementById('pnlChart');
+                if (canvas) canvas.style.display = 'none';
+            }
         }
 
         // ── CYCLE LOG ────────────────────────────────────────────
@@ -8828,7 +8839,11 @@
                         ${c.actions && c.actions.length ? `<div class="cycle-actions">${c.actions.map(a => `<div>→ ${a}</div>`).join('')}</div>` : ''}
                     </div>`;
                 }).join('');
-            } catch (e) { console.warn('Cycle log load failed:', e); }
+            } catch (e) {
+                console.warn('Cycle log load failed:', e);
+                const el = document.getElementById('cycleLogContainer');
+                if (el) el.innerHTML = '<div class="empty-state" style="padding:20px"><p>No cycles recorded yet — auto-trader will log cycles here</p></div>';
+            }
         }
 
         // Auto-refresh trader dashboard every 30 seconds when on Auto Trader page
