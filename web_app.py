@@ -309,11 +309,11 @@ async def index():
     return HTMLResponse(html_path.read_text(encoding="utf-8"))
 
 
-@app.get("/algo", response_class=HTMLResponse)
+@app.get("/algo")
 async def algo_trader():
-    """Serve the NEXYPHER AlgoTrader — crypto algorithmic trading platform."""
-    html_path = Path(__file__).parent / "web" / "algo.html"
-    return HTMLResponse(html_path.read_text(encoding="utf-8"))
+    """Redirect /algo to main app — algo features merged into Auto Trader page."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/", status_code=302)
 
 
 @app.get("/static/{filepath:path}")
@@ -2945,7 +2945,8 @@ async def ml_predict_token(token_id: str, user=Depends(require_user)):
         trainer = importlib.util.module_from_spec(spec)
         trainer.__file__ = trainer_path
         spec.loader.exec_module(trainer)
-        result = trainer.predict_from_db(token_id, "1d")
+        db_path = _os.path.join(ml_dir, "nexypher_training_data.db")
+        result = trainer.predict_from_db(token_id, "1d", db_path)
         if result:
             return result
         raise HTTPException(404, f"No data for {token_id}")

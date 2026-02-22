@@ -57,7 +57,7 @@ except ImportError:
 
 # Use absolute paths so loading via SourceFileLoader works from any CWD
 _ML_DIR        = os.path.dirname(os.path.abspath(__file__))
-DB_PATH        = os.path.join(_ML_DIR, "pumpiq_training_data.db")
+DB_PATH        = os.path.join(_ML_DIR, "nexypher_training_data.db")
 MODELS_DIR     = os.path.join(_ML_DIR, "models")
 METADATA_FILE  = os.path.join(MODELS_DIR, "model_metadata.json")
 
@@ -239,11 +239,37 @@ def load_training_data(db_path: str, timeframe: str = "1d"):
             "Download more data first."
         )
 
+    # --- Build price history lookup for market-data fallback ---
+    # When market_data LEFT JOIN returns NULL (~66% of rows), compute
+    # price changes from the close prices in technical_indicators.
+    _price_history = {}  # {token_id: [(close,), ...]} in timestamp order
+    for row in rows:
+        tid = row["token_id"]
+        if tid not in _price_history:
+            _price_history[tid] = []
+        _price_history[tid].append(_safe_float(row["close"], 0.0))
+    _token_idx = {tid: 0 for tid in _price_history}
+
+    def _price_change_fallback(token_id, lookback):
+        """Compute % price change over `lookback` rows for a token."""
+        idx = _token_idx.get(token_id, 0)
+        prices = _price_history.get(token_id, [])
+        if idx < lookback or idx >= len(prices):
+            return 0.0
+        cur = prices[idx]
+        prev = prices[idx - lookback]
+        if prev == 0:
+            return 0.0
+        return (cur / prev - 1.0) * 100.0
+
+    n_market_filled = 0
+
     # --- Build feature matrix and label vectors ---
     X, y_24h, y_7d, y_dir = [], [], [], []
 
     for row in rows:
         features = {}
+        token_id = row["token_id"]
 
         # 1. DB features
         for col in DB_FEATURE_COLUMNS:
@@ -255,9 +281,28 @@ def load_training_data(db_path: str, timeframe: str = "1d"):
                     val = 0.0
             features[col] = float(val)
 
-        # 2. Market-data features (may be NULL from LEFT JOIN)
-        for col in MARKET_FEATURE_COLUMNS:
-            features[col] = _safe_float(row[col], 0.0)
+        # 2. Market-data features (per-column fallback)
+        # price_change_24h/7d/30d are always NULL in market_data → compute from prices
+        # volume_mcap_ratio and ath_change_pct exist for ~34% of rows (last year)
+        features["price_change_24h"] = _price_change_fallback(token_id, 1)
+        features["price_change_7d"]  = _price_change_fallback(token_id, 7)
+        features["price_change_30d"] = _price_change_fallback(token_id, 30)
+
+        vmcr = row["volume_mcap_ratio"] if "volume_mcap_ratio" in row.keys() else None
+        if vmcr is not None:
+            features["volume_mcap_ratio"] = _safe_float(vmcr, 0.0)
+        else:
+            features["volume_mcap_ratio"] = features.get("volume_ratio", 0) * 0.02
+            n_market_filled += 1
+
+        ath = row["ath_change_pct"] if "ath_change_pct" in row.keys() else None
+        if ath is not None:
+            features["ath_change_pct"] = _safe_float(ath, -50.0)
+        else:
+            features["ath_change_pct"] = -50.0
+
+        # Advance per-token index for price history lookup
+        _token_idx[token_id] = _token_idx.get(token_id, 0) + 1
 
         # 3. Engineered features
         rsi7  = features.get("rsi_7", 50)
@@ -295,6 +340,8 @@ def load_training_data(db_path: str, timeframe: str = "1d"):
         y_dir.append(str(row["label_7d_direction"] or "SIDEWAYS"))
 
     print(f"  Final dataset: {len(X):,} samples | {len(FEATURE_COLUMNS)} features")
+    print(f"  Market-data filled from price history: {n_market_filled:,}/{len(X):,} rows "
+          f"({n_market_filled/max(len(X),1)*100:.0f}%)")
     return X, y_24h, y_7d, y_dir
 
 
@@ -346,12 +393,15 @@ def analyze_labels(y_24h, y_7d, y_dir):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _compute_scale_pos_weight(y):
-    """Compute scale_pos_weight using sqrt(neg/pos) for gentler imbalance correction."""
+    """Compute scale_pos_weight for class imbalance correction.
+    Uses full ratio capped at 15 to properly handle extreme imbalance
+    (e.g. 1:12 for 24h labels) without destabilizing training.
+    """
     pos = sum(y)
     neg = len(y) - pos
     if pos == 0:
         return 1.0
-    return math.sqrt(neg / pos)   # sqrt dampens extreme ratios
+    return min(neg / pos, 15.0)   # Full ratio, capped for stability
 
 
 def _compute_sample_weights(y):
@@ -641,24 +691,27 @@ def predict_single(features_dict: dict, timeframe: str = "1d") -> dict:
     # Build feature vector in correct order
     X = [[features_dict.get(col, 0.0) for col in FEATURE_COLUMNS]]
 
-    # Predict
-    prob_24h = model_24h.predict_proba(X)[0][1]  # probability of going UP
-    prob_7d  = model_7d.predict_proba(X)[0][1]
+    # Predict — cast to Python float to avoid numpy serialization issues
+    prob_24h = float(model_24h.predict_proba(X)[0][1])
+    prob_7d  = float(model_7d.predict_proba(X)[0][1])
     dir_probs = model_dir.predict_proba(X)[0]
-    dir_pred  = le.classes_[dir_probs.argmax()]
+    dir_pred  = str(le.classes_[dir_probs.argmax()])
 
-    # Confidence based on how strongly models agree
-    agreement = abs(prob_24h - 0.5) + abs(prob_7d - 0.5)
-    confidence = min(10, round(5 + agreement * 10, 1))
+    # Confidence: reflects directional agreement between both models.
+    # High when both models agree strongly, low when they conflict or are uncertain.
+    both_bullish = min(prob_24h, prob_7d)
+    both_bearish = min(1 - prob_24h, 1 - prob_7d)
+    directional_strength = max(both_bullish, both_bearish)
+    confidence = round(max(1.0, min(10.0, (directional_strength - 0.5) * 20)), 1)
 
-    # Final verdict
-    if prob_7d >= 0.65 and prob_24h >= 0.60:
+    # Final verdict — adjusted thresholds for imbalanced labels
+    if prob_7d >= 0.60 and prob_24h >= 0.55:
         verdict = "STRONG BUY"
-    elif prob_7d >= 0.55:
+    elif prob_7d >= 0.50:
         verdict = "BUY"
-    elif prob_7d <= 0.35:
+    elif prob_7d <= 0.30:
         verdict = "SELL"
-    elif prob_7d <= 0.45 and prob_24h <= 0.45:
+    elif prob_7d <= 0.40 and prob_24h <= 0.40:
         verdict = "AVOID"
     else:
         verdict = "NEUTRAL"
@@ -668,9 +721,9 @@ def predict_single(features_dict: dict, timeframe: str = "1d") -> dict:
         "direction":        dir_pred,
         "prob_up_24h":      round(prob_24h * 100, 1),
         "prob_up_7d":       round(prob_7d  * 100, 1),
-        "confidence":       confidence,
+        "confidence":       round(float(confidence), 1),
         "direction_probs": {
-            cls: round(float(prob) * 100, 1)
+            str(cls): round(float(prob) * 100, 1)
             for cls, prob in zip(le.classes_, dir_probs)
         },
         "model_version":    metadata.get("version", "unknown"),
@@ -740,9 +793,24 @@ def predict_from_db(token_id: str, timeframe: str = "1d", db_path: str = DB_PATH
             val = 0 if ("cross" in col or "spike" in col or "above" in col) else 0.0
         features[col] = float(val)
 
-    # 2. Market-data features
-    for col in MARKET_FEATURE_COLUMNS:
-        features[col] = _safe_float(row[col], 0.0)
+    # 2. Market-data features (per-column fallback)
+    # price_change columns are always NULL in DB → compute from price history
+    pconn = sqlite3.connect(db_path)
+    pc = pconn.cursor()
+    pc.execute("""
+        SELECT close FROM technical_indicators
+        WHERE token_id=? AND timeframe=?
+        ORDER BY timestamp DESC LIMIT 31
+    """, (token_id, timeframe))
+    prices = [r[0] for r in pc.fetchall()]
+    pconn.close()
+    cur = prices[0] if prices else 0
+    features["price_change_24h"] = ((cur / prices[1]) - 1) * 100 if len(prices) > 1 and prices[1] else 0.0
+    features["price_change_7d"]  = ((cur / prices[7]) - 1) * 100 if len(prices) > 7 and prices[7] else 0.0
+    features["price_change_30d"] = ((cur / prices[30]) - 1) * 100 if len(prices) > 30 and prices[30] else 0.0
+
+    features["volume_mcap_ratio"] = _safe_float(row["volume_mcap_ratio"], features.get("volume_ratio", 0) * 0.02)
+    features["ath_change_pct"]    = _safe_float(row["ath_change_pct"], -50.0)
 
     # 3. Engineered features
     rsi7  = features.get("rsi_7", 50)

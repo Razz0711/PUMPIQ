@@ -1,7 +1,7 @@
 {
-  "version": "20260218_171936",
+  "version": "20260222_134059",
   "timeframe": "1d",
-  "trained_at": "2026-02-18T17:19:36.750983",
+  "trained_at": "2026-02-22T13:41:00.176322",
   "feature_columns": [
     "rsi_7",
     "rsi_14",
@@ -59,116 +59,116 @@
     "tree_method": "hist"
   },
   "model_24h": {
-    "path": "ml/models/model_24h_1d_20260218_171936.pkl",
-    "cv_mean": 0.6393,
+    "path": "D:\\NexYpher\\ml\\models\\model_24h_1d_20260222_134059.pkl",
+    "cv_mean": 0.5907,
     "cv_scores": [
-      0.6419,
-      0.6101,
-      0.6265,
-      0.6701,
-      0.6479
+      0.6267,
+      0.5675,
+      0.5796,
+      0.6049,
+      0.575
     ],
     "passes_threshold": true,
     "top_features": [
       [
         "fear_greed_value",
-        0.0474
+        0.0421
       ],
       [
         "bb_width",
-        0.0372
+        0.0348
       ],
       [
         "dist_to_support_pct",
-        0.0342
-      ],
-      [
-        "volume_mcap_ratio",
-        0.0334
-      ],
-      [
-        "volume_spike",
-        0.0325
-      ],
-      [
-        "volatility_30d",
-        0.0325
-      ],
-      [
-        "price_vs_sma20_pct",
-        0.0321
-      ],
-      [
-        "ath_change_pct",
         0.032
       ],
       [
-        "price_momentum_10d",
-        0.0319
+        "ath_change_pct",
+        0.0317
+      ],
+      [
+        "price_vs_sma20_pct",
+        0.0309
+      ],
+      [
+        "rsi_overbought",
+        0.0305
+      ],
+      [
+        "price_change_7d",
+        0.0296
+      ],
+      [
+        "volatility_30d",
+        0.0288
       ],
       [
         "rate_of_change_14",
-        0.0315
+        0.0287
+      ],
+      [
+        "momentum_accel",
+        0.0283
       ]
     ]
   },
   "model_7d": {
-    "path": "ml/models/model_7d_1d_20260218_171936.pkl",
-    "cv_mean": 0.6116,
+    "path": "D:\\NexYpher\\ml\\models\\model_7d_1d_20260222_134059.pkl",
+    "cv_mean": 0.5878,
     "cv_scores": [
-      0.5989,
-      0.4975,
-      0.6128,
-      0.6735,
-      0.6755
+      0.5991,
+      0.4759,
+      0.5924,
+      0.6456,
+      0.6261
     ],
     "passes_threshold": true,
     "top_features": [
       [
-        "volume_mcap_ratio",
-        0.0472
-      ],
-      [
         "fear_greed_value",
-        0.0462
-      ],
-      [
-        "rate_of_change_14",
-        0.0349
-      ],
-      [
-        "price_vs_ema200_pct",
-        0.0347
-      ],
-      [
-        "price_momentum_30d",
-        0.0346
-      ],
-      [
-        "dist_to_support_pct",
-        0.0343
+        0.0424
       ],
       [
         "ath_change_pct",
-        0.0341
+        0.0391
+      ],
+      [
+        "price_above_ema200",
+        0.0352
+      ],
+      [
+        "rate_of_change_14",
+        0.0337
+      ],
+      [
+        "dist_to_support_pct",
+        0.0332
+      ],
+      [
+        "price_vs_ema200_pct",
+        0.0329
       ],
       [
         "price_vs_sma20_pct",
-        0.0339
+        0.0327
+      ],
+      [
+        "price_momentum_30d",
+        0.0323
       ],
       [
         "rsi_14_ma_diff",
-        0.0336
+        0.032
       ],
       [
-        "vol_ratio_10_30",
-        0.033
+        "bb_width",
+        0.0316
       ]
     ]
   },
   "model_dir": {
-    "path": "ml/models/model_dir_1d_20260218_171936.pkl",
-    "cv_mean": 0.396,
+    "path": "D:\\NexYpher\\ml\\models\\model_dir_1d_20260222_134059.pkl",
+    "cv_mean": 0.3931,
     "direction_classes": [
       "DOWN",
       "SIDEWAYS",

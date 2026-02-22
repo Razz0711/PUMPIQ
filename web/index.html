@@ -4558,20 +4558,18 @@
     <!-- HEADER                                                     -->
     <!-- ═══════════════════════════════════════════════════════════ -->
     <div class="header">
-        <div class="logo" onclick="navigate('home')">NexYpher</div>
+        <div class="logo" onclick="navigate('market')">NexYpher</div>
         <div class="nav-tabs">
-            <button class="nav-tab active" data-page="home">Home</button>
-            <button class="nav-tab" data-page="feed">Token Feed</button>
-            <button class="nav-tab" data-page="ai">AI Recs</button>
-            <button class="nav-tab" data-page="insights">🧠 Insights</button>
+            <button class="nav-tab active" data-page="market">Market</button>
+            <button class="nav-tab" data-page="insights">🧠 AI Insights</button>
             <button class="nav-tab" data-page="learning">📊 Learning</button>
-            <button class="nav-tab" data-page="market">Market</button>
             <button class="nav-tab" data-page="trader">🤖 Auto Trader</button>
             <button class="nav-tab" data-page="settings">⚙️</button>
         </div>
         <div class="header-right">
             <input class="search-box" id="globalSearch" placeholder="Search tokens..."
                 onkeydown="if(event.key==='Enter')doSearch()">
+            <button class="header-profile-btn" onclick="navigate('profile')" title="Profile" style="background:none;border:1px solid var(--border);border-radius:8px;padding:4px 10px;cursor:pointer;color:var(--text-muted);font-size:16px;display:none" id="headerProfileBtn">👤</button>
             <div id="authArea">
                 <button class="btn btn-primary" onclick="showAuthModal('login')">Login</button>
             </div>
@@ -4604,7 +4602,7 @@
     <!-- ═══════════════════════════════════════════════════════════ -->
     <!-- HOME PAGE                                                  -->
     <!-- ═══════════════════════════════════════════════════════════ -->
-    <div class="page active" id="page-home">
+    <div class="page" id="page-home">
         <div class="hero" style="position:relative;overflow:hidden">
             <div class="orb orb-1"></div>
             <div class="orb orb-2"></div>
@@ -4765,82 +4763,73 @@
         </div>
     </div>
 
-    <!-- ═══════════════════════════════════════════════════════════ -->
-    <!-- TOKEN FEED PAGE                                            -->
-    <!-- ═══════════════════════════════════════════════════════════ -->
-    <div class="page" id="page-feed">
-        <div class="section-title">Token Feed</div>
-        <div class="section-desc" id="feedCount">Live token feed</div>
+    <!-- (old page-feed removed — merged into Market sub-tabs) -->
+    <div class="page" id="page-feed"></div>
 
-        <div class="filter-bar">
-            <div class="filter-pill active" data-sort="volume" onclick="setFeedSort(this)">Volume</div>
-            <div class="filter-pill" data-sort="newest" onclick="setFeedSort(this)">Newest</div>
-            <div class="filter-pill" data-sort="price" onclick="setFeedSort(this)">Price</div>
-            <div class="filter-pill" data-sort="trades" onclick="setFeedSort(this)">Trades</div>
-            <div style="width:1px;height:24px;background:var(--border);margin:0 8px"></div>
-            <div class="filter-pill active" data-status="all" onclick="setFeedStatus(this)">All</div>
-            <div class="filter-pill" data-status="active" onclick="setFeedStatus(this)">Active</div>
-            <div class="filter-pill" data-status="graduated" onclick="setFeedStatus(this)">Graduated</div>
-            <div style="flex:1"></div>
-            <input class="search-box" style="width:180px" placeholder="Search feed..."
-                oninput="filterFeedLocal(this.value)">
-        </div>
-
-        <div style="overflow-x:auto">
-            <table class="feed-table">
-                <thead>
-                    <tr>
-                        <th>Token</th>
-                        <th>Price</th>
-                        <th>24h</th>
-                        <th>Volume</th>
-                        <th>Liquidity</th>
-                        <th>Trades</th>
-                        <th>Age</th>
-                    </tr>
-                </thead>
-                <tbody id="feedBody"></tbody>
-            </table>
-        </div>
-    </div>
+    <!-- (old page-ai removed — merged into AI Insights page) -->
+    <div class="page" id="page-ai"></div>
 
     <!-- ═══════════════════════════════════════════════════════════ -->
-    <!-- AI RECOMMENDATIONS PAGE                                    -->
+    <!-- INSIGHTS PAGE                                              -->
     <!-- ═══════════════════════════════════════════════════════════ -->
-    <div class="page" id="page-ai">
-        <div class="section-title">AI Recommendations</div>
-        <div class="section-desc">Configure data sources and let AI find the best tokens right now.</div>
-
-        <!-- CoinGecko Market Summary Mini -->
+    <div class="page" id="page-insights">
+        <!-- Global Market Mini-banner (from AI Recs) -->
         <div class="market-summary-box" style="margin-bottom:16px">
             <h4>Global Market (CoinGecko)</h4>
             <p id="aiMarketGlobal">Loading market data...</p>
         </div>
 
-        <!-- Toggles -->
-        <div class="toggle-row">
-            <div class="toggle-item">
-                <div class="simple-toggle" id="toggleOnchain" onclick="toggleSwitch(this)"></div>
-                <div>
-                    <div class="toggle-label">On-Chain</div>
-                    <div class="toggle-desc">Holders, volume, curve progress, creator activity</div>
-                </div>
+        <!-- Hero -->
+        <div class="insight-hero">
+            <div class="insight-hero-title">🧠 AI Insights</div>
+            <div class="insight-hero-desc">
+                Deep technical analysis with 15+ indicators — RSI, MACD, Bollinger Bands, support/resistance, market
+                regime detection, news sentiment, and AI-powered recommendations.
             </div>
-            <div class="toggle-item">
-                <div class="simple-toggle" id="toggleTechnical" onclick="toggleSwitch(this)"></div>
-                <div>
-                    <div class="toggle-label">Technical</div>
-                    <div class="toggle-desc">Price momentum, trade velocity, trend direction</div>
+
+            <!-- AI Scan All (merged from AI Recs) -->
+            <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+                <div class="toggle-item" style="display:flex;align-items:center;gap:6px">
+                    <div class="simple-toggle" id="toggleOnchain" onclick="toggleSwitch(this)"></div>
+                    <span style="font-size:12px;color:var(--text-muted)">On-Chain</span>
                 </div>
+                <div class="toggle-item" style="display:flex;align-items:center;gap:6px">
+                    <div class="simple-toggle" id="toggleTechnical" onclick="toggleSwitch(this)"></div>
+                    <span style="font-size:12px;color:var(--text-muted)">Technical</span>
+                </div>
+                <button class="btn btn-green btn-sm" onclick="loadAIRecs()">🔍 Quick Scan All</button>
+                <button class="btn btn-primary btn-sm" onclick="loadEnhancedAIRecs()">🧠 Enhanced AI Scan</button>
+            </div>
+
+            <!-- Single coin search -->
+            <div class="insight-search-wrap">
+                <span class="insight-search-icon">🔍</span>
+                <input class="insight-search-input" id="insightSearch"
+                    placeholder="Search any coin — bitcoin, ethereum, solana, dogecoin..."
+                    onkeydown="if(event.key==='Enter')loadInsightAnalysis()">
+                <button class="insight-analyze-btn" onclick="loadInsightAnalysis()">⚡ Deep Analyze</button>
+            </div>
+            <div class="insight-chips">
+                <div class="insight-chip" onclick="quickInsight('bitcoin')"><span class="insight-chip-icon">₿</span>
+                    Bitcoin</div>
+                <div class="insight-chip" onclick="quickInsight('ethereum')"><span class="insight-chip-icon">Ξ</span>
+                    Ethereum</div>
+                <div class="insight-chip" onclick="quickInsight('solana')"><span class="insight-chip-icon">◎</span>
+                    Solana</div>
+                <div class="insight-chip" onclick="quickInsight('ripple')"><span class="insight-chip-icon">✕</span> XRP
+                </div>
+                <div class="insight-chip" onclick="quickInsight('dogecoin')"><span class="insight-chip-icon">🐕</span>
+                    Doge</div>
+                <div class="insight-chip" onclick="quickInsight('cardano')"><span class="insight-chip-icon">₳</span>
+                    Cardano</div>
+                <div class="insight-chip" onclick="quickInsight('avalanche-2')"><span
+                        class="insight-chip-icon">🔺</span> AVAX</div>
+                <div class="insight-chip" onclick="quickInsight('chainlink')"><span class="insight-chip-icon">🔗</span>
+                    LINK</div>
             </div>
         </div>
 
-        <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap">
-            <button class="btn btn-green" onclick="loadAIRecs()">🔍 Quick Analyze</button>
-            <button class="btn btn-primary" onclick="loadEnhancedAIRecs()">🧠 Enhanced AI (with Thought
-                Summary)</button>
-        </div>
-
+        <!-- AI Scan Results (merged from AI Recs page) -->
         <div id="aiTimestamp" style="color:var(--text-muted);font-size:12px;margin-bottom:12px"></div>
 
         <!-- AI Thought Summary (from Enhanced endpoint) -->
@@ -4865,45 +4854,6 @@
 
         <!-- Scored Tokens (quick mode) -->
         <div class="cards-grid" id="aiCards"></div>
-    </div>
-
-    <!-- ═══════════════════════════════════════════════════════════ -->
-    <!-- INSIGHTS PAGE                                              -->
-    <!-- ═══════════════════════════════════════════════════════════ -->
-    <div class="page" id="page-insights">
-        <!-- Hero -->
-        <div class="insight-hero">
-            <div class="insight-hero-title">🧠 Market Insights</div>
-            <div class="insight-hero-desc">
-                Deep technical analysis with 15+ indicators — RSI, MACD, Bollinger Bands, support/resistance, market
-                regime detection, news sentiment, and AI-powered recommendations.
-            </div>
-            <div class="insight-search-wrap">
-                <span class="insight-search-icon">🔍</span>
-                <input class="insight-search-input" id="insightSearch"
-                    placeholder="Search any coin — bitcoin, ethereum, solana, dogecoin..."
-                    onkeydown="if(event.key==='Enter')loadInsightAnalysis()">
-                <button class="insight-analyze-btn" onclick="loadInsightAnalysis()">⚡ Analyze</button>
-            </div>
-            <div class="insight-chips">
-                <div class="insight-chip" onclick="quickInsight('bitcoin')"><span class="insight-chip-icon">₿</span>
-                    Bitcoin</div>
-                <div class="insight-chip" onclick="quickInsight('ethereum')"><span class="insight-chip-icon">Ξ</span>
-                    Ethereum</div>
-                <div class="insight-chip" onclick="quickInsight('solana')"><span class="insight-chip-icon">◎</span>
-                    Solana</div>
-                <div class="insight-chip" onclick="quickInsight('ripple')"><span class="insight-chip-icon">✕</span> XRP
-                </div>
-                <div class="insight-chip" onclick="quickInsight('dogecoin')"><span class="insight-chip-icon">🐕</span>
-                    Doge</div>
-                <div class="insight-chip" onclick="quickInsight('cardano')"><span class="insight-chip-icon">₳</span>
-                    Cardano</div>
-                <div class="insight-chip" onclick="quickInsight('avalanche-2')"><span
-                        class="insight-chip-icon">🔺</span> AVAX</div>
-                <div class="insight-chip" onclick="quickInsight('chainlink')"><span class="insight-chip-icon">🔗</span>
-                    LINK</div>
-            </div>
-        </div>
 
         <!-- Results -->
         <div id="insightResult" style="display:none">
@@ -5173,9 +5123,18 @@
     <!-- ═══════════════════════════════════════════════════════════ -->
     <!-- MARKET PAGE (detailed CoinGecko)                           -->
     <!-- ═══════════════════════════════════════════════════════════ -->
-    <div class="page" id="page-market">
+    <div class="page active" id="page-market">
         <div class="section-title">Market Overview</div>
         <div class="section-desc">Top coins by market cap — click any row for deep analysis</div>
+
+        <!-- Market Sub-tabs: Top Coins | DEX Feed -->
+        <div class="trader-subtabs" style="margin-bottom:20px">
+            <button class="trader-subtab active" onclick="switchMarketTab('coins')">🪙 Top Coins</button>
+            <button class="trader-subtab" onclick="switchMarketTab('dex')">⚡ DEX Feed</button>
+        </div>
+
+        <!-- SUB: Top Coins (CoinGecko) -->
+        <div id="marketSub-coins">
 
         <!-- TradingView Market Overview Widget -->
         <div class="tv-market-overview" style="margin-bottom:24px">
@@ -5209,6 +5168,32 @@
                 <tbody id="marketBody"></tbody>
             </table>
         </div>
+        </div><!-- /marketSub-coins -->
+
+        <!-- SUB: DEX Feed (DexScreener) -->
+        <div id="marketSub-dex" style="display:none">
+            <div class="section-desc" id="feedCount">Live token feed from DexScreener</div>
+            <div class="filter-bar">
+                <div class="filter-pill active" data-sort="volume" onclick="setFeedSort(this)">Volume</div>
+                <div class="filter-pill" data-sort="newest" onclick="setFeedSort(this)">Newest</div>
+                <div class="filter-pill" data-sort="price" onclick="setFeedSort(this)">Price</div>
+                <div class="filter-pill" data-sort="trades" onclick="setFeedSort(this)">Trades</div>
+                <div style="width:1px;height:24px;background:var(--border);margin:0 8px"></div>
+                <div class="filter-pill active" data-status="all" onclick="setFeedStatus(this)">All</div>
+                <div class="filter-pill" data-status="active" onclick="setFeedStatus(this)">Active</div>
+                <div class="filter-pill" data-status="graduated" onclick="setFeedStatus(this)">Graduated</div>
+                <div style="flex:1"></div>
+                <input class="search-box" style="width:180px" placeholder="Search feed..." oninput="filterFeedLocal(this.value)">
+            </div>
+            <div style="overflow-x:auto">
+                <table class="feed-table">
+                    <thead>
+                        <tr><th>Token</th><th>Price</th><th>24h</th><th>Volume</th><th>Liquidity</th><th>Trades</th><th>Age</th></tr>
+                    </thead>
+                    <tbody id="feedBody"></tbody>
+                </table>
+            </div>
+        </div><!-- /marketSub-dex -->
     </div>
 
     <!-- ═══════════════════════════════════════════════════════════ -->
@@ -6728,6 +6713,11 @@
                 showAuthModal('login');
                 return;
             }
+            // Redirect removed pages to their merged destinations
+            if (page === 'home') page = 'market';
+            if (page === 'feed') page = 'market';
+            if (page === 'ai') page = 'insights';
+
             currentPage = page;
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
             document.getElementById('page-' + page)?.classList.add('active');
@@ -6736,12 +6726,9 @@
             });
 
             // Load data for page
-            if (page === 'home') { loadHomeData(); }
-            else if (page === 'feed') { loadFeed(); }
-            else if (page === 'ai') { loadAIGlobal(); }
-            else if (page === 'insights') { /* ready for user search */ }
+            if (page === 'market') { loadMarket(); }
+            else if (page === 'insights') { loadAIGlobal(); }
             else if (page === 'learning') { loadLearningStats(); loadStrategyAdjustments(); }
-            else if (page === 'market') { loadMarket(); }
             else if (page === 'trader') { loadTraderDashboard(); }
             else if (page === 'settings') { loadSettings(); }
             else if (page === 'profile') { loadProfile(); }
@@ -6910,6 +6897,7 @@
 
         function updateAuthUI() {
             const area = document.getElementById('authArea');
+            const profileBtn = document.getElementById('headerProfileBtn');
             if (currentUser) {
                 const initials = (currentUser.username || currentUser.email).slice(0, 2).toUpperCase();
                 area.innerHTML = `
@@ -6919,8 +6907,10 @@
             </div>
             <button class="btn btn-sm btn-outline" onclick="logout()">Logout</button>
         `;
+                if (profileBtn) profileBtn.style.display = 'inline-block';
             } else {
                 area.innerHTML = '<button class="btn btn-primary" onclick="showAuthModal(\'login\')">Login</button>';
+                if (profileBtn) profileBtn.style.display = 'none';
             }
         }
 
@@ -7747,6 +7737,20 @@
 
         // ── Market Page ───────────────────────────────────────────────
         let marketTVInitialized = false;
+        let currentMarketTab = 'coins';
+
+        function switchMarketTab(tab) {
+            currentMarketTab = tab;
+            document.getElementById('marketSub-coins').style.display = tab === 'coins' ? 'block' : 'none';
+            document.getElementById('marketSub-dex').style.display = tab === 'dex' ? 'block' : 'none';
+            // Update sub-tab buttons
+            const parent = document.getElementById('page-market');
+            parent.querySelectorAll('.trader-subtab').forEach((b, i) => {
+                b.classList.toggle('active', (i === 0 && tab === 'coins') || (i === 1 && tab === 'dex'));
+            });
+            if (tab === 'dex' && !document.getElementById('feedBody').innerHTML.trim()) loadFeed();
+        }
+
         function initMarketTVWidgets() {
             if (marketTVInitialized) return;
             marketTVInitialized = true;
@@ -9264,34 +9268,37 @@
         // SETTINGS FUNCTIONS
         // ══════════════════════════════════════════════════════════════
 
-        function loadSettings() {
+        async function loadSettings() {
+            // Load local settings (theme, accent)
             const saved = JSON.parse(localStorage.getItem('nexypher_settings') || '{}');
             if (saved.theme) { document.getElementById('settTheme').value = saved.theme; }
-            if (saved.defaultExchange) document.getElementById('settDefaultExchange').value = saved.defaultExchange;
-            if (saved.defaultStable) document.getElementById('settDefaultStable').value = saved.defaultStable;
-            if (saved.defaultLeverage) document.getElementById('settDefaultLeverage').value = saved.defaultLeverage;
-            if (saved.riskLevel) document.getElementById('settRiskLevel').value = saved.riskLevel;
-            if (saved.notifications) {
-                const n = saved.notifications;
-                document.getElementById('settPriceAlerts').checked = n.priceAlerts !== false;
-                document.getElementById('settAIAlerts').checked = n.aiAlerts !== false;
-                document.getElementById('settTradeAlerts').checked = n.tradeAlerts !== false;
-                document.getElementById('settWhaleAlerts').checked = n.whaleAlerts || false;
-                document.getElementById('settDailySummary').checked = n.dailySummary !== false;
-            }
-            if (saved.privacy) {
-                document.getElementById('settShowPortfolio').checked = saved.privacy.showPortfolio || false;
-                document.getElementById('settShareData').checked = saved.privacy.shareData !== false;
-                document.getElementById('settAnalytics').checked = saved.privacy.analytics !== false;
-            }
-            // Load saved API keys display
-            loadApiKeysDisplay();
-            // Set active accent swatch
             const accent = saved.accent || '#6c5ce7';
             document.querySelectorAll('.color-swatch').forEach(s => {
                 s.style.borderColor = s.style.backgroundColor === accent || rgbToHex(s.style.backgroundColor) === accent ? 'white' : 'transparent';
                 s.classList.toggle('active', rgbToHex(s.style.backgroundColor) === accent);
             });
+            loadApiKeysDisplay();
+
+            // Load backend preferences if logged in
+            if (currentUser) {
+                try {
+                    const prefs = await api('/api/user/preferences');
+                    const riskMap = { conservative: 'conservative', balanced: 'moderate', aggressive: 'aggressive' };
+                    if (prefs.risk_profile) {
+                        const mapped = riskMap[prefs.risk_profile] || prefs.risk_profile;
+                        document.getElementById('settRiskLevel').value = mapped;
+                    }
+                    if (prefs.dark_mode !== undefined) {
+                        document.getElementById('settTheme').value = prefs.dark_mode ? 'dark' : 'light';
+                    }
+                    document.getElementById('settPriceAlerts').checked = prefs.notification_email !== false;
+                    document.getElementById('settAIAlerts').checked = prefs.notification_push !== false;
+                    document.getElementById('settTradeAlerts').checked = prefs.notification_email !== false;
+                    if (prefs.max_daily_trades) document.getElementById('settDefaultLeverage').value = '5';
+                } catch (e) {
+                    console.warn('Could not load backend preferences:', e.message);
+                }
+            }
         }
 
         function rgbToHex(rgb) {
@@ -9341,35 +9348,56 @@
             el.style.borderColor = 'white';
         }
 
-        function saveSettings() {
-            const settings = {
-                theme: document.getElementById('settTheme').value,
-                accent: getComputedStyle(document.documentElement).getPropertyValue('--primary').trim(),
-                defaultExchange: document.getElementById('settDefaultExchange').value,
-                defaultStable: document.getElementById('settDefaultStable').value,
-                defaultLeverage: document.getElementById('settDefaultLeverage').value,
-                riskLevel: document.getElementById('settRiskLevel').value,
-                notifications: {
-                    priceAlerts: document.getElementById('settPriceAlerts').checked,
-                    aiAlerts: document.getElementById('settAIAlerts').checked,
-                    tradeAlerts: document.getElementById('settTradeAlerts').checked,
-                    whaleAlerts: document.getElementById('settWhaleAlerts').checked,
-                    dailySummary: document.getElementById('settDailySummary').checked,
-                },
-                privacy: {
-                    showPortfolio: document.getElementById('settShowPortfolio').checked,
-                    shareData: document.getElementById('settShareData').checked,
-                    analytics: document.getElementById('settAnalytics').checked,
-                },
-            };
-            localStorage.setItem('nexypher_settings', JSON.stringify(settings));
-            showToast('Settings saved!', 'success');
+        async function saveSettings() {
+            const theme = document.getElementById('settTheme').value;
+            const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim();
+            const riskLevel = document.getElementById('settRiskLevel').value;
+
+            // Save visual settings to localStorage
+            const localSettings = { theme, accent: accentColor };
+            localStorage.setItem('nexypher_settings', JSON.stringify(localSettings));
+            applyTheme(theme);
+
+            // Save preferences to backend if logged in
+            if (currentUser) {
+                try {
+                    const riskMap = { conservative: 'conservative', moderate: 'balanced', aggressive: 'aggressive' };
+                    await api('/api/user/preferences', {
+                        method: 'PUT',
+                        body: JSON.stringify({
+                            risk_profile: riskMap[riskLevel] || riskLevel,
+                            dark_mode: theme !== 'light',
+                            notification_email: document.getElementById('settPriceAlerts').checked,
+                            notification_push: document.getElementById('settAIAlerts').checked,
+                        }),
+                    });
+                    showToast('Settings saved to your account!', 'success');
+                } catch (e) {
+                    console.warn('Backend save failed:', e.message);
+                    showToast('Settings saved locally (login to sync)', 'info');
+                }
+            } else {
+                showToast('Settings saved locally (login to sync)', 'info');
+            }
         }
 
-        function resetSettings() {
+        async function resetSettings() {
             localStorage.removeItem('nexypher_settings');
             applyTheme('dark');
             document.documentElement.style.setProperty('--primary', '#6c5ce7');
+            if (currentUser) {
+                try {
+                    await api('/api/user/preferences', {
+                        method: 'PUT',
+                        body: JSON.stringify({
+                            risk_profile: 'balanced',
+                            dark_mode: true,
+                            notification_email: true,
+                            notification_push: true,
+                        }),
+                    });
+                } catch (e) { console.warn('Backend reset failed:', e.message); }
+            }
             loadSettings();
             showToast('Settings reset to defaults', 'info');
         }
@@ -9774,7 +9802,7 @@
 
         // ── Init ──────────────────────────────────────────────────────
         checkAuth();
-        loadHomeData();
+        loadMarket();
 
         // Keyboard shortcut
         document.addEventListener('keydown', e => {
