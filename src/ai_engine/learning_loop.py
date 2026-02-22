@@ -640,6 +640,52 @@ class LearningLoop:
             logger.warning("get_historical_accuracy failed: %s", e)
             return 0.5
 
+    def get_token_accuracy(self, ticker: str) -> Optional[float]:
+        """Per-token accuracy (0-1). Returns None if <3 evaluated predictions."""
+        try:
+            res = (
+                _sb().table("ll_predictions")
+                .select("direction_correct_24h")
+                .eq("token_ticker", ticker)
+                .not_.is_("evaluated_24h_at", "null")
+                .limit(200)
+                .execute()
+            )
+            rows = res.data or []
+            if len(rows) < 3:
+                return None
+            correct = sum(1 for r in rows if r.get("direction_correct_24h") is True)
+            return correct / len(rows)
+        except Exception:
+            return None
+
+    def get_regime_accuracy(self, regime: str) -> Optional[float]:
+        """Per-regime accuracy (0-1). Returns None if <5 evaluated predictions."""
+        try:
+            res = (
+                _sb().table("ll_predictions")
+                .select("direction_correct_24h")
+                .eq("market_regime", regime)
+                .not_.is_("evaluated_24h_at", "null")
+                .limit(500)
+                .execute()
+            )
+            rows = res.data or []
+            if len(rows) < 5:
+                return None
+            correct = sum(1 for r in rows if r.get("direction_correct_24h") is True)
+            return correct / len(rows)
+        except Exception:
+            return None
+
+    def get_accuracy_context(self, ticker: str = "", regime: str = "") -> Dict[str, Optional[float]]:
+        """Get global + per-token + per-regime accuracy for confidence adjustment."""
+        return {
+            "global": self.get_historical_accuracy(),
+            "token": self.get_token_accuracy(ticker) if ticker else None,
+            "regime": self.get_regime_accuracy(regime) if regime else None,
+        }
+
     # ==================================================================
     # Strategy Adjustments (Adaptive Learning)
     # ==================================================================
@@ -647,50 +693,141 @@ class LearningLoop:
     def generate_adjustments(self) -> List[Dict[str, Any]]:
         """
         Analyze performance and generate strategy adjustment recommendations.
+        Checks: regime accuracy, confidence gap, global accuracy, per-token
+        accuracy, direction bias, PnL trends, and win-streak patterns.
         """
         stats = self.get_performance_stats(days=14)
         adjustments: List[Dict[str, Any]] = []
         sb = _sb()
 
+        def _save(adj: Dict[str, Any]):
+            adjustments.append(adj)
+            try:
+                sb.table("ll_strategy_adjustments").insert(adj).execute()
+            except Exception:
+                pass  # DB write failure shouldn't block
+
         try:
+            # ── 1. Regime-specific accuracy ──
             for regime, rdata in stats.get("regime_accuracy", {}).items():
                 if rdata["total"] >= 5 and rdata["accuracy"] < 40:
-                    adj = {
-                        "adjustment_type": "regime_weight_adjustment",
-                        "description": f"Low accuracy ({rdata['accuracy']}%) in {regime} - reduce confidence",
+                    _save({
+                        "adjustment_type": "regime_weight_reduction",
+                        "description": f"Low accuracy ({rdata['accuracy']}%) in {regime} — reduce confidence",
                         "old_value": "standard_weights",
                         "new_value": "conservative_weights",
                         "reason": f"Only {rdata['correct']}/{rdata['total']} correct in {regime} regime",
                         "market_regime": regime,
-                    }
-                    adjustments.append(adj)
-                    sb.table("ll_strategy_adjustments").insert(adj).execute()
+                    })
+                elif rdata["total"] >= 5 and rdata["accuracy"] >= 70:
+                    _save({
+                        "adjustment_type": "regime_weight_increase",
+                        "description": f"Strong accuracy ({rdata['accuracy']}%) in {regime} — boost confidence",
+                        "old_value": "standard_weights",
+                        "new_value": "aggressive_weights",
+                        "reason": f"{rdata['correct']}/{rdata['total']} correct in {regime} regime — performing well",
+                        "market_regime": regime,
+                    })
 
+            # ── 2. Confidence calibration gap ──
             if stats["avg_confidence_correct"] > 0 and stats["avg_confidence_incorrect"] > 0:
                 gap = stats["avg_confidence_correct"] - stats["avg_confidence_incorrect"]
                 if gap < 1.0 and stats["evaluated_24h"] >= 10:
-                    adj = {
+                    _save({
                         "adjustment_type": "confidence_calibration",
                         "description": f"Confidence gap too small ({gap:.1f})",
                         "old_value": f"gap={gap:.1f}",
                         "new_value": "widen_confidence_spread",
                         "reason": "Model doesn't distinguish high/low confidence well enough",
                         "market_regime": "",
-                    }
-                    adjustments.append(adj)
-                    sb.table("ll_strategy_adjustments").insert(adj).execute()
+                    })
+                elif gap >= 3.0 and stats["evaluated_24h"] >= 15:
+                    _save({
+                        "adjustment_type": "confidence_calibration_good",
+                        "description": f"Confidence gap healthy ({gap:.1f})",
+                        "old_value": f"gap={gap:.1f}",
+                        "new_value": "maintain_spread",
+                        "reason": "Model is good at assigning high confidence to winning trades",
+                        "market_regime": "",
+                    })
 
-            if stats["evaluated_24h"] >= 20 and stats["accuracy_24h"] < 45:
-                adj = {
+            # ── 3. Global accuracy threshold ──
+            if stats["evaluated_24h"] >= 15 and stats["accuracy_24h"] < 45:
+                _save({
                     "adjustment_type": "global_confidence_reduction",
                     "description": f"Overall accuracy ({stats['accuracy_24h']}%) below threshold",
                     "old_value": "base_confidence=5.0",
                     "new_value": "base_confidence=4.5",
                     "reason": "Below 45% accuracy suggests systematic overconfidence",
                     "market_regime": "",
-                }
-                adjustments.append(adj)
-                sb.table("ll_strategy_adjustments").insert(adj).execute()
+                })
+            elif stats["evaluated_24h"] >= 15 and stats["accuracy_24h"] >= 70:
+                _save({
+                    "adjustment_type": "global_confidence_increase",
+                    "description": f"Excellent accuracy ({stats['accuracy_24h']}%) — AI is well-calibrated",
+                    "old_value": "base_confidence=5.0",
+                    "new_value": "base_confidence=5.5",
+                    "reason": "Above 70% accuracy — model can be more assertive",
+                    "market_regime": "",
+                })
+
+            # ── 4. Direction bias detection ──
+            dir_stats = stats.get("direction_accuracy", {})
+            long_acc = dir_stats.get("LONG", {}).get("accuracy", 50)
+            short_acc = dir_stats.get("SHORT", {}).get("accuracy", 50)
+            long_total = dir_stats.get("LONG", {}).get("total", 0)
+            short_total = dir_stats.get("SHORT", {}).get("total", 0)
+            if long_total >= 5 and short_total >= 5:
+                bias = abs(long_acc - short_acc)
+                if bias > 25:
+                    weaker = "SHORT" if short_acc < long_acc else "LONG"
+                    stronger = "LONG" if weaker == "SHORT" else "SHORT"
+                    _save({
+                        "adjustment_type": "direction_bias_correction",
+                        "description": f"Direction imbalance: {stronger} {max(long_acc, short_acc):.0f}% vs {weaker} {min(long_acc, short_acc):.0f}%",
+                        "old_value": f"LONG={long_acc:.0f}%, SHORT={short_acc:.0f}%",
+                        "new_value": f"reduce_{weaker.lower()}_confidence",
+                        "reason": f"AI is significantly worse at {weaker} predictions — reduce {weaker} confidence",
+                        "market_regime": "",
+                    })
+
+            # ── 5. Per-token underperformers ──
+            best = stats.get("best_predictions", [])
+            worst = stats.get("worst_predictions", [])
+            for w in worst:
+                ticker = w.get("token_ticker", "")
+                pnl = w.get("pnl_pct_7d", 0) or 0
+                if ticker and pnl < -3:
+                    _save({
+                        "adjustment_type": "token_confidence_reduction",
+                        "description": f"{ticker} consistently underperforming ({pnl:+.1f}% PnL)",
+                        "old_value": "standard_confidence",
+                        "new_value": "reduced_confidence",
+                        "reason": f"{ticker} in worst predictions — reduce future confidence for this token",
+                        "market_regime": "",
+                    })
+
+            # ── 6. PnL trend (positive/negative drift) ──
+            avg_pnl = stats.get("avg_pnl_24h", 0)
+            if stats["evaluated_24h"] >= 10:
+                if avg_pnl < -1.0:
+                    _save({
+                        "adjustment_type": "pnl_drift_alert",
+                        "description": f"Average PnL negative ({avg_pnl:+.2f}%) — tighten risk controls",
+                        "old_value": f"avg_pnl={avg_pnl:+.2f}%",
+                        "new_value": "tighten_stop_loss",
+                        "reason": "Negative PnL drift suggests entries are too aggressive or exits too late",
+                        "market_regime": "",
+                    })
+                elif avg_pnl > 2.0:
+                    _save({
+                        "adjustment_type": "pnl_momentum",
+                        "description": f"Strong avg PnL ({avg_pnl:+.2f}%) — strategy is working",
+                        "old_value": f"avg_pnl={avg_pnl:+.2f}%",
+                        "new_value": "maintain_strategy",
+                        "reason": "Current strategy is generating consistent positive returns",
+                        "market_regime": "",
+                    })
 
         except Exception as e:
             logger.warning("generate_adjustments failed: %s", e)

@@ -559,10 +559,16 @@ class Orchestrator:
             # Conflicts
             token.conflicts = self._detector.detect(token)
 
-            # Confidence (with historical accuracy feedback)
+            # Per-token and per-regime accuracy for adaptive confidence
+            token_accuracy = self._learning.get_token_accuracy(token.symbol or token.name)
+            regime_accuracy = None  # regime determined after scoring
+
+            # Confidence (with historical + per-token accuracy feedback)
             breakdown = self._scorer.compute(
                 token, config.enabled_modes, token.conflicts,
                 historical_accuracy=historical_accuracy,
+                token_accuracy=token_accuracy,
+                regime_accuracy=regime_accuracy,
             )
             token.confidence = breakdown.final_score
 
@@ -728,9 +734,11 @@ class Orchestrator:
         """Construct a fully populated TokenRecommendation with AI Thought Summary."""
         # Confidence
         historical_accuracy = self._learning.get_historical_accuracy()
+        token_accuracy = self._learning.get_token_accuracy(token.symbol or token.name)
         breakdown = self._scorer.compute(
             token, config.enabled_modes, token.conflicts,
             historical_accuracy=historical_accuracy,
+            token_accuracy=token_accuracy,
         )
         # Risk
         assessment = self._rater.assess(token, config.enabled_modes)

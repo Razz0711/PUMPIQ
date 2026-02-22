@@ -73,6 +73,8 @@ class ConfidenceScorer:
         enabled_modes: List[DataMode],
         conflicts: List[ConflictFlag],
         historical_accuracy: Optional[float] = None,
+        token_accuracy: Optional[float] = None,
+        regime_accuracy: Optional[float] = None,
     ) -> ConfidenceBreakdown:
         base = 5.0
 
@@ -82,7 +84,12 @@ class ConfidenceScorer:
         df = self._data_freshness_modifier(token)
         ha = self._historical_accuracy_modifier(historical_accuracy)
 
-        raw = base + dq + ss + cp + df + ha
+        # Per-token accuracy feedback: if we keep getting this coin wrong, reduce confidence
+        ta = self._token_accuracy_modifier(token_accuracy)
+        # Per-regime accuracy feedback: if we're bad in this market regime, reduce confidence
+        ra = self._regime_accuracy_modifier(regime_accuracy)
+
+        raw = base + dq + ss + cp + df + ha + ta + ra
         final = max(1.0, min(10.0, round(raw, 1)))
 
         # Cap at 6 if only 1 mode enabled
@@ -109,22 +116,34 @@ class ConfidenceScorer:
         self, token: TokenData, modes: List[DataMode]
     ) -> float:
         """
-        +3 if 4 modes agree, +2 if 3, +1 if 2, +0 if 1.
-        "Agreeing" means each module's normalised score > 5/10.
+        Wider spread: up to +4 for strong multi-mode agreement,
+        down to -2 for strong multi-mode disagreement.
         """
         bullish_count = 0
+        bearish_count = 0
         for mode in modes:
             norm = self._normalised_score(token, mode)
-            if norm is not None and norm > 5:
-                bullish_count += 1
+            if norm is not None:
+                if norm > 6:
+                    bullish_count += 1
+                elif norm < 4:
+                    bearish_count += 1
 
         n_modes = len(modes)
+
+        # Multi-mode bearish agreement → strong negative modifier
+        if n_modes >= 3 and bearish_count >= 3:
+            return -2.0
+        if n_modes >= 2 and bearish_count >= 2:
+            return -1.0
+
+        # Multi-mode bullish agreement → strong positive modifier
         if n_modes >= 4 and bullish_count >= 4:
-            return 3.0
+            return 4.0
         if n_modes >= 3 and bullish_count >= 3:
-            return 2.0
+            return 2.5
         if n_modes >= 2 and bullish_count >= 2:
-            return 1.0
+            return 1.5
         return 0.0
 
     # ── Signal Strength ───────────────────────────────────────────
@@ -133,7 +152,8 @@ class ConfidenceScorer:
         self, token: TokenData, modes: List[DataMode]
     ) -> float:
         """
-        +2 if all scores > 8, +1 if all > 7, -1 if any < 5, else 0.
+        Wider range: +3 for very strong signals, -2 for weak/mixed.
+        Also penalises high variance (signals disagreeing strongly).
         """
         scores = [
             s for mode in modes
@@ -144,13 +164,25 @@ class ConfidenceScorer:
 
         avg = sum(scores) / len(scores)
         mn = min(scores)
+        mx = max(scores)
+        spread = mx - mn  # high spread = conflicting signals
 
+        # Strong unanimous signals
         if mn > 8:
-            return 2.0
+            return 3.0
         if mn > 7:
-            return 1.0
+            return 1.5
+
+        # Penalise high variance (signals strongly disagree)
+        if spread > 5 and len(scores) >= 2:
+            return -1.5
+
+        # Weak across the board
+        if avg < 4:
+            return -2.0
         if avg < 5:
             return -1.0
+
         return 0.0
 
     # ── Conflict Penalty ──────────────────────────────────────────
@@ -194,14 +226,60 @@ class ConfidenceScorer:
     @staticmethod
     def _historical_accuracy_modifier(accuracy: Optional[float]) -> float:
         """
-        Historical success rate for similar recommendations.
-        >70 % → +1, 50-70 % → 0, <50 % → -1.
+        Historical success rate — wider spread for stronger feedback.
+        >80% → +2, >65% → +1, 50-65% → 0, 35-50% → -1, <35% → -2.
+        """
+        if accuracy is None:
+            return 0.0
+        if accuracy > 0.80:
+            return 2.0
+        if accuracy > 0.65:
+            return 1.0
+        if accuracy < 0.35:
+            return -2.0
+        if accuracy < 0.50:
+            return -1.0
+        return 0.0
+
+    # ── Per-Token Accuracy ────────────────────────────────────────
+
+    @staticmethod
+    def _token_accuracy_modifier(accuracy: Optional[float]) -> float:
+        """
+        Per-token feedback: if we keep getting a specific coin wrong, penalise.
+        >75% → +1.5, >60% → +0.5, 40-60% → 0, <40% → -1.0, <25% → -2.0.
+        Returns 0 if no data (None).
+        """
+        if accuracy is None:
+            return 0.0
+        if accuracy > 0.75:
+            return 1.5
+        if accuracy > 0.60:
+            return 0.5
+        if accuracy < 0.25:
+            return -2.0
+        if accuracy < 0.40:
+            return -1.0
+        return 0.0
+
+    # ── Per-Regime Accuracy ───────────────────────────────────────
+
+    @staticmethod
+    def _regime_accuracy_modifier(accuracy: Optional[float]) -> float:
+        """
+        Per-regime feedback: if we're consistently wrong in a market regime.
+        >70% → +1, >55% → +0.5, 40-55% → 0, <40% → -1.0, <30% → -1.5.
+        Returns 0 if no data (None).
         """
         if accuracy is None:
             return 0.0
         if accuracy > 0.70:
             return 1.0
-        if accuracy < 0.50:
+        if accuracy > 0.55:
+            return 0.5
+        if accuracy < 0.30:
+            return -1.5
+        if accuracy < 0.40:
             return -1.0
         return 0.0
 
