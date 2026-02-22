@@ -86,6 +86,112 @@ def _get_learning_loop():
     return _learning_loop
 
 
+def _detect_market_regime(btc_change_24h: float) -> str:
+    """Detect market regime from BTC 24h change.
+    Used to adjust LONG/SHORT balance and position sizing."""
+    if btc_change_24h > 3:
+        return "strong_bull"
+    elif btc_change_24h > 1:
+        return "bull"
+    elif btc_change_24h > -1:
+        return "sideways"
+    elif btc_change_24h > -3:
+        return "bear"
+    else:
+        return "strong_bear"
+
+
+def _get_learning_adjustments() -> Dict[str, Any]:
+    """Fetch learning loop adjustments and compile into actionable trading modifiers.
+
+    THIS IS THE CRITICAL FEEDBACK LINK that was missing.
+    Without this, the learning loop generates insights but the trader ignores them.
+
+    Queries the last 24h of strategy adjustments and builds:
+    - Per-token score penalties (underperformers get docked)
+    - Direction bias corrections (if SHORTs keep losing, reduce SHORT confidence)
+    - Global score offset (if overall accuracy is poor, raise the bar)
+    - SL modifier (if PnL is drifting negative, tighten stops)
+    """
+    adjustments: Dict[str, Any] = {
+        "token_penalties": {},       # coin_id -> score penalty (negative)
+        "direction_bias": {},        # "long"/"short" -> multiplier (0.0-1.0)
+        "global_score_offset": 0,    # added to min_score threshold
+        "sl_modifier": 0.0,         # added to stop_loss_pct (positive = tighter)
+        "reduce_position_size": False,
+    }
+    ll = _get_learning_loop()
+    if not ll:
+        return adjustments
+
+    try:
+        recent = ll.get_recent_adjustments(limit=50)
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+        recent = [a for a in recent if a.get("created_at", "") >= cutoff]
+
+        for adj in recent:
+            adj_type = adj.get("adjustment_type", "")
+
+            if adj_type == "token_confidence_reduction":
+                desc = adj.get("description", "")
+                token = desc.split(" ")[0].lower() if desc else ""
+                if token:
+                    adjustments["token_penalties"][token] = (
+                        adjustments["token_penalties"].get(token, 0) - 15
+                    )
+
+            elif adj_type == "direction_bias_correction":
+                new_val = adj.get("new_value", "")
+                if "short" in new_val.lower():
+                    adjustments["direction_bias"]["short"] = min(
+                        adjustments["direction_bias"].get("short", 1.0), 0.5
+                    )
+                elif "long" in new_val.lower():
+                    adjustments["direction_bias"]["long"] = min(
+                        adjustments["direction_bias"].get("long", 1.0), 0.5
+                    )
+
+            elif adj_type == "global_confidence_reduction":
+                adjustments["global_score_offset"] += 15
+                adjustments["reduce_position_size"] = True
+
+            elif adj_type == "global_confidence_increase":
+                adjustments["global_score_offset"] = max(
+                    0, adjustments["global_score_offset"] - 5
+                )
+
+            elif adj_type == "pnl_drift_alert":
+                adjustments["sl_modifier"] += 1.0
+                adjustments["reduce_position_size"] = True
+
+            elif adj_type == "regime_weight_reduction":
+                adjustments["global_score_offset"] += 10
+
+        # Additionally: penalize tokens in worst predictions
+        try:
+            stats = ll.get_performance_stats(days=7)
+            for w in stats.get("worst_predictions", []):
+                ticker = w.get("token_ticker", "").lower()
+                if ticker:
+                    adjustments["token_penalties"][ticker] = (
+                        adjustments["token_penalties"].get(ticker, 0) - 10
+                    )
+            # Heavily penalize directions with <30% accuracy
+            for direction, ddata in stats.get("direction_accuracy", {}).items():
+                if ddata.get("total", 0) >= 5 and ddata.get("accuracy", 50) < 30:
+                    key = "short" if direction == "SHORT" else "long"
+                    adjustments["direction_bias"][key] = min(
+                        adjustments["direction_bias"].get(key, 1.0), 0.3
+                    )
+        except Exception:
+            pass
+
+    except Exception as e:
+        logger.warning("Failed to fetch learning adjustments: %s", e)
+
+    return adjustments
+
+
 # -- Database ------------------------------------------------------------------
 
 def init_trading_tables():
@@ -535,35 +641,40 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
                     "source": "coingecko", "side": "long",
                 })
 
-            # ── SHORT SIGNAL SCORING (widened for aggressive trading) ──
+            # ── SHORT SIGNAL SCORING (SHORT overextended pumps, not dumps) ──
+            # KEY FIX: Don't short after a dump (that's shorting the bottom).
+            # Instead, short overextended rallies and resistance zones.
             short_score = 0
             short_reasons = []
-            # Bearish momentum (broader bands)
-            if change_24h < -8:
-                short_score += 30; short_reasons.append(f"Strong dump: {change_24h:+.1f}%")
-            elif change_24h < -3:
-                short_score += 25; short_reasons.append(f"Bearish momentum: {change_24h:+.1f}%")
-            elif change_24h < -1:
-                short_score += 15; short_reasons.append(f"Declining: {change_24h:+.1f}%")
-            elif change_24h < 0:
-                short_score += 8; short_reasons.append(f"Slightly bearish: {change_24h:+.1f}%")
-            # Volume in decline
-            if coin.market_cap > 0:
+            # Overextended pump — likely pullback (CONTRARIAN short)
+            if change_24h > 15:
+                short_score += 30; short_reasons.append(f"Overextended pump: {change_24h:+.1f}% — pullback likely")
+            elif change_24h > 8:
+                short_score += 25; short_reasons.append(f"Rally exhaustion: {change_24h:+.1f}% — reversal signal")
+            elif change_24h > 4:
+                short_score += 12; short_reasons.append(f"Moderate rally: {change_24h:+.1f}% — watch for reversal")
+            # Breakdown on high volume (continuation short — only with conviction)
+            if change_24h < -3 and coin.market_cap > 0:
                 vol_ratio = coin.total_volume_24h / coin.market_cap
                 if vol_ratio > 0.3:
-                    short_score += 15; short_reasons.append(f"Panic volume: {vol_ratio:.2f}")
-                elif vol_ratio > 0.15 and change_24h < -1:
-                    short_score += 8; short_reasons.append(f"Elevated sell volume")
-            # ATH analysis — near ATH = likely pullback
+                    short_score += 18; short_reasons.append(f"Breakdown + panic volume: {vol_ratio:.2f}")
+                elif vol_ratio > 0.15:
+                    short_score += 8; short_reasons.append(f"Sell-off with volume: {vol_ratio:.2f}")
+            # Volume spike on a pump (distribution signal)
+            if change_24h > 3 and coin.market_cap > 0:
+                vol_ratio = coin.total_volume_24h / coin.market_cap
+                if vol_ratio > 0.4:
+                    short_score += 15; short_reasons.append(f"Distribution volume on pump: {vol_ratio:.2f}")
+            # ATH analysis — near ATH = strong resistance
             if hasattr(coin, 'ath') and coin.ath > 0:
                 ath_ratio = coin.current_price / coin.ath
-                if ath_ratio > 0.92:
-                    short_score += 18; short_reasons.append(f"Near ATH ({ath_ratio*100:.0f}%) — pullback likely")
-                elif ath_ratio > 0.8:
-                    short_score += 10; short_reasons.append(f"Close to ATH ({ath_ratio*100:.0f}%) — resistance zone")
-            # Large cap decline
-            if change_24h < -1 and coin.market_cap > 1_000_000_000:
-                short_score += 10; short_reasons.append("Large cap decline — shorting opportunity")
+                if ath_ratio > 0.95:
+                    short_score += 20; short_reasons.append(f"At ATH ({ath_ratio*100:.0f}%) — heavy resistance")
+                elif ath_ratio > 0.85:
+                    short_score += 12; short_reasons.append(f"Near ATH ({ath_ratio*100:.0f}%) — resistance zone")
+            # Large cap pump exhaustion
+            if change_24h > 5 and coin.market_cap > 5_000_000_000:
+                short_score += 10; short_reasons.append("Large cap overextended — mean reversion likely")
             short_score = max(0, min(100, short_score))
 
             if short_score >= 15:
@@ -749,12 +860,24 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
     # Trade settings risk_level overrides user prefs (auto-trader sets this to "aggressive")
     risk_profile = settings.get("risk_level", risk_profile)
 
+    # ── LEARNING LOOP FEEDBACK (the critical missing link) ──
+    learning_mods = _get_learning_adjustments()
+    market_regime = "sideways"  # updated after BTC data is available
+    if learning_mods.get("global_score_offset", 0) > 0 or learning_mods.get("reduce_position_size"):
+        logger.info(
+            "Learning loop active: score_offset=+%d, reduce_size=%s, token_penalties=%d, dir_bias=%s",
+            learning_mods["global_score_offset"],
+            learning_mods["reduce_position_size"],
+            len(learning_mods["token_penalties"]),
+            learning_mods["direction_bias"],
+        )
+
     # Risk profile modifiers
     risk_modifiers = {
         "conservative": {"max_trade_pct_mult": 0.5, "min_score": 70, "stop_loss_add": 2},
         "moderate":     {"max_trade_pct_mult": 1.0, "min_score": 50, "stop_loss_add": 0},
         "balanced":     {"max_trade_pct_mult": 1.0, "min_score": 50, "stop_loss_add": 0},
-        "aggressive":   {"max_trade_pct_mult": 1.5, "min_score": 15, "stop_loss_add": -2},
+        "aggressive":   {"max_trade_pct_mult": 1.5, "min_score": 40, "stop_loss_add": 0},
     }
     mods = risk_modifiers.get(risk_profile, risk_modifiers["aggressive"])
 
@@ -925,8 +1048,14 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
             len(opportunities),
         )
 
+        # ── REGIME DETECTION (BTC 24h change as proxy) ──
+        btc_opp = next((o for o in opportunities if o.get("coin_id") == "bitcoin"), None)
+        if btc_opp:
+            market_regime = _detect_market_regime(btc_opp["change_24h"])
+            logger.info("Market regime: %s (BTC 24h: %+.1f%%)", market_regime, btc_opp["change_24h"])
+
         # ── BACKTEST GATE ──
-        # Aggressive: allow all coins (skip backtest gate for maximum trading)
+        # Conservative/moderate: hard block. Aggressive: heavy score penalty.
         if risk_profile != "aggressive":
             verified_opportunities = []
             for o in opportunities:
@@ -941,22 +1070,61 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
             opportunities = verified_opportunities
             results["backtest_filtered"] = len(verified_opportunities)
         else:
-            logger.info("Aggressive mode — backtest gate BYPASSED, %d coins eligible", len(opportunities))
+            # Aggressive: don't hard-block, but penalize unverified coins
+            for o in opportunities:
+                if not o.get("backtest_verified") and o.get("backtest_status") == "failed":
+                    o["score"] = max(0, o["score"] - 20)
+                    o["reasons"].append("⚠️ Backtest FAILED — score penalized -20")
+            opportunities.sort(key=lambda x: x["score"], reverse=True)
+            logger.info("Aggressive mode — backtest failures penalized, %d coins eligible", len(opportunities))
 
-        # Apply confidence threshold
+        # ── APPLY LEARNING LOOP ADJUSTMENTS TO SCORES ──
+        for o in opportunities:
+            cid = o.get("coin_id", "").lower()
+            side = o.get("side", "long")
+            # Token-specific penalty from past underperformance
+            token_penalty = learning_mods["token_penalties"].get(cid, 0)
+            if token_penalty:
+                o["score"] = max(0, o["score"] + token_penalty)
+                o["reasons"].append(f"📉 Learning penalty: {token_penalty} (past losses)")
+            # Direction bias correction
+            dir_mult = learning_mods["direction_bias"].get(side, 1.0)
+            if dir_mult < 1.0:
+                old_score = o["score"]
+                o["score"] = max(0, int(o["score"] * dir_mult))
+                o["reasons"].append(f"📉 {side.upper()} accuracy low: score {old_score}→{o['score']}")
+
+        # ── REGIME-BASED SCORE ADJUSTMENT ──
+        for o in opportunities:
+            side = o.get("side", "long")
+            if market_regime in ("strong_bull", "bull") and side == "long":
+                o["score"] = min(100, o["score"] + 10)
+            elif market_regime in ("strong_bear", "bear") and side == "short":
+                o["score"] = min(100, o["score"] + 10)
+            elif market_regime in ("strong_bull", "bull") and side == "short":
+                o["score"] = max(0, o["score"] - 15)
+            elif market_regime in ("strong_bear", "bear") and side == "long":
+                o["score"] = max(0, o["score"] - 15)
+        opportunities.sort(key=lambda x: x["score"], reverse=True)
+
+        # Apply confidence threshold (with learning loop offset)
         min_score = mods["min_score"]
+        learning_offset = learning_mods.get("global_score_offset", 0)
         confidence_min_score = int(confidence_threshold * 10)
-        effective_min_score = min_score if risk_profile == "aggressive" else max(min_score, confidence_min_score)
+        base_min = min_score + learning_offset
+        effective_min_score = base_min if risk_profile == "aggressive" else max(base_min, confidence_min_score)
         pre_filter_count = len(opportunities)
         opportunities = [o for o in opportunities if o["score"] >= effective_min_score]
         logger.info(
-            "Score filter — min_score: %d | before: %d | after: %d | top_scores: %s",
-            effective_min_score, pre_filter_count, len(opportunities),
+            "Score filter — min_score: %d (base %d + learning %d) | before: %d | after: %d | regime: %s | top: %s",
+            effective_min_score, min_score, learning_offset, pre_filter_count, len(opportunities),
+            market_regime,
             [o['score'] for o in sorted(opportunities, key=lambda x: x['score'], reverse=True)[:5]],
         )
         results["confidence_threshold"] = confidence_threshold
         results["effective_min_score"] = effective_min_score
         results["risk_profile"] = risk_profile
+        results["market_regime"] = market_regime
 
         # ── DIVERSIFIED PORTFOLIO: 10-15 positions, balanced LONG/SHORT ──
 
@@ -977,8 +1145,14 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
         # Calculate total portfolio value for max position % check
         total_portfolio = balance + sum(p.get("invested_amount", 0) for p in open_positions)
 
-        # Balance LONG/SHORT: aim for ~60% LONG, ~40% SHORT
-        target_longs = int(MAX_PORTFOLIO_SLOTS * 0.6)
+        # Regime-based LONG/SHORT allocation
+        if market_regime in ("strong_bull", "bull"):
+            target_long_pct = 0.80  # Bull = mostly long
+        elif market_regime in ("strong_bear", "bear"):
+            target_long_pct = 0.30  # Bear = mostly short
+        else:
+            target_long_pct = 0.60  # Sideways = slight long bias
+        target_longs = int(MAX_PORTFOLIO_SLOTS * target_long_pct)
         target_shorts = MAX_PORTFOLIO_SLOTS - target_longs
         long_slots = max(0, min(available_slots, target_longs - current_longs))
         short_slots = max(0, min(available_slots - long_slots, target_shorts - current_shorts))
@@ -995,23 +1169,41 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
             picks.extend([(o, o.get("side", "long")) for o in remaining[:remaining_slots]])
 
         if picks and balance > (MIN_POSITION_AMOUNT + RESERVE_AMOUNT):
-            # ── Score-weighted allocation ──
+            # ── Score-weighted allocation with DYNAMIC risk sizing ──
             investable = balance - RESERVE_AMOUNT
             total_score = sum(max(o["score"], 1) for o, _ in picks)
-            effective_sl = max(1.0, settings["stop_loss_pct"] + mods["stop_loss_add"])
+            base_sl = max(1.0, settings["stop_loss_pct"] + mods["stop_loss_add"] + learning_mods.get("sl_modifier", 0))
 
             for opp, trade_side in picks:
                 if balance - RESERVE_AMOUNT < MIN_POSITION_AMOUNT:
                     break
 
-                # Allocate proportional to score, floor at MIN_POSITION_AMOUNT
-                weight = max(opp["score"], 1) / total_score
+                score = opp["score"]
+
+                # ── SCORE-TIERED RISK PARAMETERS ──
+                # High conviction = wider stops + more capital
+                # Low conviction = tighter stops + less capital (or skip)
+                if score >= 80:
+                    effective_sl = max(base_sl, 7.0); effective_tp = 15.0; max_alloc_pct = 12.0
+                elif score >= 60:
+                    effective_sl = max(base_sl, 5.0); effective_tp = 10.0; max_alloc_pct = 8.0
+                elif score >= 40:
+                    effective_sl = max(base_sl, 4.0); effective_tp = 8.0; max_alloc_pct = 5.0
+                else:
+                    logger.info("Skipping %s (score %d < 40) — below quality floor", opp["symbol"], score)
+                    continue  # Hard floor: never trade below score 40
+
+                # Reduce size if learning loop recommends caution
+                if learning_mods.get("reduce_position_size"):
+                    max_alloc_pct *= 0.6
+
+                # Allocate proportional to score
+                weight = max(score, 1) / total_score
                 trade_amount = max(investable * weight, MIN_POSITION_AMOUNT)
                 trade_amount = min(trade_amount, balance - RESERVE_AMOUNT)
 
-                # Enforce max position % (no single token > 15% of portfolio)
-                max_allowed = total_portfolio * (MAX_POSITION_PCT / 100)
-                trade_amount = min(trade_amount, max_allowed)
+                # Enforce max position % (score-tiered cap)
+                trade_amount = min(trade_amount, total_portfolio * (max_alloc_pct / 100))
 
                 # Build AI reasoning
                 bt_stats = opp.get("backtest_stats", {})
@@ -1030,7 +1222,7 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
                     f"{side_label} {opp['name']} ({opp['symbol']}): "
                     f"${opp['price']:,.6f} | 24h: {opp['change_24h']:+.1f}% | "
                     f"Score: {opp['score']}/100. {bt_summary}"
-                    f"Investing ${trade_amount:,.0f} | SL: -{effective_sl}% | TP: +{settings['take_profit_pct']}%."
+                    f"Investing ${trade_amount:,.0f} | SL: -{effective_sl}% | TP: +{effective_tp}% | Regime: {market_regime}."
                 )
                 if opp.get("ai_analysis"):
                     detailed_reasoning += f" {opp['ai_analysis'][:150]}"
@@ -1039,7 +1231,7 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
                     user_id=user_id, coin_id=opp["coin_id"], coin_name=opp["name"],
                     symbol=opp["symbol"], price=opp["price"], amount=trade_amount,
                     ai_score=opp["score"], ai_reasoning=detailed_reasoning,
-                    stop_loss_pct=effective_sl, take_profit_pct=settings["take_profit_pct"],
+                    stop_loss_pct=effective_sl, take_profit_pct=effective_tp,
                     side=trade_side,
                 )
                 if buy_result["success"]:
@@ -1062,7 +1254,7 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
                                 confidence=opp["score"] / 10.0,
                                 composite_score=opp["score"],
                                 price_at_prediction=opp["price"],
-                                market_regime="unknown",
+                                market_regime=market_regime,
                                 user_id=user_id,
                             )
                         except Exception:
@@ -1321,24 +1513,24 @@ def ensure_system_wallet():
                 "max_trade_pct": 20.0,
                 "daily_loss_limit_pct": 10.0,
                 "max_open_positions": 15,
-                "stop_loss_pct": 3.0,
-                "take_profit_pct": 5.0,
+                "stop_loss_pct": 5.0,
+                "take_profit_pct": 10.0,
                 "cooldown_minutes": 0,
                 "min_market_cap": 1000000,
                 "risk_level": "aggressive",
             }).execute()
-            logger.info("Created system auto-trader settings (auto_trade=ON, aggressive, SL=3%%, TP=5%%, 15 positions)")
+            logger.info("Created system auto-trader settings (auto_trade=ON, aggressive, SL=5%%, TP=10%%, 15 positions)")
         else:
             # Always force-update key settings on startup
             sb.table("trade_settings").update({
                 "auto_trade_enabled": True,
                 "risk_level": "aggressive",
-                "stop_loss_pct": 3.0,
-                "take_profit_pct": 5.0,
+                "stop_loss_pct": 5.0,
+                "take_profit_pct": 10.0,
                 "max_open_positions": 15,
                 "cooldown_minutes": 0,
             }).eq("user_id", SYSTEM_USER_ID).execute()
-            logger.info("Updated system auto-trader: SL=3%%, TP=5%%, max_positions=15, cooldown=0")
+            logger.info("Updated system auto-trader: SL=5%%, TP=10%%, max_positions=15, cooldown=0")
 
         # Ensure trade_stats row exists
         stats = sb.table("trade_stats").select("*").eq("user_id", SYSTEM_USER_ID).execute()
