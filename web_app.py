@@ -44,8 +44,31 @@ from middleware import login_tracker
 from supabase_db import get_supabase
 from src.backtest_engine import get_backtest_engine, BacktestResult
 
+# ── UI / NLP Layer ────────────────────────────────────────────────
+from src.ui.clarification_engine import parse_user_query, ClarificationEngine
+from src.ui.intent_recognizer import IntentRecognizer
+from src.ui.parameter_extractor import ParameterExtractor
+from src.ui.response_formatter import ResponseFormatter
+from src.ui.visual_indicators import (
+    confidence_bar, confidence_bar_html, risk_badge, risk_badge_html,
+    trend_arrow, trend_arrow_html, data_freshness_indicator,
+    verdict_colour, verdict_emoji, score_sparkline,
+)
+from src.ui.notification_formatter import NotificationFormatter
+from src.ui.personalization_engine import PersonalizationEngine
+from src.ui.user_config import UserPreferences, default_preferences
+from src.ui.watchlist_manager import WatchlistManager
+from src.ui.portfolio_tracker import PortfolioTracker
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# ── UI singletons (stateless, reusable) ──────────────────────────
+_intent_recognizer = IntentRecognizer()
+_param_extractor = ParameterExtractor()
+_clarification_engine = ClarificationEngine()
+_response_formatter = ResponseFormatter()
+_notification_formatter = NotificationFormatter()
 
 # ── Globals ───────────────────────────────────────────────────────
 cg: CoinGeckoCollector = None  # type: ignore
@@ -164,6 +187,11 @@ class AITokenScore(BaseModel):
     technical: Dict[str, Any] = {}
     risk_flags: List[str] = []
     verdict: str = "HOLD"
+    # Visual indicators (populated by UI layer)
+    confidence_bar: str = ""
+    risk_badge_text: str = ""
+    verdict_emoji: str = ""
+    verdict_color: str = ""
 
 
 class AIRecommendations(BaseModel):
@@ -651,12 +679,67 @@ async def api_remove_watchlist(coin_id: str, user=Depends(require_user)):
     return {"success": True, "watchlist": auth.get_watchlist(user.id)}
 
 
+@app.get("/api/watchlist")
+async def api_get_watchlist(user=Depends(require_user)):
+    """
+    Get full watchlist with live prices, visual indicators, and
+    triggered alert evaluation via the WatchlistManager.
+    """
+    coin_ids = auth.get_watchlist(user.id)
+    if not coin_ids:
+        return {"watchlist": [], "alerts": []}
+
+    # Fetch live prices for all watchlist coins
+    prices = await cg.get_simple_price(coin_ids)
+
+    enriched = []
+    for cid in coin_ids:
+        cp = prices.get(cid, 0)
+        enriched.append({
+            "coin_id": cid,
+            "current_price": cp,
+            "price_display": f"${cp:,.8g}" if cp else "N/A",
+            "trend": trend_arrow(0),  # no 24h change available in simple price
+            "freshness": data_freshness_indicator(0),
+        })
+
+    # Build a minimal UserPreferences with the watchlist for alert eval
+    try:
+        from src.ui.user_config import WatchlistItem, AlertType
+        prefs = default_preferences(user_id=user.id)
+        # Populate watchlist from DB coins (basic entries without alert prices)
+        prefs.watchlist = [WatchlistItem(token=cid.upper()) for cid in coin_ids]
+        wm = WatchlistManager(prefs)
+        price_map = {cid.upper(): prices.get(cid, 0) for cid in coin_ids}
+        triggered = wm.evaluate_alerts(price_map)
+        alert_list = [
+            {
+                "token": a.token,
+                "alert_type": a.alert_type.value,
+                "alert_price": a.alert_price,
+                "current_price": a.current_price,
+                "message": a.message,
+                "triggered_at": a.triggered_at.isoformat(),
+            }
+            for a in triggered
+        ]
+    except Exception as e:
+        logger.warning("Watchlist alert eval failed: %s", e)
+        alert_list = []
+
+    return {"watchlist": enriched, "alerts": alert_list}
+
+
 # ══════════════════════════════════════════════════════════════════
 # PORTFOLIO ENDPOINTS
 # ══════════════════════════════════════════════════════════════════
 
 @app.get("/api/portfolio")
 async def api_get_portfolio(user=Depends(require_user)):
+    """
+    Get portfolio with live prices, P&L, and AI status annotations
+    via the PortfolioTracker.
+    """
     items = auth.get_portfolio(user.id)
     if items:
         coin_ids = [i["coin_id"] for i in items]
@@ -668,17 +751,59 @@ async def api_get_portfolio(user=Depends(require_user)):
             value = item["amount"] * cp
             pnl = value - cost
             pnl_pct = (pnl / cost * 100) if cost > 0 else 0
-            enriched.append(PortfolioItem(
-                coin_id=item["coin_id"],
-                amount=item["amount"],
-                avg_buy_price=item["avg_buy_price"],
-                notes=item.get("notes", ""),
-                current_price=cp,
-                pnl=round(pnl, 2),
-                pnl_pct=round(pnl_pct, 2),
-            ))
-        return enriched
-    return []
+
+            # AI status annotation
+            ai_status = ""
+            ai_emoji = ""
+            ai_comment = ""
+            if cp > 0 and item["avg_buy_price"] > 0:
+                if pnl_pct > 15:
+                    ai_status, ai_emoji, ai_comment = "HOLD", "🟢", "On track — approaching first target"
+                elif pnl_pct > 0:
+                    ai_status, ai_emoji, ai_comment = "HOLD", "🟢", "In profit — monitor for targets"
+                elif pnl_pct > -5:
+                    ai_status, ai_emoji, ai_comment = "WATCH", "🟡", "Slightly underwater — hold if thesis intact"
+                elif pnl_pct > -15:
+                    ai_status, ai_emoji, ai_comment = "WATCH", "🟡", "Approaching stop-loss zone"
+                else:
+                    ai_status, ai_emoji, ai_comment = "SELL", "🔴", "Below expected stop-loss — consider exiting"
+
+            enriched.append({
+                **PortfolioItem(
+                    coin_id=item["coin_id"],
+                    amount=item["amount"],
+                    avg_buy_price=item["avg_buy_price"],
+                    notes=item.get("notes", ""),
+                    current_price=cp,
+                    pnl=round(pnl, 2),
+                    pnl_pct=round(pnl_pct, 2),
+                ).model_dump(),
+                "ai_status": ai_status,
+                "ai_status_emoji": ai_emoji,
+                "ai_comment": ai_comment,
+                "risk_badge": risk_badge("HIGH" if pnl_pct < -10 else "MEDIUM" if pnl_pct < 0 else "LOW"),
+                "trend": trend_arrow(pnl_pct),
+            })
+
+        # Portfolio summary
+        total_cost = sum(i["amount"] * i["avg_buy_price"] for i in items)
+        total_value = sum(e["current_price"] * e["amount"] for e in enriched)
+        total_pnl = total_value - total_cost
+        total_pnl_pct = (total_pnl / total_cost * 100) if total_cost > 0 else 0
+
+        return {
+            "positions": enriched,
+            "summary": {
+                "total_invested": round(total_cost, 2),
+                "total_value": round(total_value, 2),
+                "total_pnl": round(total_pnl, 2),
+                "total_pnl_pct": round(total_pnl_pct, 2),
+                "winning": len([e for e in enriched if e["pnl"] > 0]),
+                "losing": len([e for e in enriched if e["pnl"] < 0]),
+                "overall_trend": trend_arrow(total_pnl_pct),
+            },
+        }
+    return {"positions": [], "summary": None}
 
 
 @app.post("/api/portfolio")
@@ -691,6 +816,96 @@ async def api_update_portfolio(
 ):
     auth.update_portfolio(user.id, coin_id, amount, avg_price, notes)
     return {"success": True}
+
+
+# ══════════════════════════════════════════════════════════════════
+# NOTIFICATION CHECK ENDPOINT
+# ══════════════════════════════════════════════════════════════════
+
+@app.get("/api/notifications/check")
+async def api_check_notifications(user=Depends(require_user)):
+    """
+    Check for triggered alerts on the user's portfolio and watchlist.
+    Returns formatted notifications (push/email/SMS ready) via
+    the NotificationFormatter.
+    """
+    notifications = []
+
+    # ── Portfolio P&L notifications ──
+    try:
+        items = auth.get_portfolio(user.id)
+        if items:
+            coin_ids = [i["coin_id"] for i in items]
+            prices = await cg.get_simple_price(coin_ids)
+            total_cost = sum(i["amount"] * i["avg_buy_price"] for i in items)
+            total_value = sum(i["amount"] * prices.get(i["coin_id"], 0) for i in items)
+            total_pnl = total_value - total_cost
+            total_pnl_pct = (total_pnl / total_cost * 100) if total_cost > 0 else 0
+
+            # Portfolio-level notifications
+            if abs(total_pnl_pct) >= 5:
+                positions_data = [
+                    {"token": i["coin_id"].upper(), "pnl_pct": round(
+                        ((prices.get(i["coin_id"], 0) * i["amount"] - i["amount"] * i["avg_buy_price"])
+                        / max(i["amount"] * i["avg_buy_price"], 0.01)) * 100, 1
+                    )}
+                    for i in items
+                ]
+                notif = _notification_formatter.portfolio_update(
+                    total_pnl=round(total_pnl, 2),
+                    total_pnl_pct=round(total_pnl_pct, 2),
+                    positions=positions_data,
+                )
+                notifications.append({
+                    "type": notif.ntype.value,
+                    "priority": notif.priority.value,
+                    "title": notif.title,
+                    "body": notif.body,
+                    "short_body": notif.short_body,
+                })
+
+            # Per-position notifications for big movers
+            for item in items:
+                cp = prices.get(item["coin_id"], 0)
+                if cp <= 0 or item["avg_buy_price"] <= 0:
+                    continue
+                pnl_pct = ((cp - item["avg_buy_price"]) / item["avg_buy_price"]) * 100
+                if pnl_pct >= 20:
+                    notif = _notification_formatter.price_alert(
+                        token=item["coin_id"].upper(),
+                        current_price=cp,
+                        target_price=cp,
+                        entry_price=item["avg_buy_price"],
+                        alert_type="target_reached",
+                    )
+                    notifications.append({
+                        "type": notif.ntype.value,
+                        "priority": notif.priority.value,
+                        "title": notif.title,
+                        "body": notif.body,
+                        "short_body": notif.short_body,
+                    })
+                elif pnl_pct <= -15:
+                    notif = _notification_formatter.risk_warning(
+                        token=item["coin_id"].upper(),
+                        warning_type="price_drop",
+                        details=f"Down {pnl_pct:.1f}% from entry ${item['avg_buy_price']:.8g}",
+                    )
+                    notifications.append({
+                        "type": notif.ntype.value,
+                        "priority": notif.priority.value,
+                        "title": notif.title,
+                        "body": notif.body,
+                        "short_body": notif.short_body,
+                    })
+    except Exception as e:
+        logger.warning("Notification check (portfolio) failed: %s", e)
+
+    return {
+        "notifications": notifications,
+        "count": len(notifications),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -1198,6 +1413,10 @@ async def get_ai_recommendations(
             technical=technical,
             risk_flags=flags,
             verdict=verdict,
+            confidence_bar=confidence_bar(total_score / 10),
+            risk_badge_text=risk_badge("HIGH" if flags else ("MEDIUM" if total_score < 50 else "LOW")),
+            verdict_emoji=verdict_emoji(verdict.title()),
+            verdict_color=verdict_colour(verdict.title()),
         ))
         token_prices[p.base_token_address] = p.price_usd
 
@@ -1919,7 +2138,7 @@ class BotAskRequest(BaseModel):
 async def bot_ask(body: BotAskRequest, user=Depends(require_user)):
     """
     AI chatbot that answers crypto questions using LIVE web data.
-    1. Parses question to detect coins/topics
+    1. Parses question via NLP intent recognition + parameter extraction
     2. Fetches real-time data from CoinGecko, DexScreener, news
     3. Feeds everything to Gemini for a grounded, domain-specific answer
     4. Falls back to data-driven answers when AI quota is exhausted
@@ -1928,7 +2147,33 @@ async def bot_ask(body: BotAskRequest, user=Depends(require_user)):
     if not question:
         raise HTTPException(400, "Question cannot be empty")
 
-    # ── 1. Detect coins / topics mentioned ──
+    # ── 1. NLP Intent Recognition ──
+    parsed = parse_user_query(
+        question,
+        recognizer=_intent_recognizer,
+        extractor=_param_extractor,
+        clarifier=_clarification_engine,
+    )
+    nlp_intent = parsed.intent.value
+    nlp_confidence = parsed.confidence
+    nlp_tokens = parsed.params.tokens  # extracted tickers / addresses
+    nlp_risk = parsed.params.risk_preference
+    nlp_timeframe = parsed.params.timeframe
+
+    # If clarification needed, include it in response
+    clarification_data = None
+    if parsed.clarification.needs_response:
+        clarification_data = {
+            "type": parsed.clarification.ctype.value,
+            "message": parsed.clarification.message,
+            "options": [
+                {"key": o.key, "label": o.label, "value": o.value}
+                for o in parsed.clarification.options
+            ],
+            "free_text_allowed": parsed.clarification.free_text_allowed,
+        }
+
+    # ── 1b. Detect coins (NLP tokens + legacy alias fallback) ──
     q_lower = question.lower()
     detected_coins: list[str] = []
 
@@ -1951,6 +2196,14 @@ async def bot_ask(body: BotAskRequest, user=Depends(require_user)):
 
     for alias, cg_id in COIN_ALIASES.items():
         if alias in q_lower.split() or f"${alias}" in q_lower:
+            if cg_id not in detected_coins:
+                detected_coins.append(cg_id)
+
+    # Also add tokens extracted by the NLP recognizer
+    for tok in nlp_tokens:
+        tok_lower = tok.lower()
+        if tok_lower in COIN_ALIASES:
+            cg_id = COIN_ALIASES[tok_lower]
             if cg_id not in detected_coins:
                 detected_coins.append(cg_id)
 
@@ -2108,6 +2361,14 @@ async def bot_ask(body: BotAskRequest, user=Depends(require_user)):
                     "coins_detected": detected_coins,
                     "tokens_used": resp.total_tokens,
                     "mode": "ai",
+                    "nlp": {
+                        "intent": nlp_intent,
+                        "confidence": round(nlp_confidence, 3),
+                        "tokens_extracted": nlp_tokens,
+                        "risk": nlp_risk,
+                        "timeframe": nlp_timeframe,
+                    },
+                    "clarification": clarification_data,
                 }
             # If AI failed (quota etc.), fall through to data-driven answer
             logger.warning("Gemini failed, using data-driven fallback: %s", resp.error)
@@ -2124,6 +2385,70 @@ async def bot_ask(body: BotAskRequest, user=Depends(require_user)):
         "coins_detected": detected_coins,
         "tokens_used": 0,
         "mode": "data",
+        "nlp": {
+            "intent": nlp_intent,
+            "confidence": round(nlp_confidence, 3),
+            "tokens_extracted": nlp_tokens,
+            "risk": nlp_risk,
+            "timeframe": nlp_timeframe,
+        },
+        "clarification": clarification_data,
+    }
+
+
+# ══════════════════════════════════════════════════════════════════
+# NLP QUERY PARSING ENDPOINT
+# ══════════════════════════════════════════════════════════════════
+
+class ParseQueryRequest(BaseModel):
+    query: str
+
+@app.post("/api/ai/parse-query")
+async def api_parse_query(body: ParseQueryRequest, user=Depends(require_user)):
+    """
+    Parse a natural-language query via the NLP pipeline.
+    Returns intent classification, extracted parameters, and any
+    clarification prompts needed before running the full AI pipeline.
+    """
+    query = body.query.strip()
+    if not query:
+        raise HTTPException(400, "Query cannot be empty")
+
+    parsed = parse_user_query(
+        query,
+        recognizer=_intent_recognizer,
+        extractor=_param_extractor,
+        clarifier=_clarification_engine,
+    )
+
+    # Build clarification if needed
+    clarification = None
+    if parsed.clarification.needs_response:
+        clarification = {
+            "type": parsed.clarification.ctype.value,
+            "message": parsed.clarification.message,
+            "options": [
+                {"key": o.key, "label": o.label, "value": o.value}
+                for o in parsed.clarification.options
+            ],
+            "free_text_allowed": parsed.clarification.free_text_allowed,
+        }
+
+    return {
+        "ready": parsed.ready,
+        "intent": parsed.intent.value,
+        "confidence": round(parsed.confidence, 3),
+        "tokens": parsed.params.tokens,
+        "parameters": {
+            "risk": parsed.params.risk_preference,
+            "timeframe": parsed.params.timeframe,
+            "num_recommendations": parsed.params.num_recommendations,
+            "filters": {
+                "min_liquidity": parsed.params.filters.min_liquidity if parsed.params.filters else None,
+                "min_volume": parsed.params.filters.min_volume if parsed.params.filters else None,
+            } if parsed.params.filters else None,
+        },
+        "clarification": clarification,
     }
 
 
@@ -3072,12 +3397,14 @@ async def ml_predict_token(token_id: str, user=Depends(require_user)):
 async def get_enhanced_ai_recommendations(
     query: str = Query("Top crypto picks", description="Natural language query"),
     num: int = Query(5, ge=1, le=20),
+    format: str = Query("api", description="Output format: api, web, mobile, text"),
     user=Depends(require_user),
 ):
     """
     Full AI pipeline recommendations with AI Thought Summary,
-    market regime detection, and transparent reasoning.
-    Uses the Orchestrator + DataPipeline + LearningLoop stack.
+    market regime detection, transparent reasoning, and NLP-powered
+    personalization using the UI layer.
+    Uses the Orchestrator + DataPipeline + PersonalizationEngine.
     """
     import traceback as _tb
 
@@ -3087,6 +3414,22 @@ async def get_enhanced_ai_recommendations(
         )
         from src.ai_engine.orchestrator import Orchestrator
         from src.data_collectors.data_pipeline import DataPipeline
+
+        # ── NLP: Parse the natural-language query ──
+        parsed = parse_user_query(
+            query,
+            recognizer=_intent_recognizer,
+            extractor=_param_extractor,
+            clarifier=_clarification_engine,
+        )
+
+        # ── Personalization: Build config/query from user prefs ──
+        try:
+            user_prefs = default_preferences(user_id=str(user.id))
+        except Exception:
+            user_prefs = default_preferences(user_id="0")
+
+        pe = PersonalizationEngine(user_prefs)
 
         try:
             dp = DataPipeline()
@@ -3100,15 +3443,34 @@ async def get_enhanced_ai_recommendations(
             market_condition=MarketCondition.SIDEWAYS,
         )
 
-        uq = UserQuery(
+        # Build UserQuery & UserConfig using PersonalizationEngine
+        uq = pe.build_query(
             raw_query=query,
-            query_type=QueryType.BEST_COINS,
-            num_recommendations=num,
+            intent=parsed.intent.value,
+            tokens=parsed.params.tokens,
+            num_recs=num,
+            timeframe=parsed.params.timeframe,
+            risk=parsed.params.risk_preference,
         )
-        uc = UserConfig()
+        uc = pe.build_config()
 
         rec_set = await orch.run(uq, uc)
 
+        # ── Personalization: Post-filter & annotate ──
+        filtered_recs = pe.post_filter(rec_set.recommendations)
+        rec_set.recommendations = filtered_recs
+        pe.annotate(rec_set.recommendations)
+
+        # ── Format output using ResponseFormatter ──
+        formatted = None
+        if format == "web":
+            formatted = _response_formatter.format_web(rec_set)
+        elif format == "mobile":
+            formatted = _response_formatter.format_mobile(rec_set)
+        elif format == "text":
+            formatted = {"text": _response_formatter.format_text(rec_set)}
+
+        # Always build the standard API recs_out (backward compatible)
         recs_out = []
         for r in rec_set.recommendations:
             recs_out.append({
@@ -3163,10 +3525,21 @@ async def get_enhanced_ai_recommendations(
 
         return {
             "query": query,
+            "nlp": {
+                "intent": parsed.intent.value,
+                "confidence": round(parsed.confidence, 3),
+                "tokens_extracted": parsed.params.tokens,
+                "risk": parsed.params.risk_preference,
+                "timeframe": parsed.params.timeframe,
+            },
             "overall_ai_thought": getattr(rec_set, "overall_ai_thought", ""),
             "market_condition": rec_set.market_condition.value,
             "recommendations": recs_out,
+            "formatted": formatted,
             "tokens_analyzed": rec_set.tokens_analyzed,
+            "personalization": {
+                "style_guidance": pe.trading_style_guidance(),
+            },
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
