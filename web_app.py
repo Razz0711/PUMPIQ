@@ -1773,6 +1773,30 @@ async def get_trader_log(limit: int = Query(50), user=Depends(require_user)):
     return trading_engine.get_trade_log_entries(user.id, limit)
 
 
+@app.get("/api/trader/today-stats")
+async def get_today_stats(user=Depends(require_user)):
+    """Today's quick stats: trades, P&L, avg hold time, best/worst."""
+    return trading_engine.get_today_quick_stats(user.id)
+
+
+@app.get("/api/trader/pnl-chart")
+async def get_pnl_chart(days: int = Query(14), user=Depends(require_user)):
+    """Daily P&L chart data for the last N days."""
+    return trading_engine.get_pnl_chart_data(user.id, min(days, 90))
+
+
+@app.get("/api/trader/live-feed")
+async def get_live_feed(limit: int = Query(20), user=Depends(require_user)):
+    """Most recent trade actions for the live feed."""
+    return trading_engine.get_live_feed(user.id, min(limit, 50))
+
+
+@app.get("/api/trader/cycle-log")
+async def get_cycle_log():
+    """Last N auto-trade cycle summaries (in-memory)."""
+    return trading_engine.get_cycle_log()
+
+
 # ══════════════════════════════════════════════════════════════════
 # TRANSACTION HASH VERIFICATION
 # ══════════════════════════════════════════════════════════════════

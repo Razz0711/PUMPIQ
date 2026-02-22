@@ -4525,7 +4525,62 @@
                 top: 48px;
             }
         }
+
+        /* ── Live Feed Styles ───────────────────────────────────── */
+        .feed-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border);
+            font-size: 13px;
+            transition: background 0.15s;
+        }
+        .feed-item:hover { background: var(--bg-secondary); }
+        .feed-item:last-child { border-bottom: none; }
+        .feed-action {
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 700;
+            color: #fff;
+            min-width: 52px;
+            text-align: center;
+        }
+        .feed-action.buy, .feed-action.long { background: var(--green); }
+        .feed-action.sell, .feed-action.cover, .feed-action.short { background: var(--red); }
+        .feed-time { color: var(--text-muted); font-size: 11px; min-width: 70px; }
+        .feed-amount { color: var(--text-secondary); font-size: 12px; margin-left: auto; }
+
+        /* ── Cycle Log Styles ───────────────────────────────────── */
+        .cycle-item {
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border);
+            font-size: 13px;
+        }
+        .cycle-item:last-child { border-bottom: none; }
+        .cycle-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 4px;
+        }
+        .cycle-badge {
+            display: inline-block;
+            padding: 1px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 700;
+        }
+        .cycle-badge.ok { background: rgba(16,185,129,0.15); color: var(--green); }
+        .cycle-badge.disabled, .cycle-badge.paused { background: rgba(239,68,68,0.1); color: var(--red); }
+        .cycle-actions { margin-top: 4px; font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
+
+        @media(max-width:768px) {
+            .trader-grid[style*="repeat(5"] { grid-template-columns: repeat(2, 1fr) !important; }
+        }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 
 <body>
@@ -5275,6 +5330,76 @@
                 <button class="btn btn-outline" onclick="showTraderSettings()">⚙️ Settings</button>
                 <button class="btn btn-danger btn-sm" onclick="resetTrading()" style="margin-left:auto">🔄 Reset
                     Stats</button>
+            </div>
+
+            <!-- ── TODAY'S QUICK STATS ─────────────────────────────── -->
+            <div style="margin-top:20px">
+                <h3 style="font-size:16px;margin-bottom:10px;display:flex;align-items:center;gap:8px">
+                    📊 Today's Performance
+                    <span id="todayStatsTime" style="font-size:11px;color:var(--text-muted);font-weight:400"></span>
+                </h3>
+                <div class="trader-grid" style="grid-template-columns:repeat(5,1fr);margin-top:0;gap:10px">
+                    <div class="trader-stat-card" style="padding:14px;text-align:center">
+                        <div class="trader-stat-label">Trades Today</div>
+                        <div class="trader-stat-value" id="qsTrades" style="font-size:22px">0</div>
+                        <div class="trader-stat-sub" id="qsBuySell" style="font-size:11px">0 buys / 0 sells</div>
+                    </div>
+                    <div class="trader-stat-card" style="padding:14px;text-align:center">
+                        <div class="trader-stat-label">Today P&L</div>
+                        <div class="trader-stat-value" id="qsPnl" style="font-size:22px">$0</div>
+                        <div class="trader-stat-sub" id="qsWinLoss" style="font-size:11px">0W / 0L</div>
+                    </div>
+                    <div class="trader-stat-card" style="padding:14px;text-align:center">
+                        <div class="trader-stat-label">Avg Hold Time</div>
+                        <div class="trader-stat-value" id="qsHoldTime" style="font-size:22px">0m</div>
+                        <div class="trader-stat-sub" style="font-size:11px">per position</div>
+                    </div>
+                    <div class="trader-stat-card" style="padding:14px;text-align:center">
+                        <div class="trader-stat-label">Best Trade</div>
+                        <div class="trader-stat-value" id="qsBest" style="font-size:22px;color:var(--green)">$0</div>
+                        <div class="trader-stat-sub" style="font-size:11px">today</div>
+                    </div>
+                    <div class="trader-stat-card" style="padding:14px;text-align:center">
+                        <div class="trader-stat-label">Volume</div>
+                        <div class="trader-stat-value" id="qsVolume" style="font-size:22px">$0</div>
+                        <div class="trader-stat-sub" id="qsClosed" style="font-size:11px">0 closed</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── LIVE TRADE FEED ─────────────────────────────────── -->
+            <div style="margin-top:24px">
+                <h3 style="font-size:16px;margin-bottom:10px;display:flex;align-items:center;gap:8px">
+                    ⚡ Live Trade Feed
+                    <span class="live-pulse" style="width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;animation:pulse 2s infinite"></span>
+                </h3>
+                <div id="liveFeedContainer" style="max-height:280px;overflow-y:auto;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:0">
+                    <div class="empty-state" style="padding:20px"><p>Loading feed...</p></div>
+                </div>
+            </div>
+
+            <!-- ── P&L PERFORMANCE CHART ───────────────────────────── -->
+            <div style="margin-top:24px">
+                <h3 style="font-size:16px;margin-bottom:10px;display:flex;align-items:center;gap:8px">
+                    📈 P&L Performance
+                    <select id="chartDaysSelect" onchange="loadPnlChart()" style="margin-left:auto;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px">
+                        <option value="7">7 days</option>
+                        <option value="14" selected>14 days</option>
+                        <option value="30">30 days</option>
+                    </select>
+                </h3>
+                <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:16px">
+                    <canvas id="pnlChart" height="220" style="width:100%"></canvas>
+                    <div id="pnlChartEmpty" style="display:none;text-align:center;padding:40px;color:var(--text-muted)">No P&L data yet — trades will appear here</div>
+                </div>
+            </div>
+
+            <!-- ── CYCLE LOG ───────────────────────────────────────── -->
+            <div style="margin-top:24px">
+                <h3 style="font-size:16px;margin-bottom:10px">🔄 Auto-Trade Cycle Log</h3>
+                <div id="cycleLogContainer" style="max-height:320px;overflow-y:auto;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:0">
+                    <div class="empty-state" style="padding:20px"><p>Cycle log loads when auto-trader runs...</p></div>
+                </div>
             </div>
 
             <!-- Open Positions -->
@@ -8516,6 +8641,12 @@
                 // Open Positions
                 renderTraderPositions(positions.open || []);
 
+                // Load extended dashboard sections (non-blocking)
+                loadTodayQuickStats();
+                loadLiveFeed();
+                loadPnlChart();
+                loadCycleLog();
+
             } catch (e) {
                 console.error('Trader load failed:', e);
             }
@@ -8532,6 +8663,172 @@
             } finally {
                 if (btn) { btn.disabled = false; btn.style.opacity = '1'; btn.textContent = '🔄'; }
             }
+        }
+
+        // ── TODAY'S QUICK STATS ──────────────────────────────────
+        async function loadTodayQuickStats() {
+            try {
+                const s = await api('/api/trader/today-stats');
+                document.getElementById('qsTrades').textContent = s.today_trades;
+                document.getElementById('qsBuySell').textContent = `${s.today_buys} buys / ${s.today_sells} sells`;
+                const pnlEl = document.getElementById('qsPnl');
+                pnlEl.textContent = `${s.today_pnl >= 0 ? '+' : ''}$${formatUSD(Math.abs(s.today_pnl))}`;
+                pnlEl.style.color = s.today_pnl >= 0 ? 'var(--green)' : 'var(--red)';
+                document.getElementById('qsWinLoss').textContent = `${s.today_wins}W / ${s.today_losses}L`;
+                document.getElementById('qsHoldTime').textContent = s.avg_hold_minutes > 0 ? `${s.avg_hold_minutes}m` : '--';
+                const bestEl = document.getElementById('qsBest');
+                bestEl.textContent = s.today_best > 0 ? `+$${formatUSD(s.today_best)}` : '$0';
+                bestEl.style.color = s.today_best > 0 ? 'var(--green)' : 'var(--text-muted)';
+                document.getElementById('qsVolume').textContent = `$${formatUSD(s.today_volume)}`;
+                document.getElementById('qsClosed').textContent = `${s.today_closed_count} closed`;
+                document.getElementById('todayStatsTime').textContent = `Updated ${new Date().toLocaleTimeString()}`;
+            } catch (e) { console.warn('Quick stats load failed:', e); }
+        }
+
+        // ── LIVE TRADE FEED ──────────────────────────────────────
+        async function loadLiveFeed() {
+            try {
+                const feed = await api('/api/trader/live-feed?limit=15');
+                const el = document.getElementById('liveFeedContainer');
+                if (!feed.length) {
+                    el.innerHTML = '<div class="empty-state" style="padding:20px"><p>No trades yet — the bot is scanning markets...</p></div>';
+                    return;
+                }
+                el.innerHTML = feed.map(f => {
+                    const actionCls = f.action.toLowerCase();
+                    const dir = f.direction;
+                    const hash = f.tx_hash || '';
+                    const shortHash = hash ? hash.slice(0, 8) + '…' : '';
+                    const time = new Date(f.time);
+                    const ago = _timeAgo(time);
+                    return `<div class="feed-item">
+                        <span class="feed-action ${actionCls}">${f.action}</span>
+                        <strong style="min-width:60px">${f.symbol}</strong>
+                        <span style="color:var(--text-muted)">@</span>
+                        <span>$${f.price < 1 ? f.price.toFixed(6) : f.price.toFixed(2)}</span>
+                        <span style="color:${dir==='LONG'?'var(--green)':'var(--red)'};font-size:11px;font-weight:600">${dir === 'LONG' ? '▲' : '▼'} ${dir}</span>
+                        ${hash ? `<span style="font-family:monospace;font-size:10px;color:var(--text-muted);cursor:pointer" onclick="verifyHash('${hash}')" title="${hash}">🔗${shortHash}</span>` : ''}
+                        <span class="feed-amount">$${formatUSD(f.amount)}</span>
+                        <span class="feed-time">${ago}</span>
+                    </div>`;
+                }).join('');
+            } catch (e) { console.warn('Live feed load failed:', e); }
+        }
+
+        function _timeAgo(date) {
+            const s = Math.floor((Date.now() - date.getTime()) / 1000);
+            if (s < 60) return `${s}s ago`;
+            if (s < 3600) return `${Math.floor(s/60)}m ago`;
+            if (s < 86400) return `${Math.floor(s/3600)}h ago`;
+            return `${Math.floor(s/86400)}d ago`;
+        }
+
+        // ── P&L PERFORMANCE CHART ────────────────────────────────
+        let _pnlChartInstance = null;
+        async function loadPnlChart() {
+            try {
+                const days = parseInt(document.getElementById('chartDaysSelect').value) || 14;
+                const data = await api(`/api/trader/pnl-chart?days=${days}`);
+                const canvas = document.getElementById('pnlChart');
+                const emptyEl = document.getElementById('pnlChartEmpty');
+
+                if (!data.length || data.every(d => d.cumulative_pnl === 0 && d.daily_pnl === 0)) {
+                    canvas.style.display = 'none';
+                    emptyEl.style.display = 'block';
+                    return;
+                }
+                canvas.style.display = 'block';
+                emptyEl.style.display = 'none';
+
+                const labels = data.map(d => d.date.slice(5)); // MM-DD
+                const cumData = data.map(d => d.cumulative_pnl);
+                const dailyData = data.map(d => d.daily_pnl);
+
+                if (_pnlChartInstance) _pnlChartInstance.destroy();
+
+                const ctx = canvas.getContext('2d');
+                _pnlChartInstance = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels,
+                        datasets: [
+                            {
+                                label: 'Cumulative P&L',
+                                data: cumData,
+                                borderColor: '#6c5ce7',
+                                backgroundColor: 'rgba(108,92,231,0.1)',
+                                fill: true,
+                                tension: 0.3,
+                                pointRadius: 2,
+                                borderWidth: 2,
+                            },
+                            {
+                                label: 'Daily P&L',
+                                data: dailyData,
+                                type: 'bar',
+                                backgroundColor: dailyData.map(v => v >= 0 ? 'rgba(16,185,129,0.5)' : 'rgba(239,68,68,0.5)'),
+                                borderRadius: 3,
+                                barPercentage: 0.5,
+                            },
+                        ],
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: { mode: 'index', intersect: false },
+                        plugins: {
+                            legend: { labels: { color: '#aaa', font: { size: 11 } } },
+                            tooltip: {
+                                callbacks: {
+                                    label: (ctx) => `${ctx.dataset.label}: $${ctx.raw.toLocaleString(undefined, {minimumFractionDigits:2})}`,
+                                },
+                            },
+                        },
+                        scales: {
+                            x: { ticks: { color: '#666', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                            y: {
+                                ticks: {
+                                    color: '#666',
+                                    font: { size: 10 },
+                                    callback: (v) => '$' + v.toLocaleString(),
+                                },
+                                grid: { color: 'rgba(255,255,255,0.05)' },
+                            },
+                        },
+                    },
+                });
+            } catch (e) { console.warn('P&L chart load failed:', e); }
+        }
+
+        // ── CYCLE LOG ────────────────────────────────────────────
+        async function loadCycleLog() {
+            try {
+                const cycles = await fetch(API + '/api/trader/cycle-log').then(r => r.json());
+                const el = document.getElementById('cycleLogContainer');
+                if (!cycles.length) {
+                    el.innerHTML = '<div class="empty-state" style="padding:20px"><p>No cycles recorded yet — auto-trader will log cycles here</p></div>';
+                    return;
+                }
+                el.innerHTML = cycles.map(c => {
+                    const time = new Date(c.time);
+                    const statusCls = c.status === 'ok' ? 'ok' : (c.status === 'disabled' || c.status === 'paused') ? 'disabled' : 'ok';
+                    const port = c.portfolio || {};
+                    const portText = port.total_positions !== undefined
+                        ? `${port.long_positions || 0}L / ${port.short_positions || 0}S (${port.total_positions}/${port.max_slots || 15})`
+                        : '';
+                    return `<div class="cycle-item">
+                        <div class="cycle-header">
+                            <span style="color:var(--text-muted);font-size:11px;min-width:50px">#${c.cycle}</span>
+                            <span class="cycle-badge ${statusCls}">${c.status.toUpperCase()}</span>
+                            <span style="font-size:12px">🆕 ${c.new_trades} trades</span>
+                            <span style="font-size:12px">📝 ${c.positions_updated} updated</span>
+                            ${portText ? `<span style="font-size:11px;color:var(--text-muted)">📊 ${portText}</span>` : ''}
+                            <span class="feed-time" style="margin-left:auto">${time.toLocaleTimeString()}</span>
+                        </div>
+                        ${c.actions && c.actions.length ? `<div class="cycle-actions">${c.actions.map(a => `<div>→ ${a}</div>`).join('')}</div>` : ''}
+                    </div>`;
+                }).join('');
+            } catch (e) { console.warn('Cycle log load failed:', e); }
         }
 
         // Auto-refresh trader dashboard every 30 seconds when on Auto Trader page

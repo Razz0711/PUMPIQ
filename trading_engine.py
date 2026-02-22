@@ -51,6 +51,10 @@ STABLECOINS = {"tether", "usd-coin", "dai", "usd1-wlfi", "binance-usd", "true-us
 _autotrader_task = None  # reference to the background asyncio task
 _autotrader_running = False
 
+# ── Cycle log ring buffer (in-memory, last 50 cycles) ──
+from collections import deque
+_cycle_log: deque = deque(maxlen=50)
+
 # ── Backtest result cache (avoid re-running for same coin within 1 hour) ──
 _backtest_cache: Dict[str, Tuple[float, "BacktestResult"]] = {}
 BACKTEST_CACHE_TTL = 3600  # seconds
@@ -1079,6 +1083,132 @@ def get_todays_trade_count() -> int:
         return 0
 
 
+def get_today_quick_stats(user_id: int) -> Dict[str, Any]:
+    """Get today's quick stats: trades, P&L, avg hold time, best/worst."""
+    sb = get_supabase()
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00+00:00")
+    try:
+        # Today's orders
+        orders = sb.table("trade_orders").select("*").eq("user_id", user_id).gte("created_at", today).execute()
+        today_orders = orders.data or []
+
+        # Today's closed positions
+        closed = sb.table("trade_positions").select("*").eq("user_id", user_id).eq("status", "closed").gte("closed_at", today).execute()
+        today_closed = closed.data or []
+
+        today_pnl = sum(p.get("pnl", 0) for p in today_closed)
+        today_trades = len(today_orders)
+        wins = sum(1 for p in today_closed if p.get("pnl", 0) > 0)
+        losses = sum(1 for p in today_closed if p.get("pnl", 0) <= 0)
+        best = max((p.get("pnl", 0) for p in today_closed), default=0)
+        worst = min((p.get("pnl", 0) for p in today_closed), default=0)
+
+        # Avg hold time for closed positions today
+        hold_times = []
+        for p in today_closed:
+            opened = p.get("opened_at") or p.get("created_at")
+            closed_at = p.get("closed_at")
+            if opened and closed_at:
+                try:
+                    t0 = datetime.fromisoformat(str(opened).replace("Z", "+00:00"))
+                    t1 = datetime.fromisoformat(str(closed_at).replace("Z", "+00:00"))
+                    hold_times.append((t1 - t0).total_seconds() / 60)
+                except Exception:
+                    pass
+        avg_hold_min = round(sum(hold_times) / len(hold_times), 1) if hold_times else 0
+
+        # Buy / sell counts
+        buys = sum(1 for o in today_orders if o.get("action") in ("BUY", "SHORT"))
+        sells = sum(1 for o in today_orders if o.get("action") in ("SELL", "COVER"))
+
+        # Volume today
+        volume = sum(o.get("amount", 0) for o in today_orders)
+
+        return {
+            "today_trades": today_trades,
+            "today_buys": buys,
+            "today_sells": sells,
+            "today_pnl": round(today_pnl, 2),
+            "today_wins": wins,
+            "today_losses": losses,
+            "today_best": round(best, 2),
+            "today_worst": round(worst, 2),
+            "avg_hold_minutes": avg_hold_min,
+            "today_volume": round(volume, 2),
+            "today_closed_count": len(today_closed),
+        }
+    except Exception as e:
+        logger.warning("get_today_quick_stats error: %s", e)
+        return {
+            "today_trades": 0, "today_buys": 0, "today_sells": 0,
+            "today_pnl": 0, "today_wins": 0, "today_losses": 0,
+            "today_best": 0, "today_worst": 0, "avg_hold_minutes": 0,
+            "today_volume": 0, "today_closed_count": 0,
+        }
+
+
+def get_pnl_chart_data(user_id: int, days: int = 14) -> List[Dict[str, Any]]:
+    """Get daily cumulative P&L data for charting."""
+    sb = get_supabase()
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT00:00:00+00:00")
+    try:
+        result = sb.table("trade_positions").select("pnl,closed_at").eq("user_id", user_id).eq("status", "closed").gte("closed_at", since).order("closed_at").execute()
+        positions = result.data or []
+
+        daily_pnl: Dict[str, float] = {}
+        for p in positions:
+            if not p.get("closed_at"):
+                continue
+            day = str(p["closed_at"])[:10]
+            daily_pnl[day] = daily_pnl.get(day, 0) + (p.get("pnl", 0) or 0)
+
+        # Build cumulative chart data for last N days
+        chart = []
+        cumulative = 0
+        start = datetime.now(timezone.utc) - timedelta(days=days)
+        for i in range(days + 1):
+            d = (start + timedelta(days=i)).strftime("%Y-%m-%d")
+            cumulative += daily_pnl.get(d, 0)
+            chart.append({
+                "date": d,
+                "daily_pnl": round(daily_pnl.get(d, 0), 2),
+                "cumulative_pnl": round(cumulative, 2),
+            })
+        return chart
+    except Exception as e:
+        logger.warning("get_pnl_chart_data error: %s", e)
+        return []
+
+
+def get_live_feed(user_id: int, limit: int = 20) -> List[Dict[str, Any]]:
+    """Get the most recent trade actions for the live feed."""
+    sb = get_supabase()
+    try:
+        result = sb.table("trade_orders").select("action,symbol,price,amount,ai_score,created_at,tx_hash").eq("user_id", user_id).order("created_at", desc=True).limit(limit).execute()
+        feed = []
+        for o in (result.data or []):
+            action = o.get("action", "BUY")
+            feed.append({
+                "action": action,
+                "symbol": o.get("symbol", "???"),
+                "price": o.get("price", 0),
+                "amount": o.get("amount", 0),
+                "score": o.get("ai_score", 0),
+                "time": o.get("created_at", ""),
+                "tx_hash": o.get("tx_hash", ""),
+                "direction": "SHORT" if action in ("SHORT", "COVER") else "LONG",
+            })
+        return feed
+    except Exception as e:
+        logger.warning("get_live_feed error: %s", e)
+        return []
+
+
+def get_cycle_log() -> List[Dict[str, Any]]:
+    """Return the last N cycle summaries from the in-memory ring buffer."""
+    return list(_cycle_log)
+
+
 # Tables are created via Supabase SQL Editor (database/supabase_schema.sql)
 
 
@@ -1206,6 +1336,17 @@ async def continuous_trading_loop(cg_collector, dex_collector, gemini_client=Non
             )
             for action in actions:
                 logger.info("  → %s", action)
+
+            # Record cycle summary in ring buffer for the Cycle Log UI
+            _cycle_log.appendleft({
+                "cycle": cycle_count,
+                "time": datetime.now(timezone.utc).isoformat(),
+                "status": status,
+                "new_trades": new_trades,
+                "positions_updated": positions_updated,
+                "actions": actions[:5],  # keep max 5 action strings per entry
+                "portfolio": result.get("portfolio_summary", {}),
+            })
 
             # 2. Evaluate past predictions (learning from mistakes)
             ll = _get_learning_loop()
