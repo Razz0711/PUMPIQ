@@ -105,6 +105,9 @@ temp/
 # Debug / one-off scripts
 _debug/
 
+# ML model snapshots (only keep *_latest.pkl)
+ml/models/*_20*.pkl
+
 # OS
 Thumbs.db
 .DS_Store
