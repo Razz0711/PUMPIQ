@@ -34,6 +34,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from blockchain_service import blockchain
 from supabase_db import get_supabase
 from src.backtest_engine import get_backtest_engine, BacktestResult
+from src.ml_backtester import get_ml_backtester
 
 logger = logging.getLogger(__name__)
 
@@ -129,22 +130,15 @@ def _get_learning_adjustments() -> Dict[str, Any]:
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
         recent = [a for a in recent if a.get("created_at", "") >= cutoff]
 
-        # DEDUPLICATE: only count each adjustment_type ONCE (most recent wins)
-        # The learning loop generates the same types every 10 cycles, so without
-        # dedup they stack to absurd levels (e.g. 17× global_reduction = +255).
-        seen_types: set = set()
         for adj in recent:
             adj_type = adj.get("adjustment_type", "")
-            if adj_type in seen_types:
-                continue  # Already processed the most recent one
-            seen_types.add(adj_type)
 
             if adj_type == "token_confidence_reduction":
                 desc = adj.get("description", "")
                 token = desc.split(" ")[0].lower() if desc else ""
                 if token:
-                    adjustments["token_penalties"][token] = max(
-                        adjustments["token_penalties"].get(token, 0) - 15, -25
+                    adjustments["token_penalties"][token] = (
+                        adjustments["token_penalties"].get(token, 0) - 15
                     )
 
             elif adj_type == "direction_bias_correction":
@@ -159,7 +153,7 @@ def _get_learning_adjustments() -> Dict[str, Any]:
                     )
 
             elif adj_type == "global_confidence_reduction":
-                adjustments["global_score_offset"] += 10
+                adjustments["global_score_offset"] += 15
                 adjustments["reduce_position_size"] = True
 
             elif adj_type == "global_confidence_increase":
@@ -168,27 +162,20 @@ def _get_learning_adjustments() -> Dict[str, Any]:
                 )
 
             elif adj_type == "pnl_drift_alert":
-                adjustments["sl_modifier"] = min(
-                    adjustments["sl_modifier"] + 1.0, 2.0
-                )
+                adjustments["sl_modifier"] += 1.0
                 adjustments["reduce_position_size"] = True
 
             elif adj_type == "regime_weight_reduction":
-                adjustments["global_score_offset"] += 5
-
-        # CAP offsets to sane maximums — never block all trading
-        # Max +15 means effective threshold goes from 30→45 at worst (still reachable)
-        adjustments["global_score_offset"] = min(adjustments["global_score_offset"], 15)
-        adjustments["sl_modifier"] = min(adjustments["sl_modifier"], 2.0)
+                adjustments["global_score_offset"] += 10
 
         # Additionally: penalize tokens in worst predictions
         try:
             stats = ll.get_performance_stats(days=7)
             for w in stats.get("worst_predictions", []):
                 ticker = w.get("token_ticker", "").lower()
-                if ticker and ticker not in adjustments["token_penalties"]:
-                    adjustments["token_penalties"][ticker] = max(
-                        adjustments["token_penalties"].get(ticker, 0) - 10, -25
+                if ticker:
+                    adjustments["token_penalties"][ticker] = (
+                        adjustments["token_penalties"].get(ticker, 0) - 10
                     )
             # Heavily penalize directions with <30% accuracy
             for direction, ddata in stats.get("direction_accuracy", {}).items():
@@ -587,65 +574,131 @@ def execute_sell(user_id, position_id, current_price, reason="manual"):
 # -- AI Research Engine --------------------------------------------------------
 
 async def research_opportunities(cg_collector, dex_collector, gemini_client=None):
-    """Research and score trading opportunities (LONG and SHORT signals)."""
+    """Research and score trading opportunities — DIRECTION-AGNOSTIC.
+    
+    Principle: We don't have a LONG bias or SHORT bias.
+    We READ THE MARKET and pick the direction that maximises profit.
+    Both sides get symmetric scoring — bearish signals are just as valuable as bullish ones.
+    XGBoost ML predictions (model_dir, model_7d) are used to validate direction.
+    """
     opportunities = []
+
+    # ── Load XGBoost ML backtester for prediction signals ──
+    ml_bt = get_ml_backtester()
+
     try:
-        top_coins = await cg_collector.get_top_coins(limit=50)  # Increased from 30 to 50 for more diversity
+        top_coins = await cg_collector.get_top_coins(limit=50)
         trending = await cg_collector.get_trending()
         trending_ids = {t.coin_id for t in trending} if trending else set()
 
-        for coin in top_coins:
-            # Skip stablecoins — they don't move
+        # ── Batch ML predictions for top coins ──
+        ml_predictions = {}  # coin_id -> {buy_probability, prediction}
+        for coin in top_coins[:20]:  # ML predict on top 20 (avoid rate limits)
             if coin.coin_id in STABLECOINS:
                 continue
-            # Skip coins with invalid prices
+            try:
+                pred = await ml_bt.predict_latest(coin.coin_id, cg_collector, days=90)
+                if pred:
+                    ml_predictions[coin.coin_id] = pred
+            except Exception:
+                pass
+        if ml_predictions:
+            logger.info("ML predictions loaded for %d coins", len(ml_predictions))
+
+        for coin in top_coins:
+            if coin.coin_id in STABLECOINS:
+                continue
             if coin.current_price <= 0.001:
                 continue
 
             change_24h = coin.price_change_pct_24h
 
-            # ── LONG SIGNAL SCORING (widened for aggressive trading) ──
+            # ── SHARED FACTORS (direction-independent) ──
+            vol_ratio = coin.total_volume_24h / coin.market_cap if coin.market_cap > 0 else 0
+            ath_ratio = coin.current_price / coin.ath if hasattr(coin, 'ath') and coin.ath and coin.ath > 0 else 0.5
+            is_trending = coin.coin_id in trending_ids
+
+            # Market cap tier (both sides benefit from liquidity)
+            if coin.market_cap > 50_000_000_000:
+                cap_score = 12; cap_label = "Mega cap — liquid"
+            elif coin.market_cap > 10_000_000_000:
+                cap_score = 10; cap_label = "Large cap"
+            elif coin.market_cap > 1_000_000_000:
+                cap_score = 8; cap_label = "Mid cap"
+            elif coin.market_cap > 100_000_000:
+                cap_score = 5; cap_label = "Small cap"
+            else:
+                cap_score = 3; cap_label = "Micro cap"
+
+            # Volume (both sides benefit from active trading)
+            if vol_ratio > 0.3:
+                vol_score = 20; vol_label = f"High volume: {vol_ratio:.2f}"
+            elif vol_ratio > 0.1:
+                vol_score = 12; vol_label = f"Healthy volume: {vol_ratio:.2f}"
+            elif vol_ratio > 0.05:
+                vol_score = 6; vol_label = f"Normal volume: {vol_ratio:.2f}"
+            else:
+                vol_score = 2; vol_label = f"Low volume: {vol_ratio:.2f}"
+
+            # Trending (attention = opportunity in BOTH directions)
+            trend_score = 15 if is_trending else 0
+
+            # ── ML PREDICTION SIGNAL ──
+            ml_pred = ml_predictions.get(coin.coin_id)
+            ml_long_boost = 0
+            ml_short_boost = 0
+            ml_reason = ""
+            if ml_pred:
+                buy_prob = ml_pred.get("buy_probability", 0.5)
+                ml_acc = ml_pred.get("model_accuracy", 0.5)
+                if ml_acc >= 0.55:  # only trust model if accuracy > 55%
+                    if buy_prob >= 0.65:
+                        ml_long_boost = 15
+                        ml_reason = f"🤖 ML says BUY ({buy_prob*100:.0f}% prob, {ml_acc*100:.0f}% acc)"
+                    elif buy_prob >= 0.55:
+                        ml_long_boost = 8
+                        ml_reason = f"🤖 ML leans bullish ({buy_prob*100:.0f}%)"
+                    elif buy_prob <= 0.35:
+                        ml_short_boost = 15
+                        ml_reason = f"🤖 ML says SELL ({(1-buy_prob)*100:.0f}% bearish, {ml_acc*100:.0f}% acc)"
+                    elif buy_prob <= 0.45:
+                        ml_short_boost = 8
+                        ml_reason = f"🤖 ML leans bearish ({(1-buy_prob)*100:.0f}%)"
+
+            # ══════════════════════════════════════════════════════
+            # ── LONG SIGNAL SCORING ──
+            # ══════════════════════════════════════════════════════
             long_score = 0
             long_reasons = []
-            # Momentum scoring (broader bands)
+
+            # Bullish momentum
             if change_24h > 10:
                 long_score += 30; long_reasons.append(f"Explosive momentum: {change_24h:+.1f}%")
             elif change_24h > 3:
-                long_score += 25; long_reasons.append(f"Strong 24h momentum: {change_24h:+.1f}%")
+                long_score += 25; long_reasons.append(f"Strong bullish: {change_24h:+.1f}%")
             elif change_24h > 0.5:
-                long_score += 15; long_reasons.append(f"Positive momentum: {change_24h:+.1f}%")
+                long_score += 15; long_reasons.append(f"Positive: {change_24h:+.1f}%")
             elif change_24h > -1:
-                long_score += 8; long_reasons.append(f"Stable/flat: {change_24h:+.1f}%")
+                long_score += 8; long_reasons.append(f"Flat — mild dip-buy: {change_24h:+.1f}%")
             elif change_24h > -3:
-                long_score += 5; long_reasons.append(f"Mild dip — potential bounce: {change_24h:+.1f}%")
-            # Volume analysis
-            if coin.market_cap > 0:
-                vol_ratio = coin.total_volume_24h / coin.market_cap
-                if vol_ratio > 0.3:
-                    long_score += 20; long_reasons.append(f"High volume/mcap ratio: {vol_ratio:.2f}")
-                elif vol_ratio > 0.1:
-                    long_score += 12; long_reasons.append(f"Healthy volume: {vol_ratio:.2f}")
-                elif vol_ratio > 0.05:
-                    long_score += 6; long_reasons.append(f"Normal volume: {vol_ratio:.2f}")
-            # Trending
-            if coin.coin_id in trending_ids:
-                long_score += 15; long_reasons.append("Trending on CoinGecko")
-            # Market cap tiers
-            if coin.market_cap > 50_000_000_000:
-                long_score += 12; long_reasons.append("Mega cap - liquid & safe")
-            elif coin.market_cap > 10_000_000_000:
-                long_score += 10; long_reasons.append("Large cap - lower risk")
-            elif coin.market_cap > 1_000_000_000:
-                long_score += 8; long_reasons.append("Mid cap")
-            elif coin.market_cap > 100_000_000:
-                long_score += 5; long_reasons.append("Small cap - higher potential")
-            # ATH analysis
-            if hasattr(coin, 'ath') and coin.ath > 0:
-                ath_ratio = coin.current_price / coin.ath
-                if 0.2 < ath_ratio < 0.6:
-                    long_score += 12; long_reasons.append(f"Recovery potential - {(1-ath_ratio)*100:.0f}% below ATH")
-                elif 0.6 <= ath_ratio < 0.85:
-                    long_score += 6; long_reasons.append(f"Near ATH recovery zone")
+                long_score += 5; long_reasons.append(f"Dip-buy zone: {change_24h:+.1f}%")
+            # No points for LONG if change < -3% (don't catch falling knives)
+
+            # ATH recovery potential (LONG-specific)
+            if 0.2 < ath_ratio < 0.6:
+                long_score += 12; long_reasons.append(f"Recovery potential — {(1-ath_ratio)*100:.0f}% below ATH")
+            elif 0.6 <= ath_ratio < 0.85:
+                long_score += 6; long_reasons.append("Near ATH recovery zone")
+
+            # Add shared scores
+            long_score += cap_score; long_reasons.append(cap_label)
+            long_score += vol_score; long_reasons.append(vol_label)
+            if trend_score:
+                long_score += trend_score; long_reasons.append("Trending on CoinGecko")
+            # ML boost for LONG
+            if ml_long_boost:
+                long_score += ml_long_boost; long_reasons.append(ml_reason)
+
             long_score = max(0, min(100, long_score))
 
             if long_score >= 15:
@@ -657,42 +710,49 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
                     "source": "coingecko", "side": "long",
                 })
 
-            # ── SHORT SIGNAL SCORING (SHORT overextended pumps, not dumps) ──
-            # KEY FIX: Don't short after a dump (that's shorting the bottom).
-            # Instead, short overextended rallies and resistance zones.
+            # ══════════════════════════════════════════════════════
+            # ── SHORT SIGNAL SCORING (SYMMETRIC with LONG) ──
+            # ══════════════════════════════════════════════════════
             short_score = 0
             short_reasons = []
-            # Overextended pump — likely pullback (CONTRARIAN short)
+
+            # Bearish momentum (MIRROR of bullish scoring)
+            if change_24h < -10:
+                short_score += 30; short_reasons.append(f"Strong bearish momentum: {change_24h:+.1f}%")
+            elif change_24h < -3:
+                short_score += 25; short_reasons.append(f"Bearish continuation: {change_24h:+.1f}%")
+            elif change_24h < -0.5:
+                short_score += 15; short_reasons.append(f"Declining: {change_24h:+.1f}%")
+            elif change_24h < 1:
+                short_score += 8; short_reasons.append(f"Flat — mild short: {change_24h:+.1f}%")
+            elif change_24h < 3:
+                short_score += 5; short_reasons.append(f"Mild rally — fade zone: {change_24h:+.1f}%")
+            # No points for SHORT if change > 3% alone (don't short a rocket)
+
+            # Overextended pump (contrarian short — BONUS on top of base)
             if change_24h > 15:
-                short_score += 30; short_reasons.append(f"Overextended pump: {change_24h:+.1f}% — pullback likely")
+                short_score += 12; short_reasons.append(f"Pump overextended: {change_24h:+.1f}% — pullback likely")
             elif change_24h > 8:
-                short_score += 25; short_reasons.append(f"Rally exhaustion: {change_24h:+.1f}% — reversal signal")
-            elif change_24h > 4:
-                short_score += 12; short_reasons.append(f"Moderate rally: {change_24h:+.1f}% — watch for reversal")
-            # Bearish continuation (breakdown with volume confirmation)
-            if change_24h < -2 and coin.market_cap > 0:
-                vol_ratio = coin.total_volume_24h / coin.market_cap
-                if vol_ratio > 0.2:
-                    short_score += 20; short_reasons.append(f"Bearish breakdown + heavy volume: {vol_ratio:.2f}")
-                elif vol_ratio > 0.1:
-                    short_score += 12; short_reasons.append(f"Bearish continuation with volume: {vol_ratio:.2f}")
-                elif vol_ratio > 0.05:
-                    short_score += 6; short_reasons.append(f"Declining with normal volume: {vol_ratio:.2f}")
-            # Volume spike on a pump (distribution signal)
-            if change_24h > 3 and coin.market_cap > 0:
-                vol_ratio = coin.total_volume_24h / coin.market_cap
-                if vol_ratio > 0.4:
-                    short_score += 15; short_reasons.append(f"Distribution volume on pump: {vol_ratio:.2f}")
-            # ATH analysis — near ATH = strong resistance
-            if hasattr(coin, 'ath') and coin.ath > 0:
-                ath_ratio = coin.current_price / coin.ath
-                if ath_ratio > 0.95:
-                    short_score += 20; short_reasons.append(f"At ATH ({ath_ratio*100:.0f}%) — heavy resistance")
-                elif ath_ratio > 0.85:
-                    short_score += 12; short_reasons.append(f"Near ATH ({ath_ratio*100:.0f}%) — resistance zone")
-            # Large cap pump exhaustion
-            if change_24h > 5 and coin.market_cap > 5_000_000_000:
-                short_score += 10; short_reasons.append("Large cap overextended — mean reversion likely")
+                short_score += 8; short_reasons.append(f"Rally exhaustion: {change_24h:+.1f}%")
+
+            # ATH resistance (SHORT-specific: near ATH = rejection zone)
+            if ath_ratio > 0.95:
+                short_score += 12; short_reasons.append(f"At ATH ({ath_ratio*100:.0f}%) — heavy resistance")
+            elif ath_ratio > 0.85:
+                short_score += 8; short_reasons.append(f"Near ATH ({ath_ratio*100:.0f}%) — resistance zone")
+            # Far below ATH = already weak (short-friendly)
+            elif ath_ratio < 0.3:
+                short_score += 6; short_reasons.append(f"Deep below ATH ({ath_ratio*100:.0f}%) — sustained weakness")
+
+            # Add shared scores (liquidity matters for shorts too)
+            short_score += cap_score; short_reasons.append(cap_label)
+            short_score += vol_score; short_reasons.append(vol_label)
+            if trend_score:
+                short_score += trend_score; short_reasons.append("Trending — high attention")
+            # ML boost for SHORT
+            if ml_short_boost:
+                short_score += ml_short_boost; short_reasons.append(ml_reason)
+
             short_score = max(0, min(100, short_score))
 
             if short_score >= 15:
@@ -895,7 +955,7 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
         "conservative": {"max_trade_pct_mult": 0.5, "min_score": 70, "stop_loss_add": 2},
         "moderate":     {"max_trade_pct_mult": 1.0, "min_score": 50, "stop_loss_add": 0},
         "balanced":     {"max_trade_pct_mult": 1.0, "min_score": 50, "stop_loss_add": 0},
-        "aggressive":   {"max_trade_pct_mult": 1.5, "min_score": 30, "stop_loss_add": 0},
+        "aggressive":   {"max_trade_pct_mult": 1.5, "min_score": 40, "stop_loss_add": 0},
     }
     mods = risk_modifiers.get(risk_profile, risk_modifiers["aggressive"])
 
