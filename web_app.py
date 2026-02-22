@@ -3431,7 +3431,7 @@ async def get_enhanced_ai_recommendations(
 
         ai_client = gemini_client
         orch = Orchestrator(
-            gpt_client=ai_client,
+            ai_client=ai_client,
             data_fetcher=dp.fetch if dp else None,
             market_condition=MarketCondition.SIDEWAYS,
         )

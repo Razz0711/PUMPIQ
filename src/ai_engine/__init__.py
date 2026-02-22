@@ -6,7 +6,6 @@ and Natural Language Generation.
 
 Supported AI backends:
     - GeminiClient (Google Gemini 2.0 Flash – default, free tier)
-    - GPTClient    (OpenAI GPT-4o – legacy, requires paid key)
 
 Public API
 ----------
@@ -50,7 +49,6 @@ from .confidence_scorer import (
     confidence_risk_verdict,
 )
 from .conflict_detector import ConflictDetector
-from .gpt_client import GPTClient, GPTResponse
 from .gemini_client import GeminiClient, GeminiResponse
 from .nlg_engine import NLGEngine
 from .prompt_templates import PromptBuilder
@@ -64,8 +62,6 @@ __all__ = [
     # AI clients
     "GeminiClient",
     "GeminiResponse",
-    "GPTClient",
-    "GPTResponse",
     # Sub-engines
     "ConfidenceScorer",
     "RiskRater",

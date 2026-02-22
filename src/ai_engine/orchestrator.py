@@ -73,7 +73,6 @@ from .confidence_scorer import (
     confidence_risk_verdict,
 )
 from .conflict_detector import ConflictDetector
-from .gpt_client import GPTClient, GPTResponse
 from .gemini_client import GeminiClient, GeminiResponse
 from .nlg_engine import NLGEngine
 from .prompt_templates import PromptBuilder
@@ -176,8 +175,7 @@ class Orchestrator:
     """
     Central coordinator for the NexYpher AI synthesis pipeline.
 
-    Accepts either a ``GeminiClient`` (default) or ``GPTClient`` (legacy)
-    as the AI backend — both expose the same ``chat()`` interface.
+    Central AI coordinator using ``GeminiClient`` as the backend.
 
     Usage::
 
@@ -190,12 +188,11 @@ class Orchestrator:
 
     def __init__(
         self,
-        ai_client: Any = None,                              # GeminiClient or GPTClient
-        gpt_client: Any = None,                              # legacy alias
+        ai_client: Any = None,                              # GeminiClient
+        gpt_client: Any = None,                              # legacy alias (deprecated)
         data_fetcher: Optional[Callable[..., Any]] = None,
         market_condition: MarketCondition = MarketCondition.SIDEWAYS,
     ):
-        # Accept either keyword — ai_client takes priority
         self.gpt = ai_client or gpt_client
         self.data_fetcher = data_fetcher
         self.market = market_condition

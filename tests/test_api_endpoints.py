@@ -38,7 +38,7 @@ class TestHealthEndpoints:
         names = [c["name"] for c in resp.json()["components"]]
         assert "redis" in names
         assert "database" in names
-        assert "gpt_client" in names
+        assert "ai_client" in names
 
 
 # ══════════════════════════════════════════════════════════════════

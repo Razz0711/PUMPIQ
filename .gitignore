@@ -108,6 +108,9 @@ _debug/
 # ML model snapshots (only keep *_latest.pkl)
 ml/models/*_20*.pkl
 
+# Per-coin XGBoost caches (auto-generated at runtime)
+ml_models/
+
 # OS
 Thumbs.db
 .DS_Store
