@@ -129,15 +129,22 @@ def _get_learning_adjustments() -> Dict[str, Any]:
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
         recent = [a for a in recent if a.get("created_at", "") >= cutoff]
 
+        # DEDUPLICATE: only count each adjustment_type ONCE (most recent wins)
+        # The learning loop generates the same types every 10 cycles, so without
+        # dedup they stack to absurd levels (e.g. 17× global_reduction = +255).
+        seen_types: set = set()
         for adj in recent:
             adj_type = adj.get("adjustment_type", "")
+            if adj_type in seen_types:
+                continue  # Already processed the most recent one
+            seen_types.add(adj_type)
 
             if adj_type == "token_confidence_reduction":
                 desc = adj.get("description", "")
                 token = desc.split(" ")[0].lower() if desc else ""
                 if token:
-                    adjustments["token_penalties"][token] = (
-                        adjustments["token_penalties"].get(token, 0) - 15
+                    adjustments["token_penalties"][token] = max(
+                        adjustments["token_penalties"].get(token, 0) - 15, -25
                     )
 
             elif adj_type == "direction_bias_correction":
@@ -152,7 +159,7 @@ def _get_learning_adjustments() -> Dict[str, Any]:
                     )
 
             elif adj_type == "global_confidence_reduction":
-                adjustments["global_score_offset"] += 15
+                adjustments["global_score_offset"] += 10
                 adjustments["reduce_position_size"] = True
 
             elif adj_type == "global_confidence_increase":
@@ -161,20 +168,27 @@ def _get_learning_adjustments() -> Dict[str, Any]:
                 )
 
             elif adj_type == "pnl_drift_alert":
-                adjustments["sl_modifier"] += 1.0
+                adjustments["sl_modifier"] = min(
+                    adjustments["sl_modifier"] + 1.0, 2.0
+                )
                 adjustments["reduce_position_size"] = True
 
             elif adj_type == "regime_weight_reduction":
-                adjustments["global_score_offset"] += 10
+                adjustments["global_score_offset"] += 5
+
+        # CAP offsets to sane maximums — never block all trading
+        # Max +15 means effective threshold goes from 30→45 at worst (still reachable)
+        adjustments["global_score_offset"] = min(adjustments["global_score_offset"], 15)
+        adjustments["sl_modifier"] = min(adjustments["sl_modifier"], 2.0)
 
         # Additionally: penalize tokens in worst predictions
         try:
             stats = ll.get_performance_stats(days=7)
             for w in stats.get("worst_predictions", []):
                 ticker = w.get("token_ticker", "").lower()
-                if ticker:
-                    adjustments["token_penalties"][ticker] = (
-                        adjustments["token_penalties"].get(ticker, 0) - 10
+                if ticker and ticker not in adjustments["token_penalties"]:
+                    adjustments["token_penalties"][ticker] = max(
+                        adjustments["token_penalties"].get(ticker, 0) - 10, -25
                     )
             # Heavily penalize directions with <30% accuracy
             for direction, ddata in stats.get("direction_accuracy", {}).items():
@@ -602,6 +616,8 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
                 long_score += 15; long_reasons.append(f"Positive momentum: {change_24h:+.1f}%")
             elif change_24h > -1:
                 long_score += 8; long_reasons.append(f"Stable/flat: {change_24h:+.1f}%")
+            elif change_24h > -3:
+                long_score += 5; long_reasons.append(f"Mild dip — potential bounce: {change_24h:+.1f}%")
             # Volume analysis
             if coin.market_cap > 0:
                 vol_ratio = coin.total_volume_24h / coin.market_cap
@@ -653,13 +669,15 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
                 short_score += 25; short_reasons.append(f"Rally exhaustion: {change_24h:+.1f}% — reversal signal")
             elif change_24h > 4:
                 short_score += 12; short_reasons.append(f"Moderate rally: {change_24h:+.1f}% — watch for reversal")
-            # Breakdown on high volume (continuation short — only with conviction)
-            if change_24h < -3 and coin.market_cap > 0:
+            # Bearish continuation (breakdown with volume confirmation)
+            if change_24h < -2 and coin.market_cap > 0:
                 vol_ratio = coin.total_volume_24h / coin.market_cap
-                if vol_ratio > 0.3:
-                    short_score += 18; short_reasons.append(f"Breakdown + panic volume: {vol_ratio:.2f}")
-                elif vol_ratio > 0.15:
-                    short_score += 8; short_reasons.append(f"Sell-off with volume: {vol_ratio:.2f}")
+                if vol_ratio > 0.2:
+                    short_score += 20; short_reasons.append(f"Bearish breakdown + heavy volume: {vol_ratio:.2f}")
+                elif vol_ratio > 0.1:
+                    short_score += 12; short_reasons.append(f"Bearish continuation with volume: {vol_ratio:.2f}")
+                elif vol_ratio > 0.05:
+                    short_score += 6; short_reasons.append(f"Declining with normal volume: {vol_ratio:.2f}")
             # Volume spike on a pump (distribution signal)
             if change_24h > 3 and coin.market_cap > 0:
                 vol_ratio = coin.total_volume_24h / coin.market_cap
@@ -877,7 +895,7 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
         "conservative": {"max_trade_pct_mult": 0.5, "min_score": 70, "stop_loss_add": 2},
         "moderate":     {"max_trade_pct_mult": 1.0, "min_score": 50, "stop_loss_add": 0},
         "balanced":     {"max_trade_pct_mult": 1.0, "min_score": 50, "stop_loss_add": 0},
-        "aggressive":   {"max_trade_pct_mult": 1.5, "min_score": 40, "stop_loss_add": 0},
+        "aggressive":   {"max_trade_pct_mult": 1.5, "min_score": 30, "stop_loss_add": 0},
     }
     mods = risk_modifiers.get(risk_profile, risk_modifiers["aggressive"])
 
