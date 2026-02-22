@@ -1,4 +1,4 @@
-"""Close all bad positions (DEX tokens with address-based coin_ids or zero prices)."""
+ """Close all bad positions (DEX tokens with address-based coin_ids or zero prices)."""
 from dotenv import load_dotenv
 load_dotenv()
 from supabase_db import get_supabase

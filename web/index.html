@@ -644,37 +644,6 @@
             background: var(--cyan);
         }
 
-        /* ── Leaderboard ──────────────────────────────────────────── */
-        .lb-table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        .lb-table th {
-            text-align: left;
-            padding: 12px 16px;
-            font-size: 12px;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            border-bottom: 1px solid var(--border);
-        }
-
-        .lb-table td {
-            padding: 14px 16px;
-            border-bottom: 1px solid var(--border);
-            font-size: 14px;
-        }
-
-        .lb-table tr:hover {
-            background: var(--bg-card);
-        }
-
-        .trader-addr {
-            color: var(--accent);
-            font-family: monospace;
-            font-size: 13px;
-        }
-
         /* ── Modal ────────────────────────────────────────────────── */
         .modal-overlay {
             display: none;
@@ -4596,7 +4565,6 @@
             <button class="nav-tab" data-page="ai">AI Recs</button>
             <button class="nav-tab" data-page="insights">🧠 Insights</button>
             <button class="nav-tab" data-page="learning">📊 Learning</button>
-            <button class="nav-tab" data-page="leaderboard">Leaderboard</button>
             <button class="nav-tab" data-page="market">Market</button>
             <button class="nav-tab" data-page="trader">🤖 Auto Trader</button>
             <button class="nav-tab" data-page="settings">⚙️</button>
@@ -5199,31 +5167,6 @@
                 </div>
                 <div id="learningTokenResult"></div>
             </div>
-        </div>
-    </div>
-
-    <!-- ═══════════════════════════════════════════════════════════ -->
-    <!-- LEADERBOARD PAGE                                           -->
-    <!-- ═══════════════════════════════════════════════════════════ -->
-    <div class="page" id="page-leaderboard">
-        <div class="section-title">Leaderboard</div>
-        <div class="section-desc">Top traders by realized PnL</div>
-
-        <div style="overflow-x:auto">
-            <table class="lb-table">
-                <thead>
-                    <tr>
-                        <th>#</th>
-                        <th>Trader</th>
-                        <th>PnL (USD)</th>
-                        <th>Spent</th>
-                        <th>Received</th>
-                        <th>Trades</th>
-                        <th>Win Rate</th>
-                    </tr>
-                </thead>
-                <tbody id="lbBody"></tbody>
-            </table>
         </div>
     </div>
 
@@ -6071,11 +6014,6 @@
             <h3 style="margin-bottom:16px;font-size:16px">🔒 Data & Privacy</h3>
             <div style="display:flex;flex-direction:column;gap:12px">
                 <label style="display:flex;align-items:center;justify-content:space-between;cursor:pointer">
-                    <span style="color:var(--text-primary);font-size:14px">Show portfolio on leaderboard</span>
-                    <input type="checkbox" id="settShowPortfolio"
-                        style="accent-color:var(--primary);width:18px;height:18px">
-                </label>
-                <label style="display:flex;align-items:center;justify-content:space-between;cursor:pointer">
                     <span style="color:var(--text-primary);font-size:14px">Share trade history for AI training</span>
                     <input type="checkbox" id="settShareData" checked
                         style="accent-color:var(--primary);width:18px;height:18px">
@@ -6803,7 +6741,6 @@
             else if (page === 'ai') { loadAIGlobal(); }
             else if (page === 'insights') { /* ready for user search */ }
             else if (page === 'learning') { loadLearningStats(); loadStrategyAdjustments(); }
-            else if (page === 'leaderboard') { loadLeaderboard(); }
             else if (page === 'market') { loadMarket(); }
             else if (page === 'trader') { loadTraderDashboard(); }
             else if (page === 'settings') { loadSettings(); }
@@ -7805,31 +7742,6 @@
 
             } catch (e) {
                 enhCards.innerHTML = errorWithRetry('Enhanced AI analysis failed — ' + e.message, 'loadEnhancedAIRecs()');
-            }
-        }
-
-        // ── Leaderboard ───────────────────────────────────────────────
-        async function loadLeaderboard() {
-            const body = document.getElementById('lbBody');
-            body.innerHTML = skeletonRows(7, 15);
-
-            try {
-                const entries = await api('/api/leaderboard?limit=25');
-                body.innerHTML = entries.map(e => `
-            <tr>
-                <td>${e.rank}</td>
-                <td class="trader-addr">${e.trader}</td>
-                <td class="${e.pnl >= 0 ? 'price-positive' : 'price-negative'}" style="font-weight:600">
-                    ${e.pnl >= 0 ? '+' : ''}${fmt(e.pnl)}
-                </td>
-                <td>${fmt(e.spent)}</td>
-                <td>${fmt(e.received)}</td>
-                <td>${e.trades}</td>
-                <td>${e.win_rate}%</td>
-            </tr>
-        `).join('');
-            } catch (e) {
-                body.innerHTML = `<tr><td colspan="7">${errorWithRetry('Failed to load leaderboard \u2014 ' + e.message, 'loadLeaderboard()')}</td></tr>`;
             }
         }
 

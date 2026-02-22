@@ -163,16 +163,6 @@ class AIRecommendations(BaseModel):
     timestamp: str = ""
 
 
-class LeaderboardEntry(BaseModel):
-    rank: int
-    trader: str
-    pnl: float
-    spent: float
-    received: float
-    trades: int = 0
-    win_rate: float = 0.0
-
-
 class PortfolioItem(BaseModel):
     coin_id: str
     amount: float
@@ -1290,50 +1280,6 @@ async def run_backtest(
 
 
 # ══════════════════════════════════════════════════════════════════
-# LEADERBOARD
-# ══════════════════════════════════════════════════════════════════
-
-@app.get("/api/leaderboard", response_model=List[LeaderboardEntry])
-async def get_leaderboard(limit: int = Query(25, ge=1, le=100)):
-    pairs = await dex.search_pairs("SOL")
-    entries: List[LeaderboardEntry] = []
-    seen = set()
-
-    for idx, p in enumerate((pairs or [])[:limit]):
-        if p.pair_address in seen:
-            continue
-        seen.add(p.pair_address)
-
-        addr = p.pair_address
-        short_addr = f"0x{addr[:6]}...{addr[-6:]}" if len(addr) > 12 else addr
-
-        buys = p.txns_buys_24h
-        sells = p.txns_sells_24h
-        volume = p.volume_24h
-        change = p.price_change_24h
-
-        spent = volume * 0.45
-        received = volume * 0.55 * (1 + change / 100)
-        pnl = received - spent
-
-        entries.append(LeaderboardEntry(
-            rank=idx + 1,
-            trader=short_addr,
-            pnl=round(pnl, 4),
-            spent=round(spent, 4),
-            received=round(received, 4),
-            trades=buys + sells,
-            win_rate=round(min(95, max(20, 50 + change)), 1),
-        ))
-
-    entries.sort(key=lambda x: x.pnl, reverse=True)
-    for i, e in enumerate(entries):
-        e.rank = i + 1
-
-    return entries[:limit]
-
-
-# ══════════════════════════════════════════════════════════════════
 # DEX SEARCH
 # ══════════════════════════════════════════════════════════════════
 
@@ -2353,11 +2299,6 @@ class AlgoExchangeConnect(BaseModel):
     passphrase: str = ""
 
 
-class AlgoBacktestRequest(BaseModel):
-    strategy_id: int
-    time_range: str = "1M"
-
-
 # ── Strategy Endpoints ──
 
 @app.get("/api/algo/strategies")
@@ -2452,38 +2393,6 @@ async def disconnect_algo_exchange(exchange_id: int, user=Depends(require_user))
     sb = get_supabase()
     sb.table("algo_exchanges").delete().eq("id", exchange_id).eq("user_id", user.id).execute()
     return {"success": True}
-
-
-# ── Backtest Endpoint ──
-
-@app.post("/api/algo/backtest")
-async def run_algo_backtest(body: AlgoBacktestRequest, user=Depends(require_user)):
-    sb = get_supabase()
-    strategy = sb.table("algo_strategies").select("id").eq("id", body.strategy_id).eq("user_id", user.id).execute()
-    if not strategy.data:
-        raise HTTPException(404, "Strategy not found")
-
-    import random
-    total_return = round(random.uniform(-15, 50), 2)
-    max_drawdown = round(random.uniform(-20, -2), 2)
-    win_rate = round(random.uniform(35, 75), 1)
-    sharpe = round(random.uniform(0.3, 2.5), 2)
-    total_trades = random.randint(20, 200)
-
-    sb.table("algo_backtest_results").insert({
-        "user_id": user.id, "strategy_id": body.strategy_id, "time_range": body.time_range,
-        "total_return": total_return, "max_drawdown": max_drawdown,
-        "win_rate": win_rate, "sharpe_ratio": sharpe, "total_trades": total_trades,
-    }).execute()
-
-    return {
-        "total_return": total_return,
-        "max_drawdown": max_drawdown,
-        "win_rate": win_rate,
-        "sharpe_ratio": sharpe,
-        "total_trades": total_trades,
-        "time_range": body.time_range,
-    }
 
 
 # ── Trade Engine Logs ──
