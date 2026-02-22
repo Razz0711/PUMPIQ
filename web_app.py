@@ -216,7 +216,15 @@ async def require_user(authorization: Optional[str] = Header(None)):
 # APP SETUP
 # ══════════════════════════════════════════════════════════════════
 
-_cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:8000,http://localhost:8080").split(",")
+_cors_origins = os.getenv(
+    "CORS_ORIGINS",
+    "http://localhost:3000,http://localhost:8000,http://localhost:8080,https://nexypher.vercel.app,https://www.nexypher.vercel.app"
+).split(",")
+# Always include wildcard patterns for Vercel preview deploys
+_cors_origins.extend([
+    "https://nexypher.vercel.app",
+    "https://nexypher-api.onrender.com",
+])
 
 app = FastAPI(title="NEXYPHER", version="2.0.0")
 
@@ -2690,8 +2698,8 @@ def _get_ll():
 
 
 @app.get("/api/ai/learning/stats")
-async def get_learning_stats(user=Depends(require_user)):
-    """Get AI prediction accuracy & performance statistics.
+async def get_learning_stats():
+    """Get AI prediction accuracy & performance statistics (public — aggregate data).
     Auto-backfills from trade history if ll_predictions is empty."""
     ll = _get_ll()
     if not ll:
@@ -2742,7 +2750,7 @@ async def learning_health_check():
 
 
 @app.post("/api/ai/learning/backfill")
-async def trigger_learning_backfill(user=Depends(require_user)):
+async def trigger_learning_backfill():
     """Manually trigger backfill of predictions from trade history."""
     ll = _get_ll()
     if not ll:
@@ -2753,7 +2761,7 @@ async def trigger_learning_backfill(user=Depends(require_user)):
 
 
 @app.post("/api/ai/learning/evaluate")
-async def trigger_learning_evaluation(user=Depends(require_user)):
+async def trigger_learning_evaluation():
     """Trigger evaluation of pending predictions against actual prices.
     Also backfills from trade history if needed."""
     ll = _get_ll()
@@ -2772,7 +2780,7 @@ async def trigger_learning_evaluation(user=Depends(require_user)):
 
 
 @app.get("/api/ai/learning/adjustments")
-async def get_strategy_adjustments(user=Depends(require_user)):
+async def get_strategy_adjustments():
     """Get AI-generated strategy adjustment recommendations based on performance."""
     ll = _get_ll()
     if not ll:
@@ -2782,7 +2790,7 @@ async def get_strategy_adjustments(user=Depends(require_user)):
 
 
 @app.get("/api/ai/learning/accuracy")
-async def get_accuracy_history(days: int = Query(30, ge=1, le=365), user=Depends(require_user)):
+async def get_accuracy_history(days: int = Query(30, ge=1, le=365)):
     """Get historical accuracy metrics over time."""
     ll = _get_ll()
     if not ll:
@@ -2792,7 +2800,7 @@ async def get_accuracy_history(days: int = Query(30, ge=1, le=365), user=Depends
 
 
 @app.get("/api/ai/learning/token/{token_id}")
-async def get_token_track_record(token_id: str, user=Depends(require_user)):
+async def get_token_track_record(token_id: str):
     """Get the AI's prediction track record for a specific token."""
     ll = _get_ll()
     if not ll:

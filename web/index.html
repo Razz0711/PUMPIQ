@@ -8119,9 +8119,19 @@
 
             } catch (e) {
                 console.error('Learning stats error:', e);
-                document.getElementById('learnTotalPreds').textContent = '0';
+                // Show the actual error to the user instead of silent zeros
+                const errMsg = e.message || 'Could not load learning stats';
+                document.getElementById('learnTotalPreds').textContent = '!';
+                document.getElementById('learnEvaluated24h').textContent = '-';
+                document.getElementById('learnEvaluated7d').textContent = '-';
                 document.getElementById('learningRegimeStats').innerHTML =
-                    '<div class="empty-state"><p style="color:var(--red)">⚠️ ' + (e.message || 'Could not load learning stats') + '</p></div>';
+                    '<div class="empty-state"><p style="color:var(--red)">⚠️ ' + errMsg + '</p></div>';
+                document.getElementById('learningDirectionStats').innerHTML =
+                    '<div class="empty-state"><p style="color:var(--red)">⚠️ ' + errMsg + '</p></div>';
+                document.getElementById('learningBest').innerHTML =
+                    '<div class="empty-state" style="padding:24px"><p style="color:var(--red)">⚠️ ' + errMsg + '</p></div>';
+                document.getElementById('learningWorst').innerHTML =
+                    '<div class="empty-state" style="padding:24px"><p style="color:var(--red)">⚠️ ' + errMsg + '</p></div>';
             }
         }
 
