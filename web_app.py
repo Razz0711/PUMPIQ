@@ -65,11 +65,20 @@ class TokenCard(BaseModel):
     coin_id: str = ""
     price: float
     price_change_24h: float = 0.0
+    price_change_7d: float = 0.0
     market_cap: float = 0.0
     volume_24h: float = 0.0
     rank: Optional[int] = None
     image: Optional[str] = None
     sparkline: List[float] = []
+    # AI scoring fields
+    ai_score: int = 0
+    ai_verdict: str = ""           # STRONG BUY, BUY, HOLD, CAUTION, AVOID
+    ai_signal: str = ""            # long, short, neutral
+    ai_reasons: List[str] = []
+    vol_mcap_ratio: float = 0.0
+    ath_distance_pct: float = 0.0   # how far below ATH (0-100)
+    trending: bool = False
 
 
 class TokenDetail(BaseModel):
@@ -688,23 +697,122 @@ async def api_update_portfolio(
 # MARKET ENDPOINTS
 # ══════════════════════════════════════════════════════════════════
 
+STABLECOINS_MARKET = {"tether", "usd-coin", "dai", "usd1-wlfi", "binance-usd", "true-usd", "first-digital-usd", "staked-ether", "wrapped-bitcoin", "usds", "ethena-usde", "usdd", "paypal-usd", "frax", "usdb"}
+
+def _score_coin(coin, trending_ids: set) -> TokenCard:
+    """Score a single coin using NexYpher AI signal logic."""
+    change_24h = coin.price_change_pct_24h
+    change_7d = coin.price_change_pct_7d
+    mcap = coin.market_cap
+    vol = coin.total_volume_24h
+    vol_ratio = vol / mcap if mcap > 0 else 0
+    ath_dist = ((coin.ath - coin.current_price) / coin.ath * 100) if coin.ath > 0 else 0
+    is_trending = coin.coin_id in trending_ids
+
+    # ── LONG score ──
+    long_score = 0; long_reasons = []
+    # Momentum (24h)
+    if change_24h > 10:
+        long_score += 25; long_reasons.append(f"🚀 Explosive +{change_24h:.1f}%")
+    elif change_24h > 3:
+        long_score += 18; long_reasons.append(f"📈 Strong +{change_24h:.1f}%")
+    elif change_24h > 0.5:
+        long_score += 10; long_reasons.append(f"↗ Positive +{change_24h:.1f}%")
+    # Weekly trend
+    if change_7d > 15:
+        long_score += 15; long_reasons.append(f"🔥 Week +{change_7d:.1f}%")
+    elif change_7d > 5:
+        long_score += 8; long_reasons.append(f"📊 Week +{change_7d:.1f}%")
+    # Volume spike
+    if vol_ratio > 0.3:
+        long_score += 18; long_reasons.append(f"⚡ Volume spike {vol_ratio:.2f}x")
+    elif vol_ratio > 0.15:
+        long_score += 10; long_reasons.append(f"📢 High volume")
+    elif vol_ratio > 0.08:
+        long_score += 5; long_reasons.append(f"Volume normal")
+    # Trending
+    if is_trending:
+        long_score += 12; long_reasons.append("🔥 Trending")
+    # ATH recovery zone
+    if 40 < ath_dist < 80:
+        long_score += 10; long_reasons.append(f"💎 {ath_dist:.0f}% below ATH — recovery play")
+
+    # ── SHORT score ──
+    short_score = 0; short_reasons = []
+    if change_24h < -8:
+        short_score += 25; short_reasons.append(f"🔻 Dumping {change_24h:+.1f}%")
+    elif change_24h < -3:
+        short_score += 18; short_reasons.append(f"📉 Bearish {change_24h:+.1f}%")
+    elif change_24h < -1:
+        short_score += 10; short_reasons.append(f"↘ Declining {change_24h:+.1f}%")
+    if change_7d < -15:
+        short_score += 15; short_reasons.append(f"💀 Week {change_7d:+.1f}%")
+    elif change_7d < -5:
+        short_score += 8; short_reasons.append(f"📉 Week {change_7d:+.1f}%")
+    if vol_ratio > 0.3 and change_24h < -2:
+        short_score += 12; short_reasons.append("⚡ Panic selling")
+    if ath_dist < 8:
+        short_score += 12; short_reasons.append(f"⚠️ Near ATH — pullback likely")
+
+    # Pick dominant signal
+    if long_score >= short_score and long_score >= 15:
+        signal = "long"; score = min(100, long_score); reasons = long_reasons
+    elif short_score > long_score and short_score >= 15:
+        signal = "short"; score = min(100, short_score); reasons = short_reasons
+    else:
+        signal = "neutral"; score = max(long_score, short_score); reasons = ["Sideways — no clear signal"]
+
+    # Verdict
+    if signal == "long":
+        if score >= 65: verdict = "STRONG BUY"
+        elif score >= 45: verdict = "BUY"
+        else: verdict = "HOLD"
+    elif signal == "short":
+        if score >= 65: verdict = "STRONG SELL"
+        elif score >= 45: verdict = "SELL"
+        else: verdict = "CAUTION"
+    else:
+        verdict = "NEUTRAL"
+
+    return TokenCard(
+        name=coin.name,
+        symbol=coin.symbol.upper(),
+        coin_id=coin.coin_id,
+        price=coin.current_price,
+        price_change_24h=coin.price_change_pct_24h,
+        price_change_7d=coin.price_change_pct_7d,
+        market_cap=mcap,
+        volume_24h=vol,
+        rank=coin.market_cap_rank,
+        image=getattr(coin, "image", None),
+        ai_score=score,
+        ai_verdict=verdict,
+        ai_signal=signal,
+        ai_reasons=reasons,
+        vol_mcap_ratio=round(vol_ratio, 4),
+        ath_distance_pct=round(ath_dist, 1),
+        trending=is_trending,
+    )
+
+
 @app.get("/api/market/top", response_model=List[TokenCard])
 async def get_top_coins(limit: int = Query(50, ge=1, le=250)):
-    coins = await cg.get_top_coins(limit=limit)
-    return [
-        TokenCard(
-            name=c.name,
-            symbol=c.symbol.upper(),
-            coin_id=c.coin_id,
-            price=c.current_price,
-            price_change_24h=c.price_change_pct_24h,
-            market_cap=c.market_cap,
-            volume_24h=c.total_volume_24h,
-            rank=c.market_cap_rank,
-            image=getattr(c, "image", None),
-        )
-        for c in coins
-    ]
+    """Top coins scored by NexYpher AI — ranked by opportunity, not market cap."""
+    coins = await cg.get_top_coins(limit=min(limit + 10, 250))  # fetch extra to filter stables
+    trending = await cg.get_trending()
+    trending_ids = {t.coin_id for t in trending} if trending else set()
+
+    scored = []
+    for c in coins:
+        if c.coin_id in STABLECOINS_MARKET:
+            continue
+        if c.current_price <= 0:
+            continue
+        scored.append(_score_coin(c, trending_ids))
+
+    # Sort by AI score descending (opportunity ranking)
+    scored.sort(key=lambda t: t.ai_score, reverse=True)
+    return scored[:limit]
 
 
 @app.get("/api/market/trending", response_model=List[TrendingToken])

@@ -5124,8 +5124,8 @@
     <!-- MARKET PAGE (detailed CoinGecko)                           -->
     <!-- ═══════════════════════════════════════════════════════════ -->
     <div class="page active" id="page-market">
-        <div class="section-title">Market Overview</div>
-        <div class="section-desc">Top coins by market cap — click any row for deep analysis</div>
+        <div class="section-title">🧠 AI Market Scanner</div>
+        <div class="section-desc">Coins ranked by NexYpher AI opportunity score — momentum, volume anomalies, trend signals & recovery potential</div>
 
         <!-- Market Sub-tabs: Top Coins | DEX Feed -->
         <div class="trader-subtabs" style="margin-bottom:20px">
@@ -5157,12 +5157,13 @@
             <table class="feed-table">
                 <thead>
                     <tr>
-                        <th>#</th>
+                        <th>AI Score</th>
                         <th>Token</th>
+                        <th>Verdict</th>
                         <th>Price</th>
                         <th>24h</th>
-                        <th>Market Cap</th>
-                        <th>Volume 24h</th>
+                        <th>7d</th>
+                        <th>Signal</th>
                     </tr>
                 </thead>
                 <tbody id="marketBody"></tbody>
@@ -7494,16 +7495,16 @@
                 // Market table
                 body.innerHTML = coins.map(c => `
             <tr style="cursor:pointer" onclick="openToken('${c.coin_id}','${c.name}')">
-                <td>${c.rank || '-'}</td>
+                <td style="font-weight:700;color:${c.ai_score >= 65 ? 'var(--green)' : c.ai_score >= 45 ? '#4ade80' : c.ai_score >= 25 ? 'var(--yellow)' : 'var(--text-muted)'}">${c.ai_score}</td>
                 <td>
                     <div class="token-info">
                         <div class="token-icon">${c.symbol.slice(0, 2)}</div>
-                        <div><div class="token-name">${c.name}</div><div class="token-symbol">${c.symbol}</div></div>
+                        <div><div class="token-name">${c.name} ${c.trending ? '🔥' : ''}</div><div class="token-symbol">${c.symbol}</div></div>
                     </div>
                 </td>
                 <td>${fmt(c.price)}</td>
                 <td>${fmtPct(c.price_change_24h)}</td>
-                <td>${fmt(c.market_cap)}</td>
+                <td><span style="color:${c.ai_verdict?.includes('BUY') ? 'var(--green)' : c.ai_verdict?.includes('SELL') ? 'var(--red)' : 'var(--text-muted)'};font-weight:600;font-size:12px">${c.ai_verdict || '-'}</span></td>
                 <td>${fmt(c.volume_24h)}</td>
             </tr>
         `).join('');
@@ -7769,7 +7770,7 @@
         async function loadMarket() {
             initMarketTVWidgets();
             const body = document.getElementById('marketBody');
-            body.innerHTML = '<tr><td colspan="6"><div class="loader"><div class="spinner"></div></div></td></tr>';
+            body.innerHTML = '<tr><td colspan="7"><div class="loader"><div class="spinner"></div></div></td></tr>';
 
             try {
                 const [coins, trending] = await Promise.all([
@@ -7784,23 +7785,45 @@
             </div>
         `).join('');
 
+                const verdictColor = v => {
+                    if (v.includes('STRONG BUY')) return 'var(--green)';
+                    if (v.includes('BUY')) return '#4ade80';
+                    if (v.includes('STRONG SELL')) return 'var(--red)';
+                    if (v.includes('SELL')) return '#f87171';
+                    if (v === 'CAUTION') return 'var(--yellow)';
+                    return 'var(--text-muted)';
+                };
+                const scoreColor = s => s >= 65 ? 'var(--green)' : s >= 45 ? '#4ade80' : s >= 25 ? 'var(--yellow)' : 'var(--text-muted)';
+                const signalBadge = (sig) => {
+                    if (sig === 'long') return '<span style="background:#16a34a22;color:#4ade80;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:600">▲ LONG</span>';
+                    if (sig === 'short') return '<span style="background:#dc262622;color:#f87171;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:600">▼ SHORT</span>';
+                    return '<span style="background:#ffffff11;color:var(--text-muted);padding:2px 8px;border-radius:8px;font-size:11px">— FLAT</span>';
+                };
+
                 body.innerHTML = coins.map(c => `
             <tr style="cursor:pointer" onclick="openToken('${c.coin_id}','${c.name}')">
-                <td>${c.rank || '-'}</td>
+                <td>
+                    <div style="font-size:18px;font-weight:700;color:${scoreColor(c.ai_score)}">${c.ai_score}</div>
+                    <div style="font-size:10px;color:var(--text-muted)">/100</div>
+                </td>
                 <td>
                     <div class="token-info">
                         <div class="token-icon">${c.symbol.slice(0, 2)}</div>
-                        <div><div class="token-name">${c.name}</div><div class="token-symbol">${c.symbol}</div></div>
+                        <div>
+                            <div class="token-name">${c.name} ${c.trending ? '🔥' : ''}</div>
+                            <div class="token-symbol">${c.symbol} • ${fmt(c.price)}</div>
+                        </div>
                     </div>
                 </td>
+                <td><span style="color:${verdictColor(c.ai_verdict)};font-weight:600;font-size:12px">${c.ai_verdict}</span></td>
                 <td>${fmt(c.price)}</td>
                 <td>${fmtPct(c.price_change_24h)}</td>
-                <td>${fmt(c.market_cap)}</td>
-                <td>${fmt(c.volume_24h)}</td>
+                <td>${fmtPct(c.price_change_7d || 0)}</td>
+                <td>${signalBadge(c.ai_signal)}</td>
             </tr>
         `).join('');
             } catch (e) {
-                body.innerHTML = `<tr><td colspan="6" class="empty-state">${e.message}</td></tr>`;
+                body.innerHTML = `<tr><td colspan="7" class="empty-state">${e.message}</td></tr>`;
             }
         }
 
