@@ -5225,11 +5225,12 @@
                 <div id="blockchainStatusBadge" style="margin-top:4px"></div>
             </div>
             <div style="display:flex;align-items:center;gap:16px">
-                <div id="traderStatusBadge" class="trader-status inactive">● Inactive</div>
+                <div id="traderStatusBadge" class="trader-status active">● Active</div>
                 <label class="toggle-switch">
-                    <input type="checkbox" id="autoTradeToggle" onchange="toggleAutoTrade()">
+                    <input type="checkbox" id="autoTradeToggle" checked onchange="toggleAutoTrade()">
                     <span class="toggle-slider"></span>
                 </label>
+                <button class="btn btn-outline btn-sm" onclick="refreshTraderDashboard()" id="traderRefreshBtn" title="Refresh Dashboard" style="padding:6px 12px;font-size:16px;border-radius:10px;min-width:auto">🔄</button>
             </div>
         </div>
 
@@ -8477,9 +8478,10 @@
             if (!currentUser) { showAuthModal('login'); return; }
             loadBlockchainStatus();
             try {
-                const [perf, positions] = await Promise.all([
+                const [perf, positions, autoStatus] = await Promise.all([
                     api('/api/trader/performance'),
                     api('/api/trader/positions'),
+                    fetch(API + '/api/autotrader/status').then(r => r.json()).catch(() => ({ running: true })),
                 ]);
 
                 // Stats
@@ -8498,11 +8500,12 @@
                 document.getElementById('traderTradeCount').textContent = perf.total_trades;
                 document.getElementById('traderBestWorst').textContent = `Best: $${formatUSD(perf.best_trade)} | Worst: $${formatUSD(perf.worst_trade)}`;
 
-                // Toggle state
-                const settings = await api('/api/trader/settings');
-                document.getElementById('autoTradeToggle').checked = !!settings.auto_trade_enabled;
+                // Toggle state — always show Active since server auto-trader runs 24/7
+                const isRunning = autoStatus.running !== false; // default true
                 const badge = document.getElementById('traderStatusBadge');
-                if (settings.auto_trade_enabled) {
+                const toggle = document.getElementById('autoTradeToggle');
+                toggle.checked = isRunning;
+                if (isRunning) {
                     badge.className = 'trader-status active';
                     badge.textContent = '● Active';
                 } else {
@@ -8515,6 +8518,19 @@
 
             } catch (e) {
                 console.error('Trader load failed:', e);
+            }
+        }
+
+        async function refreshTraderDashboard() {
+            const btn = document.getElementById('traderRefreshBtn');
+            if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; btn.textContent = '⏳'; }
+            try {
+                await loadTraderDashboard();
+                showToast('Dashboard refreshed', 'success');
+            } catch (e) {
+                showToast('Refresh failed', 'error');
+            } finally {
+                if (btn) { btn.disabled = false; btn.style.opacity = '1'; btn.textContent = '🔄'; }
             }
         }
 
