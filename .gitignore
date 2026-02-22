@@ -102,6 +102,9 @@ config/local_config.json
 .tmp/
 temp/
 
+# Debug / one-off scripts
+_debug/
+
 # OS
 Thumbs.db
 .DS_Store
