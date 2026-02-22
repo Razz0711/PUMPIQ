@@ -484,32 +484,49 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
 
             change_24h = coin.price_change_pct_24h
 
-            # ── LONG SIGNAL SCORING ──
+            # ── LONG SIGNAL SCORING (widened for aggressive trading) ──
             long_score = 0
             long_reasons = []
-            if 3 < change_24h < 15:
+            # Momentum scoring (broader bands)
+            if change_24h > 10:
+                long_score += 30; long_reasons.append(f"Explosive momentum: {change_24h:+.1f}%")
+            elif change_24h > 3:
                 long_score += 25; long_reasons.append(f"Strong 24h momentum: {change_24h:+.1f}%")
-            elif 1 < change_24h <= 3:
+            elif change_24h > 0.5:
                 long_score += 15; long_reasons.append(f"Positive momentum: {change_24h:+.1f}%")
+            elif change_24h > -1:
+                long_score += 8; long_reasons.append(f"Stable/flat: {change_24h:+.1f}%")
+            # Volume analysis
             if coin.market_cap > 0:
                 vol_ratio = coin.total_volume_24h / coin.market_cap
                 if vol_ratio > 0.3:
                     long_score += 20; long_reasons.append(f"High volume/mcap ratio: {vol_ratio:.2f}")
                 elif vol_ratio > 0.1:
-                    long_score += 10; long_reasons.append(f"Healthy volume: {vol_ratio:.2f}")
+                    long_score += 12; long_reasons.append(f"Healthy volume: {vol_ratio:.2f}")
+                elif vol_ratio > 0.05:
+                    long_score += 6; long_reasons.append(f"Normal volume: {vol_ratio:.2f}")
+            # Trending
             if coin.coin_id in trending_ids:
                 long_score += 15; long_reasons.append("Trending on CoinGecko")
-            if coin.market_cap > 10_000_000_000:
+            # Market cap tiers
+            if coin.market_cap > 50_000_000_000:
+                long_score += 12; long_reasons.append("Mega cap - liquid & safe")
+            elif coin.market_cap > 10_000_000_000:
                 long_score += 10; long_reasons.append("Large cap - lower risk")
             elif coin.market_cap > 1_000_000_000:
-                long_score += 5; long_reasons.append("Mid cap")
+                long_score += 8; long_reasons.append("Mid cap")
+            elif coin.market_cap > 100_000_000:
+                long_score += 5; long_reasons.append("Small cap - higher potential")
+            # ATH analysis
             if hasattr(coin, 'ath') and coin.ath > 0:
                 ath_ratio = coin.current_price / coin.ath
-                if 0.3 < ath_ratio < 0.7:
-                    long_score += 10; long_reasons.append(f"Room to grow - {(1-ath_ratio)*100:.0f}% below ATH")
+                if 0.2 < ath_ratio < 0.6:
+                    long_score += 12; long_reasons.append(f"Recovery potential - {(1-ath_ratio)*100:.0f}% below ATH")
+                elif 0.6 <= ath_ratio < 0.85:
+                    long_score += 6; long_reasons.append(f"Near ATH recovery zone")
             long_score = max(0, min(100, long_score))
 
-            if long_score >= 25:
+            if long_score >= 15:
                 opportunities.append({
                     "coin_id": coin.coin_id, "name": coin.name, "symbol": coin.symbol.upper(),
                     "price": coin.current_price, "change_24h": change_24h,
@@ -518,27 +535,38 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
                     "source": "coingecko", "side": "long",
                 })
 
-            # ── SHORT SIGNAL SCORING ──
+            # ── SHORT SIGNAL SCORING (widened for aggressive trading) ──
             short_score = 0
             short_reasons = []
-            if change_24h < -5:
+            # Bearish momentum (broader bands)
+            if change_24h < -8:
+                short_score += 30; short_reasons.append(f"Strong dump: {change_24h:+.1f}%")
+            elif change_24h < -3:
                 short_score += 25; short_reasons.append(f"Bearish momentum: {change_24h:+.1f}%")
-            elif -5 <= change_24h < -2:
+            elif change_24h < -1:
                 short_score += 15; short_reasons.append(f"Declining: {change_24h:+.1f}%")
+            elif change_24h < 0:
+                short_score += 8; short_reasons.append(f"Slightly bearish: {change_24h:+.1f}%")
+            # Volume in decline
             if coin.market_cap > 0:
                 vol_ratio = coin.total_volume_24h / coin.market_cap
                 if vol_ratio > 0.3:
                     short_score += 15; short_reasons.append(f"Panic volume: {vol_ratio:.2f}")
+                elif vol_ratio > 0.15 and change_24h < -1:
+                    short_score += 8; short_reasons.append(f"Elevated sell volume")
+            # ATH analysis — near ATH = likely pullback
             if hasattr(coin, 'ath') and coin.ath > 0:
                 ath_ratio = coin.current_price / coin.ath
-                if ath_ratio > 0.9:
-                    short_score += 15; short_reasons.append(f"Near ATH ({ath_ratio*100:.0f}%) — likely pullback")
-            # Large sell pressure — more sells than buys indicates dump
-            if change_24h < -3 and coin.market_cap > 1_000_000_000:
+                if ath_ratio > 0.92:
+                    short_score += 18; short_reasons.append(f"Near ATH ({ath_ratio*100:.0f}%) — pullback likely")
+                elif ath_ratio > 0.8:
+                    short_score += 10; short_reasons.append(f"Close to ATH ({ath_ratio*100:.0f}%) — resistance zone")
+            # Large cap decline
+            if change_24h < -1 and coin.market_cap > 1_000_000_000:
                 short_score += 10; short_reasons.append("Large cap decline — shorting opportunity")
             short_score = max(0, min(100, short_score))
 
-            if short_score >= 25:
+            if short_score >= 15:
                 opportunities.append({
                     "coin_id": coin.coin_id, "name": coin.name, "symbol": coin.symbol.upper(),
                     "price": coin.current_price, "change_24h": change_24h,
@@ -673,18 +701,18 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
         if bt_result.passed_all_thresholds:
             # Boost score for verified tokens
             direction = opp["backtest_strategy_direction"]
-            opp["score"] = min(100, opp["score"] + 10)
+            opp["score"] = min(100, opp["score"] + 15)
             opp["reasons"].append(
                 f"✅ Backtest verified ({direction}): {bt_result.win_rate:.0f}% win rate, "
                 f"{bt_result.total_return:.1f}% return, Sharpe {bt_result.sharpe_ratio:.2f}"
             )
             opp["reasoning"] = " | ".join(opp["reasons"])
         else:
-            # Penalize and flag
+            # Mild penalty — don't kill opportunities in aggressive mode
             tested = opp.get("backtest_strategies_tested", [])
-            opp["score"] = max(0, opp["score"] - 20)
+            opp["score"] = max(0, opp["score"] - 5)
             opp["reasons"].append(
-                f"⚠️ Backtest WARNING (tested {', '.join(tested) if tested else 'LONG'}): "
+                f"⚠️ Backtest caution (tested {', '.join(tested) if tested else 'LONG'}): "
                 f"{'; '.join(bt_result.failure_reasons)}"
             )
             opp["reasoning"] = " | ".join(opp["reasons"])
@@ -710,9 +738,13 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
         max_daily = user_prefs.max_daily_trades
         risk_profile = user_prefs.risk_profile
     except Exception:
-        confidence_threshold = 7.0
-        max_daily = 10
-        risk_profile = "balanced"
+        confidence_threshold = 5.0
+        max_daily = 100
+        risk_profile = "aggressive"
+
+    # Override max_daily for aggressive mode (never stop trading due to daily limit)
+    if settings.get("risk_level") == "aggressive":
+        max_daily = max(max_daily, 200)
 
     # Trade settings risk_level overrides user prefs (auto-trader sets this to "aggressive")
     risk_profile = settings.get("risk_level", risk_profile)
@@ -722,7 +754,7 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
         "conservative": {"max_trade_pct_mult": 0.5, "min_score": 70, "stop_loss_add": 2},
         "moderate":     {"max_trade_pct_mult": 1.0, "min_score": 50, "stop_loss_add": 0},
         "balanced":     {"max_trade_pct_mult": 1.0, "min_score": 50, "stop_loss_add": 0},
-        "aggressive":   {"max_trade_pct_mult": 1.5, "min_score": 30, "stop_loss_add": -2},
+        "aggressive":   {"max_trade_pct_mult": 1.5, "min_score": 15, "stop_loss_add": -2},
     }
     mods = risk_modifiers.get(risk_profile, risk_modifiers["aggressive"])
 
@@ -878,13 +910,20 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
     today_orders = sb.table("trade_orders").select("id").eq("user_id", user_id).gte("created_at", today_start).execute()
     trades_today = len(today_orders.data) if today_orders.data else 0
 
+    logger.info(
+        "Trade check — trades_today: %d | max_daily: %d | balance: %s | open: %d/%d",
+        trades_today, max_daily, f"${balance:,.0f}", len(open_positions), MAX_PORTFOLIO_SLOTS,
+    )
     if trades_today < max_daily:
         opportunities = await research_opportunities(cg_collector, dex_collector, gemini_client)
 
-        # Skip DEX tokens (unreliable prices) and stablecoins
-        opportunities = [o for o in opportunities if o.get("source") != "dexscreener"]
+        # Filter stablecoins, invalid prices, and low market cap
         opportunities = [o for o in opportunities if o.get("price", 0) > 0.001]
         opportunities = [o for o in opportunities if o["market_cap"] >= settings["min_market_cap"]]
+        logger.info(
+            "Research returned %d opportunities (after price/mcap filter)",
+            len(opportunities),
+        )
 
         # ── BACKTEST GATE ──
         # Aggressive: allow all coins (skip backtest gate for maximum trading)
@@ -908,7 +947,13 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
         min_score = mods["min_score"]
         confidence_min_score = int(confidence_threshold * 10)
         effective_min_score = min_score if risk_profile == "aggressive" else max(min_score, confidence_min_score)
+        pre_filter_count = len(opportunities)
         opportunities = [o for o in opportunities if o["score"] >= effective_min_score]
+        logger.info(
+            "Score filter — min_score: %d | before: %d | after: %d | top_scores: %s",
+            effective_min_score, pre_filter_count, len(opportunities),
+            [o['score'] for o in sorted(opportunities, key=lambda x: x['score'], reverse=True)[:5]],
+        )
         results["confidence_threshold"] = confidence_threshold
         results["effective_min_score"] = effective_min_score
         results["risk_profile"] = risk_profile
@@ -1024,7 +1069,10 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
                             pass
 
         elif not picks:
-            logger.info("Portfolio full or no new opportunities — holding existing positions")
+            logger.info(
+                "No new trades — available_slots: %d | new_opps: %d | long_opps: %d | short_opps: %d",
+                available_slots, len(new_opportunities), len(long_opps), len(short_opps),
+            )
 
     # Add portfolio summary to results
     results["portfolio_summary"] = {
