@@ -402,23 +402,52 @@ class Orchestrator:
     # Step 6 – LSTM Pattern Recognition
     # ══════════════════════════════════════════════════════════════
 
+    def _get_cg_collector(self):
+        """Lazily create a CoinGeckoCollector for LSTM / pattern engines."""
+        if not hasattr(self, "_cg_collector") or self._cg_collector is None:
+            try:
+                from ..data_collectors.coingecko_collector import CoinGeckoCollector
+                self._cg_collector = CoinGeckoCollector()  # reads API key from env
+            except Exception:
+                self._cg_collector = None
+        return self._cg_collector
+
     async def _apply_lstm_patterns(self, tokens: List[TokenData]):
         """Run LSTM pattern recognition on each token."""
         lstm = self._lstm_engine
         if lstm is None:
             return
 
+        cg = self._get_cg_collector()
+        if cg is None:
+            return
+
         for token in tokens:
             try:
                 coin_id = getattr(token, "coin_id", "") or token.token_ticker.lower()
-                prediction = await lstm.predict(coin_id, token.token_ticker)
+                symbol = getattr(token, "symbol", None) or token.token_ticker
+                name = getattr(token, "name", None) or token.token_ticker
+                prediction = await lstm.predict(
+                    coin_id, name, symbol, cg, days=180,
+                )
                 if prediction:
                     if not hasattr(token, "_lstm_prediction"):
                         object.__setattr__(token, "_lstm_prediction", None)
                     token._lstm_prediction = prediction
-                    logger.debug("LSTM prediction for %s: direction=%s prob=%.2f pattern=%s",
-                                 token.token_ticker, prediction.direction,
-                                 prediction.probability, prediction.pattern_detected)
+
+                    # Store LSTM buy_probability as signal for composite blending
+                    if not hasattr(token, "_lstm_signal"):
+                        object.__setattr__(token, "_lstm_signal", 0.5)
+                    token._lstm_signal = prediction.buy_probability
+
+                    logger.debug(
+                        "LSTM prediction for %s: direction=%s prob=%.2f pattern=%s fallback=%s",
+                        token.token_ticker,
+                        prediction.predicted_direction,
+                        prediction.buy_probability,
+                        prediction.pattern_detected,
+                        prediction.is_fallback,
+                    )
             except Exception as e:
                 logger.debug("LSTM prediction failed for %s: %s", token.token_ticker, e)
 
@@ -510,6 +539,24 @@ class Orchestrator:
             nexypher_w = 0.10  # 10% weight for the trained models
             nexypher_score = nexypher_signal * 10.0
             total = total * (1.0 - nexypher_w) + nexypher_score * nexypher_w
+
+        # Blend LSTM pattern signal (buy_probability 0-1 → 0-10)
+        # Unique value: pattern detection (ascending triangles, squeezes, channels)
+        lstm_signal = getattr(token, "_lstm_signal", None)
+        lstm_pred = getattr(token, "_lstm_prediction", None)
+        if lstm_signal is not None:
+            lstm_w = 0.05  # 5% weight — pattern confirmation layer
+            lstm_score = lstm_signal * 10.0
+            # Bonus for strong pattern detection (not just "none")
+            if lstm_pred and hasattr(lstm_pred, "pattern_detected"):
+                pattern = lstm_pred.pattern_detected
+                if pattern in ("ascending_triangle", "strong_bullish_momentum", "uptrend_channel"):
+                    lstm_score = min(10.0, lstm_score + 1.5)  # bullish pattern bonus
+                elif pattern in ("descending_triangle", "strong_bearish_momentum", "downtrend_channel"):
+                    lstm_score = max(0.0, lstm_score - 1.5)  # bearish pattern penalty
+                elif pattern == "consolidation_squeeze":
+                    lstm_score = min(10.0, lstm_score + 0.5)  # mild breakout anticipation
+            total = total * (1.0 - lstm_w) + lstm_score * lstm_w
 
         # Apply confluence multiplier if available
         confluence_mult = getattr(token, "_confluence_multiplier", None)
