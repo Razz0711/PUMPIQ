@@ -2785,8 +2785,22 @@ async def get_strategy_adjustments():
     ll = _get_ll()
     if not ll:
         raise HTTPException(503, "Learning loop not available")
-    adjustments = ll.generate_adjustments()
-    return {"adjustments": adjustments}
+    # Generate fresh adjustments (may be empty if criteria not met)
+    new_adjustments = ll.generate_adjustments()
+    # Also fetch recently stored adjustments so the page isn't blank
+    stored = ll.get_recent_adjustments(limit=10)
+    # Merge: new first, then stored (dedup by description)
+    seen = set()
+    merged = []
+    for adj in new_adjustments + stored:
+        # Normalize field name: backend stores 'adjustment_type', frontend reads 'type'
+        if "adjustment_type" in adj and "type" not in adj:
+            adj["type"] = adj["adjustment_type"]
+        desc = adj.get("description", "")
+        if desc not in seen:
+            seen.add(desc)
+            merged.append(adj)
+    return {"adjustments": merged}
 
 
 @app.get("/api/ai/learning/accuracy")

@@ -6676,7 +6676,7 @@
             else if (page === 'feed') { loadFeed(); }
             else if (page === 'ai') { loadAIGlobal(); }
             else if (page === 'insights') { /* ready for user search */ }
-            else if (page === 'learning') { loadLearningStats(); }
+            else if (page === 'learning') { loadLearningStats(); loadStrategyAdjustments(); }
             else if (page === 'leaderboard') { loadLeaderboard(); }
             else if (page === 'market') { loadMarket(); }
             else if (page === 'trader') { loadTraderDashboard(); }
@@ -8176,14 +8176,15 @@
                     return;
                 }
                 div.innerHTML = adjustments.map(a => {
-                    const typeClass = a.type.includes('reduction') ? 'adj-decrease' : a.type.includes('increase') ? 'adj-increase' : 'adj-hold';
-                    const badgeClass = a.type.includes('reduction') ? 'decrease' : a.type.includes('increase') ? 'increase' : 'hold';
+                    const aType = a.type || a.adjustment_type || 'info';
+                    const typeClass = aType.includes('reduction') ? 'adj-decrease' : aType.includes('increase') ? 'adj-increase' : 'adj-hold';
+                    const badgeClass = aType.includes('reduction') ? 'decrease' : aType.includes('increase') ? 'increase' : 'hold';
                     const icon = badgeClass === 'decrease' ? '⬇️' : badgeClass === 'increase' ? '⬆️' : '🔄';
                     return `
                 <div class="adjustment-card ${typeClass}">
                     <div class="adjustment-header">
                         <span>${icon}</span>
-                        <span class="adjustment-type ${badgeClass}">${a.type.replace(/_/g, ' ')}</span>
+                        <span class="adjustment-type ${badgeClass}">${aType.replace(/_/g, ' ')}</span>
                         ${a.market_regime ? '<span style="font-size:11px;color:var(--text-muted);margin-left:auto">Regime: ' + a.market_regime + '</span>' : ''}
                     </div>
                     <div class="adjustment-detail">${a.description}</div>
