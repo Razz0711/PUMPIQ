@@ -56,7 +56,7 @@ from src.ui.visual_indicators import (
 )
 from src.ui.notification_formatter import NotificationFormatter
 from src.ui.personalization_engine import PersonalizationEngine
-from src.ui.user_config import UserPreferences, default_preferences
+from src.ui.user_config import UserPreferences, default_preferences, PortfolioHolding
 from src.ui.watchlist_manager import WatchlistManager
 from src.ui.portfolio_tracker import PortfolioTracker
 
@@ -742,65 +742,58 @@ async def api_get_portfolio(user=Depends(require_user)):
     """
     items = auth.get_portfolio(user.id)
     if items:
+        # Build PortfolioHolding objects from DB rows
+        holdings = [
+            PortfolioHolding(
+                token=i["coin_id"].upper(),
+                entry_price=i["avg_buy_price"],
+                quantity=i["amount"],
+                notes=i.get("notes", ""),
+            )
+            for i in items
+        ]
+        prefs = default_preferences(user_id=str(user.id))
+        prefs.holdings = holdings
+        tracker = PortfolioTracker(prefs)
+
+        # Fetch live prices
         coin_ids = [i["coin_id"] for i in items]
-        prices = await cg.get_simple_price(coin_ids)
+        raw_prices = await cg.get_simple_price(coin_ids)
+        # PortfolioTracker expects UPPER-case keys
+        current_prices = {k.upper(): v for k, v in raw_prices.items()}
+
+        summary = tracker.get_summary(current_prices)
+
+        # Enrich each position with visual indicators
         enriched = []
-        for item in items:
-            cp = prices.get(item["coin_id"], 0)
-            cost = item["amount"] * item["avg_buy_price"]
-            value = item["amount"] * cp
-            pnl = value - cost
-            pnl_pct = (pnl / cost * 100) if cost > 0 else 0
-
-            # AI status annotation
-            ai_status = ""
-            ai_emoji = ""
-            ai_comment = ""
-            if cp > 0 and item["avg_buy_price"] > 0:
-                if pnl_pct > 15:
-                    ai_status, ai_emoji, ai_comment = "HOLD", "🟢", "On track — approaching first target"
-                elif pnl_pct > 0:
-                    ai_status, ai_emoji, ai_comment = "HOLD", "🟢", "In profit — monitor for targets"
-                elif pnl_pct > -5:
-                    ai_status, ai_emoji, ai_comment = "WATCH", "🟡", "Slightly underwater — hold if thesis intact"
-                elif pnl_pct > -15:
-                    ai_status, ai_emoji, ai_comment = "WATCH", "🟡", "Approaching stop-loss zone"
-                else:
-                    ai_status, ai_emoji, ai_comment = "SELL", "🔴", "Below expected stop-loss — consider exiting"
-
+        for pos in summary.positions:
             enriched.append({
                 **PortfolioItem(
-                    coin_id=item["coin_id"],
-                    amount=item["amount"],
-                    avg_buy_price=item["avg_buy_price"],
-                    notes=item.get("notes", ""),
-                    current_price=cp,
-                    pnl=round(pnl, 2),
-                    pnl_pct=round(pnl_pct, 2),
+                    coin_id=pos.token,
+                    amount=pos.quantity,
+                    avg_buy_price=pos.entry_price,
+                    notes=pos.notes,
+                    current_price=pos.current_price,
+                    pnl=pos.pnl_dollar,
+                    pnl_pct=pos.pnl_percent,
                 ).model_dump(),
-                "ai_status": ai_status,
-                "ai_status_emoji": ai_emoji,
-                "ai_comment": ai_comment,
-                "risk_badge": risk_badge("HIGH" if pnl_pct < -10 else "MEDIUM" if pnl_pct < 0 else "LOW"),
-                "trend": trend_arrow(pnl_pct),
+                "ai_status": pos.ai_status,
+                "ai_status_emoji": pos.ai_status_emoji,
+                "ai_comment": pos.ai_comment,
+                "risk_badge": risk_badge("HIGH" if pos.pnl_percent < -10 else "MEDIUM" if pos.pnl_percent < 0 else "LOW"),
+                "trend": trend_arrow(pos.pnl_percent),
             })
-
-        # Portfolio summary
-        total_cost = sum(i["amount"] * i["avg_buy_price"] for i in items)
-        total_value = sum(e["current_price"] * e["amount"] for e in enriched)
-        total_pnl = total_value - total_cost
-        total_pnl_pct = (total_pnl / total_cost * 100) if total_cost > 0 else 0
 
         return {
             "positions": enriched,
             "summary": {
-                "total_invested": round(total_cost, 2),
-                "total_value": round(total_value, 2),
-                "total_pnl": round(total_pnl, 2),
-                "total_pnl_pct": round(total_pnl_pct, 2),
-                "winning": len([e for e in enriched if e["pnl"] > 0]),
-                "losing": len([e for e in enriched if e["pnl"] < 0]),
-                "overall_trend": trend_arrow(total_pnl_pct),
+                "total_invested": summary.total_invested,
+                "total_value": summary.total_current_value,
+                "total_pnl": summary.total_pnl_dollar,
+                "total_pnl_pct": summary.total_pnl_percent,
+                "winning": summary.winning_count,
+                "losing": summary.losing_count,
+                "overall_trend": trend_arrow(summary.total_pnl_percent),
             },
         }
     return {"positions": [], "summary": None}
