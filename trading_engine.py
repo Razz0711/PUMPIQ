@@ -35,6 +35,7 @@ from blockchain_service import blockchain
 from supabase_db import get_supabase
 from src.backtest_engine import get_backtest_engine, BacktestResult
 from src.ml_backtester import get_ml_backtester
+from src.pretrained_predictor import predict_pretrained
 
 logger = logging.getLogger(__name__)
 
@@ -628,6 +629,29 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
             )
             logger.info("ML predictions loaded for %d coins", len(ml_predictions))
 
+        # ── Pretrained 38-feature model predictions ──
+        pt_predictions = {}  # coin_id -> {verdict, direction, prob_up_24h, prob_up_7d, confidence, ...}
+        pt_coin_count = 0
+        for coin in top_coins:
+            if pt_coin_count >= 8:
+                break
+            if coin.coin_id in STABLECOINS:
+                continue
+            try:
+                pt_pred = await predict_pretrained(coin.coin_id, cg_collector, coin_data=coin)
+                if pt_pred:
+                    pt_predictions[coin.coin_id] = pt_pred
+                    pt_coin_count += 1
+            except Exception:
+                pass
+        if pt_predictions:
+            logger.info(
+                "Pretrained predictions loaded for %d coins: %s",
+                len(pt_predictions),
+                {k: f"{v['verdict']} ({v['prob_up_7d']:.0f}% 7d)"
+                 for k, v in pt_predictions.items()},
+            )
+
         for coin in top_coins:
             if coin.coin_id in STABLECOINS:
                 continue
@@ -694,6 +718,45 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
                     ml_short_boost = 5
                     ml_reason = f"🤖 ML: weak upside ({buy_prob*100:.0f}% up-prob)"
 
+            # ── PRETRAINED 38-FEATURE MODEL SIGNAL ──
+            pt_pred = pt_predictions.get(coin.coin_id)
+            pt_long_boost = 0
+            pt_short_boost = 0
+            pt_reason = ""
+            if pt_pred:
+                verdict = pt_pred.get("verdict", "NEUTRAL")
+                direction = pt_pred.get("direction", "SIDEWAYS")
+                p7d = pt_pred.get("prob_up_7d", 50)
+                conf = pt_pred.get("confidence", 1)
+                acc7d = pt_pred.get("model_7d_acc", 0)
+                # Verdict-based boost
+                if verdict == "STRONG BUY":
+                    pt_long_boost = 12
+                    pt_reason = f"🧠 PT: STRONG BUY ({p7d:.0f}% 7d, conf {conf})"
+                elif verdict == "BUY":
+                    pt_long_boost = 6
+                    pt_reason = f"🧠 PT: BUY ({p7d:.0f}% 7d)"
+                elif verdict == "SELL":
+                    pt_short_boost = 12
+                    pt_reason = f"🧠 PT: SELL ({p7d:.0f}% 7d, conf {conf})"
+                elif verdict == "AVOID":
+                    pt_short_boost = 6
+                    pt_reason = f"🧠 PT: AVOID ({p7d:.0f}% 7d)"
+                # Direction confirmation bonus (+5 max)
+                if direction == "UP" and pt_long_boost > 0:
+                    pt_long_boost += 5
+                    pt_reason += " | dir=UP"
+                elif direction == "DOWN" and pt_short_boost > 0:
+                    pt_short_boost += 5
+                    pt_reason += " | dir=DOWN"
+                # Cap combined ML+pretrained boost to prevent score inflation
+                total_long_ml = ml_long_boost + pt_long_boost
+                total_short_ml = ml_short_boost + pt_short_boost
+                if total_long_ml > 25:
+                    pt_long_boost = max(0, 25 - ml_long_boost)
+                if total_short_ml > 25:
+                    pt_short_boost = max(0, 25 - ml_short_boost)
+
             # ══════════════════════════════════════════════════════
             # ── LONG SIGNAL SCORING ──
             # ══════════════════════════════════════════════════════
@@ -727,6 +790,9 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
             # ML boost for LONG
             if ml_long_boost:
                 long_score += ml_long_boost; long_reasons.append(ml_reason)
+            # Pretrained model boost for LONG
+            if pt_long_boost:
+                long_score += pt_long_boost; long_reasons.append(pt_reason)
 
             long_score = max(0, min(100, long_score))
 
@@ -781,6 +847,9 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
             # ML boost for SHORT
             if ml_short_boost:
                 short_score += ml_short_boost; short_reasons.append(ml_reason)
+            # Pretrained model boost for SHORT
+            if pt_short_boost:
+                short_score += pt_short_boost; short_reasons.append(pt_reason)
 
             short_score = max(0, min(100, short_score))
 
