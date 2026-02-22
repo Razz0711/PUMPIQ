@@ -65,6 +65,7 @@ TARGET_RETURN_PCT = 5.0       # price must rise ≥ 5 % within window
 ACCURACY_THRESHOLD = 0.55     # minimum to pass ML gate
 MODEL_CACHE_DIR = Path(os.path.dirname(__file__)) / ".." / "ml_models"
 MODEL_TTL_SECONDS = 7 * 86400  # retrain weekly
+PREDICTION_CACHE_TTL = 900     # cache predictions for 15 minutes
 
 
 # ── Result dataclass ──────────────────────────────────────────────
@@ -272,6 +273,7 @@ class MLBacktester:
         self.n_splits = n_splits
         self.cache_dir = cache_dir or MODEL_CACHE_DIR
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self._prediction_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}  # coin_id -> (timestamp, result)
 
     # ── cache helpers ─────────────────────────────────────────────
 
@@ -444,10 +446,45 @@ class MLBacktester:
     async def predict_latest(
         self, coin_id: str, cg_collector, days: int = 90,
     ) -> Optional[Dict[str, Any]]:
-        """Use cached model to predict on latest market data."""
+        """Use cached model to predict on latest market data.
+        
+        If no cached model exists, auto-trains one from price history
+        (first call is slower, subsequent calls use 7-day cache).
+        Predictions themselves are cached for 15 minutes to avoid repeated API calls.
+        """
+        # ── Check prediction cache first (avoid repeated CoinGecko calls) ──
+        if coin_id in self._prediction_cache:
+            cached_time, cached_result = self._prediction_cache[coin_id]
+            if time.time() - cached_time < PREDICTION_CACHE_TTL:
+                return cached_result
+
         cached = self._load_cached(coin_id)
+        
+        # ── AUTO-TRAIN if no cache ──
         if cached is None:
-            return None
+            logger.info("No cached ML model for %s — auto-training...", coin_id)
+            try:
+                result = await self.run(
+                    coin_id=coin_id,
+                    coin_name=coin_id,
+                    symbol=coin_id[:5].upper(),
+                    cg_collector=cg_collector,
+                    days=max(days, MIN_HISTORY_DAYS),
+                )
+                if result.error or result.is_fallback:
+                    logger.warning("ML auto-train failed for %s: %s", coin_id, result.error)
+                    return None
+                # Model is now cached; reload from cache
+                cached = self._load_cached(coin_id)
+                if cached is None:
+                    return None
+                logger.info(
+                    "ML auto-trained %s: accuracy=%.3f passes=%s",
+                    coin_id, result.ml_accuracy, result.passes_threshold,
+                )
+            except Exception as exc:
+                logger.warning("ML auto-train exception for %s: %s", coin_id, exc)
+                return None
 
         model, cached_acc = cached
 
@@ -483,11 +520,14 @@ class MLBacktester:
         prob = model.predict_proba(row)[0]
         buy_prob = float(prob[1]) if len(prob) > 1 else 0.0
 
-        return {
+        result = {
             "buy_probability": round(buy_prob, 4),
             "prediction": "BUY" if buy_prob > 0.5 else "HOLD",
             "model_accuracy": cached_acc,
         }
+        # Cache prediction to avoid repeated API calls within 15 min
+        self._prediction_cache[coin_id] = (time.time(), result)
+        return result
 
     @staticmethod
     def _suggest_parameters(importance: Dict[str, float]) -> Dict[str, Any]:

@@ -579,7 +579,7 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
     Principle: We don't have a LONG bias or SHORT bias.
     We READ THE MARKET and pick the direction that maximises profit.
     Both sides get symmetric scoring — bearish signals are just as valuable as bullish ones.
-    XGBoost ML predictions (model_dir, model_7d) are used to validate direction.
+    XGBoost ML model validates direction when its accuracy justifies trust.
     """
     opportunities = []
 
@@ -591,18 +591,30 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
         trending = await cg_collector.get_trending()
         trending_ids = {t.coin_id for t in trending} if trending else set()
 
-        # ── Batch ML predictions for top coins ──
-        ml_predictions = {}  # coin_id -> {buy_probability, prediction}
-        for coin in top_coins[:20]:  # ML predict on top 20 (avoid rate limits)
+        # ── ML predictions for top coins (max 8 to limit API calls + training time) ──
+        # predict_latest auto-trains if no cache exists (first cycle ~7s/coin,
+        # subsequent cycles use 7-day cache and are instant).
+        ml_predictions = {}  # coin_id -> {buy_probability, prediction, model_accuracy}
+        ml_coin_count = 0
+        for coin in top_coins:
+            if ml_coin_count >= 8:
+                break
             if coin.coin_id in STABLECOINS:
                 continue
             try:
                 pred = await ml_bt.predict_latest(coin.coin_id, cg_collector, days=90)
-                if pred:
+                if pred and pred.get("model_accuracy", 0) >= 0.55:
                     ml_predictions[coin.coin_id] = pred
+                    ml_coin_count += 1
             except Exception:
                 pass
         if ml_predictions:
+            logger.info(
+                "ML predictions loaded for %d coins: %s",
+                len(ml_predictions),
+                {k: f"{v['buy_probability']:.2f} ({v['model_accuracy']*100:.0f}%acc)"
+                 for k, v in ml_predictions.items()},
+            )
             logger.info("ML predictions loaded for %d coins", len(ml_predictions))
 
         for coin in top_coins:
@@ -644,6 +656,11 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
             trend_score = 15 if is_trending else 0
 
             # ── ML PREDICTION SIGNAL ──
+            # NOTE: The XGBoost model predicts "will price rise ≥5% in 7 days?"
+            # buy_prob > 0.65 = strong bullish signal → boost LONG
+            # buy_prob < 0.35 = model says "unlikely to rise" → mild SHORT support
+            # The model is ONLY reliable when its accuracy > 55%.
+            # Low buy_prob does NOT equal "will crash" — it could mean sideways.
             ml_pred = ml_predictions.get(coin.coin_id)
             ml_long_boost = 0
             ml_short_boost = 0
@@ -651,19 +668,20 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
             if ml_pred:
                 buy_prob = ml_pred.get("buy_probability", 0.5)
                 ml_acc = ml_pred.get("model_accuracy", 0.5)
-                if ml_acc >= 0.55:  # only trust model if accuracy > 55%
-                    if buy_prob >= 0.65:
-                        ml_long_boost = 15
-                        ml_reason = f"🤖 ML says BUY ({buy_prob*100:.0f}% prob, {ml_acc*100:.0f}% acc)"
-                    elif buy_prob >= 0.55:
-                        ml_long_boost = 8
-                        ml_reason = f"🤖 ML leans bullish ({buy_prob*100:.0f}%)"
-                    elif buy_prob <= 0.35:
-                        ml_short_boost = 15
-                        ml_reason = f"🤖 ML says SELL ({(1-buy_prob)*100:.0f}% bearish, {ml_acc*100:.0f}% acc)"
-                    elif buy_prob <= 0.45:
-                        ml_short_boost = 8
-                        ml_reason = f"🤖 ML leans bearish ({(1-buy_prob)*100:.0f}%)"
+                # Accuracy gate already applied during loading (>= 0.55)
+                if buy_prob >= 0.70:
+                    ml_long_boost = 15
+                    ml_reason = f"🤖 ML: strong BUY signal ({buy_prob*100:.0f}% up-prob, {ml_acc*100:.0f}% model acc)"
+                elif buy_prob >= 0.55:
+                    ml_long_boost = 8
+                    ml_reason = f"🤖 ML: leans bullish ({buy_prob*100:.0f}% up-prob)"
+                elif buy_prob <= 0.30:
+                    # Model says "very unlikely to rise 5%" — supports SHORT
+                    ml_short_boost = 10  # weaker than LONG boost (model not trained for DOWN)
+                    ml_reason = f"🤖 ML: unlikely to rise ({buy_prob*100:.0f}% up-prob) — supports SHORT"
+                elif buy_prob <= 0.40:
+                    ml_short_boost = 5
+                    ml_reason = f"🤖 ML: weak upside ({buy_prob*100:.0f}% up-prob)"
 
             # ══════════════════════════════════════════════════════
             # ── LONG SIGNAL SCORING ──
