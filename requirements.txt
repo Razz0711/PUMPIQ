@@ -36,8 +36,8 @@ libsql-client>=0.3.0
 google-cloud-storage>=2.14.0
 
 # Blockchain (Base L2 / Ethereum) — optional, lazily imported
-# web3>=6.0.0     # Excluded from Vercel (heavy native deps); install locally
-# py-solc-x>=2.0.0
+web3>=6.0.0
+# py-solc-x>=2.0.0  # Only needed for contract compilation/deployment
 
 # ML / AI Algorithms — optional, lazily imported with graceful degradation
 # Heavy packages excluded from Vercel (exceed 500 MB Lambda limit).
