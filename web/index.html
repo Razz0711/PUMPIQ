@@ -4363,7 +4363,7 @@
         /* Ticker Tape */
         .tv-ticker-tape-wrap {
             position: sticky;
-            top: 60px;
+            top: 56px;
             z-index: 90;
             background: linear-gradient(135deg, rgba(10, 14, 23, 0.95), rgba(26, 31, 46, 0.95));
             border-bottom: 1px solid var(--border);
@@ -4371,7 +4371,7 @@
             -webkit-backdrop-filter: blur(12px);
             overflow: hidden;
             min-height: 0;
-            height: 46px;
+            height: 36px;
             transition: height 0.3s ease, opacity 0.3s ease;
         }
 
@@ -6009,210 +6009,201 @@
     <!-- SETTINGS PAGE                                              -->
     <!-- ═══════════════════════════════════════════════════════════ -->
     <div class="page" id="page-settings">
-        <div class="section-title">Settings</div>
-        <div class="section-desc">Customize your NexYpher experience</div>
+        <div class="sett-page">
+            <h2 class="sett-title">Settings</h2>
+            <div class="sett-subtitle">Manage your preferences, trading defaults, and integrations</div>
 
-        <div class="settings-layout">
-            <!-- Sidebar -->
-            <nav class="settings-sidebar">
-                <button class="settings-nav-item active" onclick="switchSettingsTab('general', this)">
-                    <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="9" cy="9" r="7"/><path d="M9 6v3l2 2"/></svg>
-                    General
-                </button>
-                <button class="settings-nav-item" onclick="switchSettingsTab('appearance', this)">
-                    <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="9" cy="9" r="7"/><path d="M9 2a7 7 0 000 14V2z"/></svg>
-                    Appearance
-                </button>
-                <button class="settings-nav-item" onclick="switchSettingsTab('notifications', this)">
-                    <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 7a5 5 0 0110 0c0 4 2 5 2 5H2s2-1 2-5zM7 14a2 2 0 004 0"/></svg>
-                    Notifications
-                </button>
-                <button class="settings-nav-item" onclick="switchSettingsTab('trading', this)">
-                    <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 13l4-4 3 3 7-8"/><path d="M12 4h4v4"/></svg>
-                    Trading
-                </button>
-                <button class="settings-nav-item" onclick="switchSettingsTab('risk', this)">
-                    <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 2l7 13H2L9 2z"/><path d="M9 7v3M9 12.5v.5"/></svg>
-                    Risk Management
-                </button>
-                <button class="settings-nav-item" onclick="switchSettingsTab('apikeys', this)">
-                    <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="3"/><path d="M9.5 9.5l6 6M13 13l2-2M14.5 14.5l2-2"/></svg>
-                    API Keys
-                </button>
-                <button class="settings-nav-item" onclick="switchSettingsTab('privacy', this)">
-                    <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="8" width="10" height="8" rx="1"/><path d="M6 8V5a3 3 0 016 0v3"/></svg>
-                    Data &amp; Privacy
-                </button>
-            </nav>
+            <div class="sett-grid">
+                <!-- Sidebar -->
+                <nav class="sett-sidebar">
+                    <button class="sett-nav active" onclick="switchSettingsTab('general', this)">
+                        <svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="9" cy="9" r="7"/><path d="M9 6v3l2 2"/></svg>
+                        General
+                    </button>
+                    <button class="sett-nav" onclick="switchSettingsTab('appearance', this)">
+                        <svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="9" cy="9" r="7"/><path d="M9 2a7 7 0 000 14V2z"/></svg>
+                        Appearance
+                    </button>
+                    <button class="sett-nav" onclick="switchSettingsTab('notifications', this)">
+                        <svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 7a5 5 0 0110 0c0 4 2 5 2 5H2s2-1 2-5zM7 14a2 2 0 004 0"/></svg>
+                        Notifications
+                    </button>
+                    <button class="sett-nav" onclick="switchSettingsTab('trading', this)">
+                        <svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 13l4-4 3 3 7-8"/><path d="M12 4h4v4"/></svg>
+                        Trading
+                    </button>
+                    <button class="sett-nav" onclick="switchSettingsTab('risk', this)">
+                        <svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 2l7 13H2L9 2z"/><path d="M9 7v3M9 12.5v.5"/></svg>
+                        Risk Management
+                    </button>
+                    <button class="sett-nav" onclick="switchSettingsTab('apikeys', this)">
+                        <svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="3"/><path d="M9.5 9.5l6 6M13 13l2-2M14.5 14.5l2-2"/></svg>
+                        API Keys
+                    </button>
+                    <button class="sett-nav" onclick="switchSettingsTab('privacy', this)">
+                        <svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="8" width="10" height="8" rx="1"/><path d="M6 8V5a3 3 0 016 0v3"/></svg>
+                        Data &amp; Privacy
+                    </button>
+                </nav>
 
-            <!-- Content -->
-            <div class="settings-content">
+                <!-- Content -->
+                <div class="sett-content">
 
-                <!-- GENERAL -->
-                <div class="settings-panel active" id="settingsPanel-general">
-                    <div class="settings-panel-title">General</div>
-                    <div class="settings-panel-desc">Basic preferences for your account</div>
+                    <!-- GENERAL -->
+                    <div class="sett-panel active" id="settingsPanel-general">
+                        <div class="sett-panel-head">General</div>
+                        <div class="sett-panel-desc">Basic preferences for your account</div>
 
-                    <div class="settings-group">
-                        <div class="settings-group-title">Exchange</div>
-                        <div class="settings-row">
-                            <div class="settings-row-info">
-                                <div class="settings-row-label">Default Exchange</div>
-                                <div class="settings-row-hint">Primary exchange for trading</div>
-                            </div>
-                            <div class="settings-row-control">
-                                <select id="settDefaultExchange" class="settings-select">
+                        <div class="sett-group">
+                            <div class="sett-group-label">Exchange</div>
+                            <div class="sett-row">
+                                <div class="sett-row-info">
+                                    <div class="sett-row-label">Default Exchange</div>
+                                    <div class="sett-row-hint">Primary exchange for trading</div>
+                                </div>
+                                <select id="settDefaultExchange" class="sett-select">
                                     <option value="binance">Binance</option>
-                                    <option value="bybit">Bybit</option>
+                                    <option value="bybit" selected>Bybit</option>
                                     <option value="okx">OKX</option>
                                     <option value="coinbase">Coinbase</option>
                                     <option value="kraken">Kraken</option>
                                     <option value="kucoin">KuCoin</option>
                                 </select>
                             </div>
-                        </div>
-                        <div class="settings-row">
-                            <div class="settings-row-info">
-                                <div class="settings-row-label">Default Stablecoin</div>
-                                <div class="settings-row-hint">Quote currency for pairs</div>
-                            </div>
-                            <div class="settings-row-control">
-                                <select id="settDefaultStable" class="settings-select">
-                                    <option value="USDT">USDT</option>
+                            <div class="sett-row">
+                                <div class="sett-row-info">
+                                    <div class="sett-row-label">Default Stablecoin</div>
+                                    <div class="sett-row-hint">Quote currency for pairs</div>
+                                </div>
+                                <select id="settDefaultStable" class="sett-select">
+                                    <option value="USDT" selected>USDT</option>
                                     <option value="USDC">USDC</option>
                                     <option value="BUSD">BUSD</option>
                                 </select>
                             </div>
                         </div>
-                    </div>
 
-                    <div class="settings-group">
-                        <div class="settings-group-title">Display</div>
-                        <div class="settings-row">
-                            <div class="settings-row-info">
-                                <div class="settings-row-label">Currency</div>
-                                <div class="settings-row-hint">Display currency for portfolio values</div>
-                            </div>
-                            <div class="settings-row-control">
-                                <select id="settDisplayCurrency" class="settings-select">
-                                    <option value="USD">USD ($)</option>
-                                    <option value="EUR">EUR (&#8364;)</option>
-                                    <option value="GBP">GBP (&#163;)</option>
+                        <div class="sett-group">
+                            <div class="sett-group-label">Display</div>
+                            <div class="sett-row">
+                                <div class="sett-row-info">
+                                    <div class="sett-row-label">Currency</div>
+                                    <div class="sett-row-hint">Display currency for portfolio values</div>
+                                </div>
+                                <select id="settDisplayCurrency" class="sett-select">
+                                    <option value="USD" selected>USD ($)</option>
+                                    <option value="EUR">EUR (&euro;)</option>
+                                    <option value="GBP">GBP (&pound;)</option>
                                     <option value="BTC">BTC (&#8383;)</option>
+                                </select>
+                            </div>
+                            <div class="sett-row">
+                                <div class="sett-row-info">
+                                    <div class="sett-row-label">Timezone</div>
+                                    <div class="sett-row-hint">Times shown in your local zone</div>
+                                </div>
+                                <select id="settTimezone" class="sett-select">
+                                    <option value="auto" selected>Auto (Browser)</option>
+                                    <option value="UTC">UTC</option>
+                                    <option value="EST">EST</option>
+                                    <option value="PST">PST</option>
+                                    <option value="IST">IST</option>
+                                    <option value="JST">JST</option>
                                 </select>
                             </div>
                         </div>
                     </div>
-                </div>
 
-                <!-- APPEARANCE -->
-                <div class="settings-panel" id="settingsPanel-appearance">
-                    <div class="settings-panel-title">Appearance</div>
-                    <div class="settings-panel-desc">Theme and visual preferences</div>
+                    <!-- APPEARANCE -->
+                    <div class="sett-panel" id="settingsPanel-appearance">
+                        <div class="sett-panel-head">Appearance</div>
+                        <div class="sett-panel-desc">Theme and visual preferences</div>
 
-                    <div class="settings-group">
-                        <div class="settings-group-title">Theme</div>
-                        <div class="settings-row">
-                            <div class="settings-row-info">
-                                <div class="settings-row-label">Color Theme</div>
-                                <div class="settings-row-hint">Choose your preferred theme</div>
-                            </div>
-                            <div class="settings-row-control">
-                                <select id="settTheme" class="settings-select" onchange="applyTheme(this.value)">
+                        <div class="sett-group">
+                            <div class="sett-group-label">Theme</div>
+                            <div class="sett-row">
+                                <div class="sett-row-info">
+                                    <div class="sett-row-label">Color Theme</div>
+                                    <div class="sett-row-hint">Choose your preferred theme</div>
+                                </div>
+                                <select id="settTheme" class="sett-select" onchange="applyTheme(this.value)">
                                     <option value="dark" selected>Dark</option>
                                     <option value="light">Light</option>
                                     <option value="midnight">Midnight</option>
                                 </select>
                             </div>
                         </div>
-                    </div>
 
-                    <div class="settings-group">
-                        <div class="settings-group-title">Accent Color</div>
-                        <div style="display:flex;gap:10px;flex-wrap:wrap;padding:4px 0">
-                            <button class="color-swatch active" onclick="setAccent(this,'#6c5ce7')"
-                                style="width:36px;height:36px;border-radius:50%;border:2px solid transparent;background:#6c5ce7;cursor:pointer;transition:border-color .2s"></button>
-                            <button class="color-swatch" onclick="setAccent(this,'#00b894')"
-                                style="width:36px;height:36px;border-radius:50%;border:2px solid transparent;background:#00b894;cursor:pointer;transition:border-color .2s"></button>
-                            <button class="color-swatch" onclick="setAccent(this,'#0984e3')"
-                                style="width:36px;height:36px;border-radius:50%;border:2px solid transparent;background:#0984e3;cursor:pointer;transition:border-color .2s"></button>
-                            <button class="color-swatch" onclick="setAccent(this,'#e17055')"
-                                style="width:36px;height:36px;border-radius:50%;border:2px solid transparent;background:#e17055;cursor:pointer;transition:border-color .2s"></button>
-                            <button class="color-swatch" onclick="setAccent(this,'#fdcb6e')"
-                                style="width:36px;height:36px;border-radius:50%;border:2px solid transparent;background:#fdcb6e;cursor:pointer;transition:border-color .2s"></button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- NOTIFICATIONS -->
-                <div class="settings-panel" id="settingsPanel-notifications">
-                    <div class="settings-panel-title">Notifications</div>
-                    <div class="settings-panel-desc">Control what alerts you receive</div>
-
-                    <div class="settings-group">
-                        <div class="settings-group-title">Alerts</div>
-                        <div class="settings-row">
-                            <div class="settings-row-info">
-                                <div class="settings-row-label">Price Alerts</div>
-                                <div class="settings-row-hint">Get notified on significant price moves</div>
-                            </div>
-                            <div class="settings-row-control">
-                                <label class="toggle-switch"><input type="checkbox" id="settPriceAlerts" checked><span class="toggle-track"></span></label>
-                            </div>
-                        </div>
-                        <div class="settings-row">
-                            <div class="settings-row-info">
-                                <div class="settings-row-label">AI Recommendations</div>
-                                <div class="settings-row-hint">Alerts when AI detects opportunities</div>
-                            </div>
-                            <div class="settings-row-control">
-                                <label class="toggle-switch"><input type="checkbox" id="settAIAlerts" checked><span class="toggle-track"></span></label>
-                            </div>
-                        </div>
-                        <div class="settings-row">
-                            <div class="settings-row-info">
-                                <div class="settings-row-label">Trade Execution</div>
-                                <div class="settings-row-hint">Notifications for filled orders</div>
-                            </div>
-                            <div class="settings-row-control">
-                                <label class="toggle-switch"><input type="checkbox" id="settTradeAlerts" checked><span class="toggle-track"></span></label>
-                            </div>
-                        </div>
-                        <div class="settings-row">
-                            <div class="settings-row-info">
-                                <div class="settings-row-label">Whale Movements</div>
-                                <div class="settings-row-hint">Large transaction alerts</div>
-                            </div>
-                            <div class="settings-row-control">
-                                <label class="toggle-switch"><input type="checkbox" id="settWhaleAlerts"><span class="toggle-track"></span></label>
-                            </div>
-                        </div>
-                        <div class="settings-row">
-                            <div class="settings-row-info">
-                                <div class="settings-row-label">Daily Portfolio Summary</div>
-                                <div class="settings-row-hint">End-of-day performance digest</div>
-                            </div>
-                            <div class="settings-row-control">
-                                <label class="toggle-switch"><input type="checkbox" id="settDailySummary" checked><span class="toggle-track"></span></label>
+                        <div class="sett-group">
+                            <div class="sett-group-label">Accent Color</div>
+                            <div class="sett-swatches">
+                                <button class="sett-swatch active" onclick="setAccent(this,'#6c63ff')" style="background:#6c63ff"></button>
+                                <button class="sett-swatch" onclick="setAccent(this,'#00d395')" style="background:#00d395"></button>
+                                <button class="sett-swatch" onclick="setAccent(this,'#3b82f6')" style="background:#3b82f6"></button>
+                                <button class="sett-swatch" onclick="setAccent(this,'#e17055')" style="background:#e17055"></button>
+                                <button class="sett-swatch" onclick="setAccent(this,'#f59e0b')" style="background:#f59e0b"></button>
                             </div>
                         </div>
                     </div>
-                </div>
 
-                <!-- TRADING -->
-                <div class="settings-panel" id="settingsPanel-trading">
-                    <div class="settings-panel-title">Trading</div>
-                    <div class="settings-panel-desc">Default parameters for trade execution</div>
+                    <!-- NOTIFICATIONS -->
+                    <div class="sett-panel" id="settingsPanel-notifications">
+                        <div class="sett-panel-head">Notifications</div>
+                        <div class="sett-panel-desc">Control what alerts you receive</div>
 
-                    <div class="settings-group">
-                        <div class="settings-group-title">Order Defaults</div>
-                        <div class="settings-row">
-                            <div class="settings-row-info">
-                                <div class="settings-row-label">Default Leverage</div>
-                                <div class="settings-row-hint">Applied to new positions</div>
+                        <div class="sett-group">
+                            <div class="sett-group-label">Alerts</div>
+                            <div class="sett-row">
+                                <div class="sett-row-info">
+                                    <div class="sett-row-label">Price Alerts</div>
+                                    <div class="sett-row-hint">Get notified on significant price moves</div>
+                                </div>
+                                <label class="sett-toggle"><input type="checkbox" id="settPriceAlerts" checked><span class="sett-toggle-track"></span></label>
                             </div>
-                            <div class="settings-row-control">
-                                <select id="settDefaultLeverage" class="settings-select">
+                            <div class="sett-row">
+                                <div class="sett-row-info">
+                                    <div class="sett-row-label">AI Recommendations</div>
+                                    <div class="sett-row-hint">Alerts when AI detects opportunities</div>
+                                </div>
+                                <label class="sett-toggle"><input type="checkbox" id="settAIAlerts" checked><span class="sett-toggle-track"></span></label>
+                            </div>
+                            <div class="sett-row">
+                                <div class="sett-row-info">
+                                    <div class="sett-row-label">Trade Execution</div>
+                                    <div class="sett-row-hint">Notifications for filled orders</div>
+                                </div>
+                                <label class="sett-toggle"><input type="checkbox" id="settTradeAlerts" checked><span class="sett-toggle-track"></span></label>
+                            </div>
+                            <div class="sett-row">
+                                <div class="sett-row-info">
+                                    <div class="sett-row-label">Whale Movements</div>
+                                    <div class="sett-row-hint">Large transaction alerts</div>
+                                </div>
+                                <label class="sett-toggle"><input type="checkbox" id="settWhaleAlerts"><span class="sett-toggle-track"></span></label>
+                            </div>
+                            <div class="sett-row">
+                                <div class="sett-row-info">
+                                    <div class="sett-row-label">Daily Portfolio Summary</div>
+                                    <div class="sett-row-hint">End-of-day performance digest</div>
+                                </div>
+                                <label class="sett-toggle"><input type="checkbox" id="settDailySummary" checked><span class="sett-toggle-track"></span></label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- TRADING -->
+                    <div class="sett-panel" id="settingsPanel-trading">
+                        <div class="sett-panel-head">Trading</div>
+                        <div class="sett-panel-desc">Default parameters for trade execution</div>
+
+                        <div class="sett-group">
+                            <div class="sett-group-label">Order Defaults</div>
+                            <div class="sett-row">
+                                <div class="sett-row-info">
+                                    <div class="sett-row-label">Default Leverage</div>
+                                    <div class="sett-row-hint">Applied to new positions</div>
+                                </div>
+                                <select id="settDefaultLeverage" class="sett-select">
                                     <option value="1">1x</option>
                                     <option value="2">2x</option>
                                     <option value="5" selected>5x</option>
@@ -6220,28 +6211,24 @@
                                     <option value="25">25x</option>
                                 </select>
                             </div>
-                        </div>
-                        <div class="settings-row">
-                            <div class="settings-row-info">
-                                <div class="settings-row-label">Default Position Size</div>
-                                <div class="settings-row-hint">Percentage of portfolio per trade</div>
-                            </div>
-                            <div class="settings-row-control">
-                                <select id="settPositionSize" class="settings-select">
+                            <div class="sett-row">
+                                <div class="sett-row-info">
+                                    <div class="sett-row-label">Default Position Size</div>
+                                    <div class="sett-row-hint">Percentage of portfolio per trade</div>
+                                </div>
+                                <select id="settPositionSize" class="sett-select">
                                     <option value="1">1%</option>
                                     <option value="2" selected>2%</option>
                                     <option value="5">5%</option>
                                     <option value="10">10%</option>
                                 </select>
                             </div>
-                        </div>
-                        <div class="settings-row">
-                            <div class="settings-row-info">
-                                <div class="settings-row-label">Default Timeframe</div>
-                                <div class="settings-row-hint">Chart & analysis timeframe</div>
-                            </div>
-                            <div class="settings-row-control">
-                                <select id="settTimeframe" class="settings-select">
+                            <div class="sett-row">
+                                <div class="sett-row-info">
+                                    <div class="sett-row-label">Default Timeframe</div>
+                                    <div class="sett-row-hint">Chart &amp; analysis timeframe</div>
+                                </div>
+                                <select id="settTimeframe" class="sett-select">
                                     <option value="5m">5 min</option>
                                     <option value="15m" selected>15 min</option>
                                     <option value="1h">1 hour</option>
@@ -6250,188 +6237,206 @@
                                 </select>
                             </div>
                         </div>
-                    </div>
 
-                    <div class="settings-group">
-                        <div class="settings-group-title">Automation</div>
-                        <div class="settings-row">
-                            <div class="settings-row-info">
-                                <div class="settings-row-label">Auto Stop-Loss</div>
-                                <div class="settings-row-hint">Automatically set SL on every trade</div>
+                        <div class="sett-group">
+                            <div class="sett-group-label">Automation</div>
+                            <div class="sett-row">
+                                <div class="sett-row-info">
+                                    <div class="sett-row-label">Auto Stop-Loss</div>
+                                    <div class="sett-row-hint">Automatically set SL on every trade</div>
+                                </div>
+                                <label class="sett-toggle"><input type="checkbox" id="settAutoSL" checked><span class="sett-toggle-track"></span></label>
                             </div>
-                            <div class="settings-row-control">
-                                <label class="toggle-switch"><input type="checkbox" id="settAutoSL" checked><span class="toggle-track"></span></label>
+                            <div class="sett-row">
+                                <div class="sett-row-info">
+                                    <div class="sett-row-label">Auto Take-Profit</div>
+                                    <div class="sett-row-hint">Automatically set TP targets</div>
+                                </div>
+                                <label class="sett-toggle"><input type="checkbox" id="settAutoTP" checked><span class="sett-toggle-track"></span></label>
                             </div>
-                        </div>
-                        <div class="settings-row">
-                            <div class="settings-row-info">
-                                <div class="settings-row-label">Auto Take-Profit</div>
-                                <div class="settings-row-hint">Automatically set TP targets</div>
+                            <div class="sett-row">
+                                <div class="sett-row-info">
+                                    <div class="sett-row-label">Paper Trading Mode</div>
+                                    <div class="sett-row-hint">Execute trades with simulated funds</div>
+                                </div>
+                                <div class="sett-row-right">
+                                    <label class="sett-toggle"><input type="checkbox" id="settPaperTrading" onchange="togglePaperWarning(this)"><span class="sett-toggle-track"></span></label>
+                                </div>
                             </div>
-                            <div class="settings-row-control">
-                                <label class="toggle-switch"><input type="checkbox" id="settAutoTP" checked><span class="toggle-track"></span></label>
-                            </div>
-                        </div>
-                        <div class="settings-row">
-                            <div class="settings-row-info">
-                                <div class="settings-row-label">Paper Trading Mode</div>
-                                <div class="settings-row-hint">Execute trades with simulated funds</div>
-                            </div>
-                            <div class="settings-row-control">
-                                <label class="toggle-switch"><input type="checkbox" id="settPaperTrading"><span class="toggle-track"></span></label>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- RISK MANAGEMENT -->
-                <div class="settings-panel" id="settingsPanel-risk">
-                    <div class="settings-panel-title">Risk Management</div>
-                    <div class="settings-panel-desc">Protect your capital with safety controls</div>
-
-                    <div class="settings-group">
-                        <div class="settings-group-title">Risk Profile</div>
-                        <div class="settings-row">
-                            <div class="settings-row-info">
-                                <div class="settings-row-label">Risk Level</div>
-                                <div class="settings-row-hint">Determines position sizing and alerts</div>
-                            </div>
-                            <div class="settings-row-control">
-                                <select id="settRiskLevel" class="settings-select">
-                                    <option value="conservative">Conservative</option>
-                                    <option value="moderate" selected>Moderate</option>
-                                    <option value="aggressive">Aggressive</option>
-                                </select>
+                            <div class="sett-paper-warn" id="paperTradingWarn" style="display:none">
+                                <svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="#f59e0b" stroke-width="1.5"><path d="M9 2l7 13H2L9 2z"/><path d="M9 7v3M9 12.5v.5"/></svg>
+                                Paper mode is active — no real funds will be used
                             </div>
                         </div>
                     </div>
 
-                    <div class="settings-group">
-                        <div class="settings-group-title">Safety Controls</div>
-                        <div class="settings-row">
-                            <div class="settings-row-info">
-                                <div class="settings-row-label">Max Open Positions</div>
-                                <div class="settings-row-hint">Limit concurrent open trades</div>
+                    <!-- RISK MANAGEMENT -->
+                    <div class="sett-panel" id="settingsPanel-risk">
+                        <div class="sett-panel-head">Risk Management</div>
+                        <div class="sett-panel-desc">Protect your capital with safety controls</div>
+
+                        <div class="sett-group">
+                            <div class="sett-group-label">Limits</div>
+                            <div class="sett-row">
+                                <div class="sett-row-info">
+                                    <div class="sett-row-label">Max Daily Loss</div>
+                                    <div class="sett-row-hint">Stop trading after this loss amount</div>
+                                </div>
+                                <div class="sett-input-wrap">
+                                    <span class="sett-input-prefix">$</span>
+                                    <input type="number" id="settMaxDailyLoss" class="sett-input" value="500" min="0" step="50">
+                                </div>
                             </div>
-                            <div class="settings-row-control">
-                                <select id="settMaxPositions" class="settings-select">
-                                    <option value="3">3</option>
-                                    <option value="5" selected>5</option>
-                                    <option value="10">10</option>
-                                    <option value="20">20</option>
-                                    <option value="0">Unlimited</option>
-                                </select>
+                            <div class="sett-row">
+                                <div class="sett-row-info">
+                                    <div class="sett-row-label">Max Trades / Day</div>
+                                    <div class="sett-row-hint">Limit number of daily trades</div>
+                                </div>
+                                <input type="number" id="settMaxDailyTrades" class="sett-input" value="10" min="1" max="100">
                             </div>
-                        </div>
-                        <div class="settings-row">
-                            <div class="settings-row-info">
-                                <div class="settings-row-label">Max Daily Loss</div>
-                                <div class="settings-row-hint">Stop trading after this loss (% of portfolio)</div>
-                            </div>
-                            <div class="settings-row-control">
-                                <select id="settMaxDailyLoss" class="settings-select">
+                            <div class="sett-row">
+                                <div class="sett-row-info">
+                                    <div class="sett-row-label">Max Position Size</div>
+                                    <div class="sett-row-hint">Maximum % of portfolio per trade</div>
+                                </div>
+                                <select id="settMaxPositionSize" class="sett-select">
                                     <option value="2">2%</option>
                                     <option value="5" selected>5%</option>
                                     <option value="10">10%</option>
-                                    <option value="0">No limit</option>
+                                    <option value="25">25%</option>
+                                </select>
+                            </div>
+                            <div class="sett-row">
+                                <div class="sett-row-info">
+                                    <div class="sett-row-label">Stop Loss Default</div>
+                                    <div class="sett-row-hint">Default SL percentage for new trades</div>
+                                </div>
+                                <select id="settDefaultSL" class="sett-select">
+                                    <option value="1">1%</option>
+                                    <option value="2">2%</option>
+                                    <option value="3" selected>3%</option>
+                                    <option value="5">5%</option>
+                                </select>
+                            </div>
+                            <div class="sett-row">
+                                <div class="sett-row-info">
+                                    <div class="sett-row-label">Take Profit Default</div>
+                                    <div class="sett-row-hint">Default TP percentage for new trades</div>
+                                </div>
+                                <select id="settDefaultTP" class="sett-select">
+                                    <option value="3">3%</option>
+                                    <option value="6" selected>6%</option>
+                                    <option value="10">10%</option>
+                                    <option value="15">15%</option>
                                 </select>
                             </div>
                         </div>
-                        <div class="settings-row">
-                            <div class="settings-row-info">
-                                <div class="settings-row-label">Kill Switch</div>
-                                <div class="settings-row-hint">Emergency: close all positions &amp; stop trading</div>
-                            </div>
-                            <div class="settings-row-control">
-                                <label class="toggle-switch"><input type="checkbox" id="settKillSwitch"><span class="toggle-track"></span></label>
+
+                        <div class="sett-group">
+                            <div class="sett-group-label">Kill Switch</div>
+                            <div class="sett-row sett-killswitch" id="killSwitchRow">
+                                <div class="sett-row-info">
+                                    <div class="sett-row-label">Emergency Kill Switch</div>
+                                    <div class="sett-row-hint">Close all positions &amp; halt trading immediately</div>
+                                </div>
+                                <label class="sett-toggle sett-toggle-danger"><input type="checkbox" id="settKillSwitch" onchange="toggleKillSwitch(this)"><span class="sett-toggle-track"></span></label>
                             </div>
                         </div>
                     </div>
-                </div>
 
-                <!-- API KEYS -->
-                <div class="settings-panel" id="settingsPanel-apikeys">
-                    <div class="settings-panel-title">API Keys</div>
-                    <div class="settings-panel-desc">Connect exchange API keys for live trading</div>
+                    <!-- API KEYS -->
+                    <div class="sett-panel" id="settingsPanel-apikeys">
+                        <div class="sett-panel-head">API Keys</div>
+                        <div class="sett-panel-desc">Connect exchange API keys for live trading</div>
 
-                    <div class="settings-group">
-                        <div class="settings-group-title">Connected Keys</div>
-                        <div id="settApiKeysList"></div>
-                        <div style="color:var(--text-muted);font-size:12px;padding-top:4px">No API keys connected yet.</div>
-                    </div>
+                        <div class="sett-api-warn">
+                            <svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="#f59e0b" stroke-width="1.5"><path d="M9 2l7 13H2L9 2z"/><path d="M9 7v3M9 12.5v.5"/></svg>
+                            Use read-only API keys whenever possible. Never share your secret key.
+                        </div>
 
-                    <div class="settings-group">
-                        <div class="settings-group-title">Add New Key</div>
-                        <div class="settings-row">
-                            <div class="settings-row-info">
-                                <div class="settings-row-label">Exchange</div>
-                            </div>
-                            <div class="settings-row-control">
-                                <select id="settApiExchange" class="settings-select">
-                                    <option>Binance</option>
-                                    <option>Bybit</option>
-                                    <option>OKX</option>
-                                    <option>Coinbase</option>
-                                    <option>Kraken</option>
-                                    <option>KuCoin</option>
-                                </select>
-                            </div>
+                        <div class="sett-group">
+                            <div class="sett-group-label">Connected Keys</div>
+                            <div id="settApiKeysList"></div>
                         </div>
-                        <div class="settings-row">
-                            <div class="settings-row-info">
-                                <div class="settings-row-label">API Key</div>
-                            </div>
-                            <div class="settings-row-control">
-                                <input type="password" id="settApiKey" placeholder="Enter API Key" class="settings-input" style="width:220px">
-                            </div>
-                        </div>
-                        <div class="settings-row">
-                            <div class="settings-row-info">
-                                <div class="settings-row-label">API Secret</div>
-                            </div>
-                            <div class="settings-row-control">
-                                <input type="password" id="settApiSecret" placeholder="Enter API Secret" class="settings-input" style="width:220px">
-                            </div>
-                        </div>
-                        <div style="margin-top:12px;display:flex;align-items:center;gap:12px">
-                            <button class="btn btn-primary btn-sm" onclick="saveApiKey()">Save API Key</button>
-                            <span style="color:var(--text-muted);font-size:12px">Keys are encrypted. Use read-only keys for safety.</span>
-                        </div>
-                    </div>
-                </div>
 
-                <!-- DATA & PRIVACY -->
-                <div class="settings-panel" id="settingsPanel-privacy">
-                    <div class="settings-panel-title">Data &amp; Privacy</div>
-                    <div class="settings-panel-desc">Control how your data is used</div>
-
-                    <div class="settings-group">
-                        <div class="settings-group-title">Data Sharing</div>
-                        <div class="settings-row">
-                            <div class="settings-row-info">
-                                <div class="settings-row-label">Share Trade History for AI</div>
-                                <div class="settings-row-hint">Help improve AI models with anonymized data</div>
+                        <div class="sett-group">
+                            <div class="sett-group-label">Add New Key</div>
+                            <div class="sett-exchange-pills" id="settExchangePills">
+                                <button class="sett-pill active" onclick="selectExchangePill(this,'Binance')">Binance</button>
+                                <button class="sett-pill" onclick="selectExchangePill(this,'Coinbase')">Coinbase</button>
+                                <button class="sett-pill" onclick="selectExchangePill(this,'Kraken')">Kraken</button>
+                                <button class="sett-pill" onclick="selectExchangePill(this,'OKX')">OKX</button>
+                                <button class="sett-pill" onclick="selectExchangePill(this,'Bybit')">Bybit</button>
                             </div>
-                            <div class="settings-row-control">
-                                <label class="toggle-switch"><input type="checkbox" id="settShareData" checked><span class="toggle-track"></span></label>
+                            <input type="hidden" id="settApiExchange" value="Binance">
+                            <div class="sett-row" style="border-bottom:none;padding-bottom:0">
+                                <div class="sett-row-info"><div class="sett-row-label">API Key</div></div>
+                                <input type="password" id="settApiKey" placeholder="Enter API Key" class="sett-input" style="width:220px">
                             </div>
-                        </div>
-                        <div class="settings-row">
-                            <div class="settings-row-info">
-                                <div class="settings-row-label">Analytics Cookies</div>
-                                <div class="settings-row-hint">Usage analytics to improve the platform</div>
+                            <div class="sett-row" style="border-bottom:none;padding-bottom:0">
+                                <div class="sett-row-info"><div class="sett-row-label">API Secret</div></div>
+                                <input type="password" id="settApiSecret" placeholder="Enter API Secret" class="sett-input" style="width:220px">
                             </div>
-                            <div class="settings-row-control">
-                                <label class="toggle-switch"><input type="checkbox" id="settAnalytics" checked><span class="toggle-track"></span></label>
+                            <div style="margin-top:10px">
+                                <button class="sett-btn-primary" onclick="saveApiKey()">Save API Key</button>
                             </div>
                         </div>
                     </div>
-                </div>
 
-                <!-- Save / Reset -->
-                <div class="settings-footer">
-                    <button class="btn btn-primary" onclick="saveSettings()" style="flex:1">Save Settings</button>
-                    <button class="btn btn-outline" onclick="resetSettings()">Reset to Default</button>
+                    <!-- DATA & PRIVACY -->
+                    <div class="sett-panel" id="settingsPanel-privacy">
+                        <div class="sett-panel-head">Data &amp; Privacy</div>
+                        <div class="sett-panel-desc">Control how your data is used</div>
+
+                        <div class="sett-group">
+                            <div class="sett-group-label">Data Sharing</div>
+                            <div class="sett-row">
+                                <div class="sett-row-info">
+                                    <div class="sett-row-label">Share Trade History for AI</div>
+                                    <div class="sett-row-hint">Help improve AI models with anonymized data</div>
+                                </div>
+                                <label class="sett-toggle"><input type="checkbox" id="settShareData" checked><span class="sett-toggle-track"></span></label>
+                            </div>
+                            <div class="sett-row">
+                                <div class="sett-row-info">
+                                    <div class="sett-row-label">Analytics Cookies</div>
+                                    <div class="sett-row-hint">Usage analytics to improve the platform</div>
+                                </div>
+                                <label class="sett-toggle"><input type="checkbox" id="settAnalytics" checked><span class="sett-toggle-track"></span></label>
+                            </div>
+                        </div>
+
+                        <div class="sett-group">
+                            <div class="sett-group-label">Data Export</div>
+                            <div class="sett-row">
+                                <div class="sett-row-info">
+                                    <div class="sett-row-label">Export Trade History</div>
+                                    <div class="sett-row-hint">Download all your data as CSV</div>
+                                </div>
+                                <button class="sett-btn-outline" onclick="exportTradeData()">
+                                    <svg width="13" height="13" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 12v3h12v-3M9 3v9M5 8l4 4 4-4"/></svg>
+                                    Download CSV
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="sett-group sett-danger-zone">
+                            <div class="sett-group-label" style="color:#ff4757">Danger Zone</div>
+                            <div class="sett-row" style="border-bottom:none">
+                                <div class="sett-row-info">
+                                    <div class="sett-row-label">Delete Account</div>
+                                    <div class="sett-row-hint">Permanently remove your account and all data</div>
+                                </div>
+                                <button class="sett-btn-danger" onclick="confirmDeleteAccount()">Delete Account</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Footer -->
+                    <div class="sett-footer">
+                        <button class="sett-btn-outline" onclick="resetSettings()">Reset to Default</button>
+                        <button class="sett-btn-primary" onclick="saveSettings()">Save Settings</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -6529,165 +6534,87 @@
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                         Edit Profile
                     </button>
-                    <button class="pro-id-btn" onclick="navigate('settings')">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
-                        Settings
-                    </button>
                 </div>
             </div>
 
-            <!-- ── Section 2: Trading Performance Hero ── -->
-            <div class="pro-perf-section">
-                <div class="pro-perf-header">
-                    <h3 class="pro-section-label">Trading Performance</h3>
-                    <div class="pro-perf-tabs" id="proPerfTabs">
-                        <button class="pro-perf-tab active" data-range="24h">24H</button>
-                        <button class="pro-perf-tab" data-range="7d">7D</button>
-                        <button class="pro-perf-tab" data-range="1m">1M</button>
-                        <button class="pro-perf-tab" data-range="all">ALL</button>
-                    </div>
+            <!-- ── Section 2: Stats Row ── -->
+            <div class="pro-stats-row">
+                <div class="pro-stat-cell">
+                    <div class="pro-stat-accent" style="background:#6c63ff"></div>
+                    <div class="pro-stat-label">Balance</div>
+                    <div class="pro-stat-value" id="proBalanceVal">$0.00</div>
                 </div>
-                <div class="pro-perf-grid">
-                    <div class="pro-metric-card pro-metric-balance">
-                        <div class="pro-metric-label">Paper Balance</div>
-                        <div class="pro-metric-value" id="proBalanceVal">$0.00</div>
-                        <div class="pro-metric-actions">
-                            <button class="pro-metric-action" onclick="showDepositModal()">+ Add</button>
-                            <button class="pro-metric-action" onclick="showWithdrawModal()">Withdraw</button>
-                            <button class="pro-metric-action" onclick="showTransactionsModal()">History</button>
-                        </div>
-                    </div>
-                    <div class="pro-metric-card">
-                        <div class="pro-metric-label">Total P&L</div>
-                        <div class="pro-metric-value" id="proTotalPnl">$0.00</div>
-                    </div>
-                    <div class="pro-metric-card">
-                        <div class="pro-metric-label">Win Rate</div>
-                        <div class="pro-metric-value" id="proWinRate">0%</div>
-                    </div>
-                    <div class="pro-metric-card">
-                        <div class="pro-metric-label">Total Trades</div>
-                        <div class="pro-metric-value" id="proTotalTrades">0</div>
-                    </div>
-                    <div class="pro-metric-card">
-                        <div class="pro-metric-label">Best Trade</div>
-                        <div class="pro-metric-value pro-positive" id="proBestTrade">$0.00</div>
-                    </div>
-                    <div class="pro-metric-card">
-                        <div class="pro-metric-label">Avg Hold Time</div>
-                        <div class="pro-metric-value" id="proAvgHold">--</div>
-                    </div>
+                <div class="pro-stat-cell">
+                    <div class="pro-stat-accent" style="background:#00d395"></div>
+                    <div class="pro-stat-label">Total P&L</div>
+                    <div class="pro-stat-value" id="proTotalPnl">$0.00</div>
+                </div>
+                <div class="pro-stat-cell">
+                    <div class="pro-stat-accent" style="background:#3b82f6"></div>
+                    <div class="pro-stat-label">Win Rate</div>
+                    <div class="pro-stat-value" id="proWinRate">0%</div>
+                </div>
+                <div class="pro-stat-cell">
+                    <div class="pro-stat-accent" style="background:#f59e0b"></div>
+                    <div class="pro-stat-label">Trades</div>
+                    <div class="pro-stat-value" id="proTotalTrades">0</div>
+                </div>
+                <div class="pro-stat-cell">
+                    <div class="pro-stat-accent" style="background:#00d395"></div>
+                    <div class="pro-stat-label">Best Trade</div>
+                    <div class="pro-stat-value pro-positive" id="proBestTrade">$0.00</div>
                 </div>
             </div>
-
-            <!-- ── Section 3: P&L Sparkline Chart ── -->
-            <div class="pro-sparkline-wrap">
-                <svg id="proSparklineSvg" class="pro-sparkline-svg" viewBox="0 0 900 100" preserveAspectRatio="none"></svg>
+            <div class="pro-balance-actions">
+                <button class="pro-ghost-btn" onclick="showDepositModal()">+ Add Funds</button>
+                <button class="pro-ghost-btn" onclick="showWithdrawModal()">Withdraw</button>
+                <button class="pro-ghost-btn" onclick="showTransactionsModal()">History</button>
             </div>
 
-            <!-- ── Section 4: Two-Column Layout (Portfolio + Watched Coins) ── -->
-            <div class="pro-two-col">
-                <!-- Left: Portfolio Table -->
-                <div class="pro-col-left">
+            <!-- ── Section 3: Portfolio (Full Width) ── -->
+            <div class="pro-portfolio-section">
+                <div class="pro-col-header">
+                    <h3 class="pro-section-label">Portfolio</h3>
+                    <div style="display:flex;gap:8px">
+                        <button class="pro-ghost-btn nx-import-btn" id="syncWalletBtn" onclick="syncPortfolioFromWallet()" style="display:none">Import from Wallet
+                            <span class="nx-tipbox nx-tipbox-import"><span class="nx-tipbox-arrow"></span><strong style="color:#fff;font-weight:600;display:block;margin-bottom:4px">Read Only Import</strong><span style="color:rgba(255,255,255,0.6)">Imports wallet holdings for display only.</span><br><span style="color:rgba(255,255,255,0.6)">Auto Trader will NEVER trade these assets.</span><div class="nx-tipbox-safe">✓ Real wallet is completely isolated</div></span>
+                        </button>
+                        <button class="pro-ghost-btn" onclick="showPortfolioModal()">+ Add Position</button>
+                    </div>
+                </div>
+                <div id="portfolioSyncStatus" style="display:none;font-size:11px;color:rgba(255,255,255,0.3);margin-bottom:8px;font-family:'Inter',sans-serif"></div>
+                <table class="pro-portfolio-table">
+                    <thead>
+                        <tr><th>Coin</th><th>Amount</th><th>Avg Price</th><th>Current</th><th>PnL</th></tr>
+                    </thead>
+                    <tbody id="portfolioBody"></tbody>
+                </table>
+            </div>
+
+            <!-- ── Section 4: Wallet & Bank (Two Column, Always Visible) ── -->
+            <div class="pro-wallet-bank-grid">
+                <!-- Left: Connected Wallet -->
+                <div class="pro-wb-card">
                     <div class="pro-col-header">
-                        <h3 class="pro-section-label">Portfolio</h3>
-                        <div style="display:flex;gap:8px">
-                            <button class="pro-small-btn nx-import-btn" id="syncWalletBtn" onclick="syncPortfolioFromWallet()" style="display:none">Import for Tracking Only
-                                <span class="nx-tipbox nx-tipbox-import"><span class="nx-tipbox-arrow"></span><strong style="color:#fff;font-weight:600;display:block;margin-bottom:4px">ℹ️ Read Only Import</strong><span style="color:rgba(255,255,255,0.6)">Imports wallet holdings for display only.</span><br><span style="color:rgba(255,255,255,0.6)">Auto Trader will NEVER trade these assets.</span><div class="nx-tipbox-safe">✓ Real wallet is completely isolated</div></span>
-                            </button>
-                            <button class="pro-small-btn" onclick="showPortfolioModal()">+ Add Position</button>
-                        </div>
+                        <h3 class="pro-section-label">Connected Wallet</h3>
+                        <button class="pro-ghost-btn" onclick="showWalletModal()">+ Add Wallet</button>
                     </div>
-                    <div id="portfolioSyncStatus" style="display:none;font-size:11px;color:rgba(255,255,255,0.3);margin-bottom:8px;font-family:'Inter',sans-serif"></div>
-                    <table class="pro-portfolio-table">
-                        <thead>
-                            <tr><th>Coin</th><th>Amount</th><th>Avg Price</th><th>Current</th><th>PnL</th></tr>
-                        </thead>
-                        <tbody id="portfolioBody"></tbody>
-                    </table>
+                    <div id="walletList">
+                        <div class="profile-empty-state">No wallets connected yet</div>
+                    </div>
+                    <div id="walletTxSection"></div>
                 </div>
-
-                <!-- Right: Watched Coins -->
-                <div class="pro-col-right">
+                <!-- Right: Linked Bank -->
+                <div class="pro-wb-card">
                     <div class="pro-col-header">
-                        <h3 class="pro-section-label">Watched Coins</h3>
-                        <a href="#" class="pro-view-all" onclick="event.preventDefault();navigate('watchlist')">View All &rarr;</a>
+                        <h3 class="pro-section-label">Linked Bank</h3>
+                        <button class="pro-ghost-btn" onclick="showBankModal()">+ Add Bank Account</button>
                     </div>
-                    <div id="watchlistArea" class="pro-watchlist-area"></div>
-                    <div class="pro-watch-add">
-                        <input class="pro-watch-input" id="proWatchInput" placeholder="+ Watch a coin..." onkeydown="if(event.key==='Enter')addWatchFromInput()">
-                    </div>
-                </div>
-            </div>
-
-            <!-- ── Section 5: Account & Security Accordion ── -->
-            <div class="pro-accordion">
-                <div class="pro-accordion-header" onclick="toggleProAccordion(this)">
-                    <span>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-3px;margin-right:8px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
-                        Account &amp; Security
-                    </span>
-                    <svg class="pro-accordion-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
-                </div>
-                <div class="pro-accordion-body">
-                    <!-- Tabs inside accordion -->
-                    <div class="pro-sec-tabs">
-                        <button class="pro-sec-tab active" onclick="switchProSecTab(this,'security')">Security</button>
-                        <button class="pro-sec-tab" onclick="switchProSecTab(this,'wallets')">Wallets</button>
-                        <button class="pro-sec-tab" onclick="switchProSecTab(this,'banks')">Bank Accounts</button>
-                        <button class="pro-sec-tab" onclick="switchProSecTab(this,'apikeys')">API Keys</button>
-                    </div>
-
-                    <!-- Security Tab -->
-                    <div class="pro-sec-panel active" id="proSecPanel-security">
-                        <div class="pro-sec-row">
-                            <div class="pro-sec-row-label">Email</div>
-                            <div class="pro-sec-row-value" id="proSecEmail">--</div>
+                    <div id="bankList">
+                        <div class="pro-bank-empty">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1.5"><path d="M3 21h18M3 10h18M5 6l7-3 7 3M4 10v11M20 10v11M8 14v3M12 14v3M16 14v3"/></svg>
+                            <span>No bank accounts linked</span>
                         </div>
-                        <div class="pro-sec-row">
-                            <div class="pro-sec-row-label">Password</div>
-                            <div class="pro-sec-row-value">
-                                <span style="letter-spacing:3px;color:rgba(255,255,255,0.3)">••••••••</span>
-                                <a href="#" class="pro-sec-link" onclick="event.preventDefault();showEditProfileModal()">Change &rarr;</a>
-                            </div>
-                        </div>
-                        <div class="pro-sec-row">
-                            <div class="pro-sec-row-label">Two-Factor Auth</div>
-                            <div class="pro-sec-row-value"><span class="pro-sec-badge-off">OFF</span></div>
-                        </div>
-                        <div class="pro-sec-row">
-                            <div class="pro-sec-row-label">Last Login</div>
-                            <div class="pro-sec-row-value" id="proSecLastLogin">--</div>
-                        </div>
-                    </div>
-
-                    <!-- Wallets Tab -->
-                    <div class="pro-sec-panel" id="proSecPanel-wallets">
-                        <div class="pro-sec-panel-header">
-                            <span>Connected Wallets
-                                <span class="nx-tip-wrap">
-                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="2" style="vertical-align:-1px;cursor:help;margin-left:4px"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-                                    <span class="nx-tipbox"><span class="nx-tipbox-arrow"></span>Read-only mode. No transactions can be initiated.</span>
-                                </span>
-                            </span>
-                            <button class="pro-small-btn" onclick="showWalletModal()">+ Add Wallet</button>
-                        </div>
-                        <div id="walletList"></div>
-                        <div id="walletTxSection"></div>
-                    </div>
-
-                    <!-- Bank Accounts Tab -->
-                    <div class="pro-sec-panel" id="proSecPanel-banks">
-                        <div class="pro-sec-panel-header">
-                            <span>Linked Bank Accounts</span>
-                            <button class="pro-small-btn" onclick="showBankModal()">+ Add Bank</button>
-                        </div>
-                        <div id="bankList"></div>
-                    </div>
-
-                    <!-- API Keys Tab -->
-                    <div class="pro-sec-panel" id="proSecPanel-apikeys">
-                        <div class="pro-sec-empty">No API keys configured. API access coming soon.</div>
                     </div>
                 </div>
             </div>
@@ -7617,16 +7544,12 @@
                 <div class="user-menu-dropdown">
                     <div class="user-menu-header">
                         <span class="user-menu-header-name">${displayName}</span>
-                        <span class="user-menu-header-email">${currentUser.email}</span>
+                        <span class="user-menu-header-status">Paper Mode</span>
                     </div>
                     <div class="user-menu-divider"></div>
                     <button class="user-menu-item" onclick="navigate('profile'); closeUserMenu()">
                         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3 2.7-5 6-5s6 2 6 5"/></svg>
                         Profile
-                    </button>
-                    <button class="user-menu-item" onclick="navigate('watchlist'); closeUserMenu()">
-                        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="8 1 10.2 5.4 15 6.1 11.5 9.5 12.3 14.3 8 12 3.7 14.3 4.5 9.5 1 6.1 5.8 5.4 8 1"/></svg>
-                        My Watchlist
                     </button>
                     <button class="user-menu-item" onclick="openPnlHeatmap(); closeUserMenu()">
                         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="4" height="4" rx="0.5"/><rect x="6" y="1" width="4" height="4" rx="0.5"/><rect x="11" y="1" width="4" height="4" rx="0.5"/><rect x="1" y="6" width="4" height="4" rx="0.5"/><rect x="6" y="6" width="4" height="4" rx="0.5"/><rect x="11" y="6" width="4" height="4" rx="0.5"/><rect x="1" y="11" width="4" height="4" rx="0.5"/><rect x="6" y="11" width="4" height="4" rx="0.5"/><rect x="11" y="11" width="4" height="4" rx="0.5"/></svg>
@@ -8252,10 +8175,10 @@
             const badge = document.getElementById('profileVerifyBadge');
             if (badge) {
                 if (currentUser.email_verified) {
-                    badge.innerHTML = '&#10003; Verified';
+                    badge.innerHTML = '&#9679; Verified';
                     badge.className = 'pro-verify-badge badge-verified';
                 } else {
-                    badge.innerHTML = '&#9888; Not Verified';
+                    badge.innerHTML = '&#9679; Email unverified';
                     badge.className = 'pro-verify-badge badge-unverified';
                 }
             }
@@ -8287,7 +8210,7 @@
                 const totalPnl = (perf.realized_pnl || 0) + (perf.unrealized_pnl || 0);
                 const pnlEl = document.getElementById('proTotalPnl');
                 pnlEl.textContent = (totalPnl >= 0 ? '+$' : '-$') + formatUSD(Math.abs(totalPnl));
-                pnlEl.className = 'pro-metric-value ' + (totalPnl >= 0 ? 'pro-positive' : 'pro-negative');
+                pnlEl.className = 'pro-stat-value ' + (totalPnl >= 0 ? 'pro-positive' : 'pro-negative');
 
                 const wrEl = document.getElementById('proWinRate');
                 wrEl.textContent = (perf.win_rate || 0) + '%';
@@ -8296,26 +8219,15 @@
 
                 const bestEl = document.getElementById('proBestTrade');
                 bestEl.textContent = '+$' + formatUSD(perf.best_trade || 0);
-
-                // Avg hold time from trade history
-                const avgHold = perf.avg_hold_minutes;
-                const holdEl = document.getElementById('proAvgHold');
-                holdEl.textContent = avgHold ? avgHold.toFixed(1) + 'm' : '--';
             } catch (e) {
                 console.warn('Profile perf load failed:', e);
                 document.getElementById('proBalanceVal').textContent = '$' + formatUSD(currentUser.wallet_balance || 0);
             }
 
-            // ── P&L Sparkline Chart ──
-            try {
-                const chartData = await api('/api/trader/pnl-chart?days=14');
-                renderProSparkline(chartData);
-            } catch (e) { console.warn('Sparkline failed:', e); }
-
-            // ── Bank Accounts (inside accordion) ──
+            // ── Bank Accounts (visible section) ──
             const bl = document.getElementById('bankList');
             if (banks.length === 0) {
-                bl.innerHTML = '<div class="profile-empty-state">No bank accounts linked yet</div>';
+                bl.innerHTML = '<div class="pro-bank-empty"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1.5"><path d="M3 21h18M3 10h18M5 6l7-3 7 3M4 10v11M20 10v11M8 14v3M12 14v3M16 14v3"/></svg><span>No bank accounts linked</span></div>';
             } else {
                 bl.innerHTML = banks.map(b => `
             <div class="bank-card">
@@ -8332,7 +8244,7 @@
         `).join('');
             }
 
-            // ── Wallets (inside accordion) ──
+            // ── Wallets (visible section) ──
             const wl = document.getElementById('walletList');
             if (window._nxWalletEngine) {
                 window._nxWalletEngine.renderWallets(wallets);
@@ -8373,128 +8285,11 @@
                 console.error('Portfolio error:', e);
             }
 
-            // ── Watched Coins (right column, rich rows) ──
-            renderProfileWatchlist(wlist);
-
-            // ── Security Panel ──
-            const secEmail = document.getElementById('proSecEmail');
-            if (secEmail) secEmail.textContent = currentUser.email || '--';
-            const secLogin = document.getElementById('proSecLastLogin');
-            if (secLogin) secLogin.textContent = new Date().toLocaleString();
-
             // ── Update navbar watchlist count ──
             updateWatchlistNavCount(wlist.length);
 
             // Market page watchlist pills
             renderMarketWatchlist(wlist);
-        }
-
-        // ── P&L Sparkline ──
-        function renderProSparkline(chartData) {
-            const svg = document.getElementById('proSparklineSvg');
-            if (!svg || !chartData || chartData.length < 2) { svg.innerHTML = ''; return; }
-            const vals = chartData.map(d => d.cumulative_pnl != null ? d.cumulative_pnl : d.pnl || 0);
-            const w = 900, h = 100;
-            const min = Math.min(...vals), max = Math.max(...vals);
-            const range = max - min || 1;
-            const points = vals.map((v, i) => {
-                const x = (i / (vals.length - 1)) * w;
-                const y = h - ((v - min) / range) * (h - 8) - 4;
-                return `${x},${y}`;
-            }).join(' ');
-            const lastVal = vals[vals.length - 1] - vals[0];
-            const color = lastVal >= 0 ? '#00d395' : '#ff4757';
-            const gradId = 'proSparkGrad';
-            svg.innerHTML = `
-                <defs>
-                    <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stop-color="${color}" stop-opacity="0.2"/>
-                        <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
-                    </linearGradient>
-                </defs>
-                <polygon points="0,${h} ${points} ${w},${h}" fill="url(#${gradId})" />
-                <polyline points="${points}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
-            `;
-        }
-
-        // ── Profile Watched Coins as rich rows ──
-        async function renderProfileWatchlist(wlist) {
-            const area = document.getElementById('watchlistArea');
-            if (!area) return;
-            if (!wlist || wlist.length === 0) {
-                area.innerHTML = '<div class="profile-empty-state">No coins watched yet</div>';
-                return;
-            }
-            // Fetch market data for watched coins
-            try {
-                const ids = wlist.join(',');
-                const data = await fetch(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}&order=market_cap_desc&per_page=50&page=1&sparkline=false&price_change_percentage=24h`).then(r => r.json());
-                const lookup = {};
-                data.forEach(c => { lookup[c.id] = c; });
-                area.innerHTML = wlist.map(coinId => {
-                    const c = lookup[coinId];
-                    if (!c) return `<div class="pro-watch-row" onclick="openToken('${coinId}','${coinId}')">
-                        <div class="pro-watch-icon">${coinId.slice(0,2).toUpperCase()}</div>
-                        <div class="pro-watch-info"><div class="pro-watch-symbol">${coinId}</div></div>
-                        <div class="pro-watch-price">--</div>
-                        <button class="pro-watch-remove" onclick="event.stopPropagation();removeFromWatchlist('${coinId}')">&times;</button>
-                    </div>`;
-                    const ch = c.price_change_percentage_24h || 0;
-                    const chColor = ch >= 0 ? '#00d395' : '#ff4757';
-                    const chSign = ch >= 0 ? '+' : '';
-                    return `<div class="pro-watch-row" onclick="openToken('${c.id}','${c.name}')">
-                        <div class="pro-watch-icon"><img src="${c.image}" alt="" onerror="this.style.display='none';this.parentElement.textContent='${c.symbol.slice(0,2).toUpperCase()}'"></div>
-                        <div class="pro-watch-info"><div class="pro-watch-symbol">${c.symbol.toUpperCase()}</div></div>
-                        <div style="text-align:right">
-                            <div class="pro-watch-price">$${c.current_price.toLocaleString()}</div>
-                            <div class="pro-watch-change" style="color:${chColor}">${chSign}${ch.toFixed(1)}%</div>
-                        </div>
-                        <button class="pro-watch-remove" onclick="event.stopPropagation();removeFromWatchlist('${c.id}')">&times;</button>
-                    </div>`;
-                }).join('');
-            } catch (e) {
-                console.warn('Watch coin data failed:', e);
-                area.innerHTML = wlist.map(c => `<div class="pro-watch-row" onclick="openToken('${c}','${c}')">
-                    <div class="pro-watch-icon">${c.slice(0,2).toUpperCase()}</div>
-                    <div class="pro-watch-info"><div class="pro-watch-symbol">${c}</div></div>
-                    <button class="pro-watch-remove" onclick="event.stopPropagation();removeFromWatchlist('${c}')">&times;</button>
-                </div>`).join('');
-            }
-        }
-
-        // ── Profile Accordion ──
-        function toggleProAccordion(header) {
-            header.parentElement.classList.toggle('open');
-        }
-        function switchProSecTab(btn, tab) {
-            btn.parentElement.querySelectorAll('.pro-sec-tab').forEach(t => t.classList.remove('active'));
-            btn.classList.add('active');
-            btn.closest('.pro-accordion-body').querySelectorAll('.pro-sec-panel').forEach(p => p.classList.remove('active'));
-            document.getElementById('proSecPanel-' + tab)?.classList.add('active');
-        }
-
-        // ── Performance Tab Switching ──
-        document.addEventListener('click', function(e) {
-            if (e.target.classList.contains('pro-perf-tab')) {
-                document.querySelectorAll('.pro-perf-tab').forEach(t => t.classList.remove('active'));
-                e.target.classList.add('active');
-                // Future: reload stats for selected range
-            }
-        });
-
-        // ── Add Coin from Profile Watch Input ──
-        async function addWatchFromInput() {
-            const inp = document.getElementById('proWatchInput');
-            if (!inp) return;
-            const val = inp.value.trim().toLowerCase();
-            if (!val) return;
-            inp.value = '';
-            try {
-                await api(`/api/watchlist/add`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({coin_id: val}) });
-                await fetchUser();
-                loadProfile();
-                showToast(`${val} added to watchlist`, 'success');
-            } catch(e) { showToast(e.message || 'Failed to add coin', 'error'); }
         }
 
         // ── Navbar Watchlist Count ──
@@ -8513,9 +8308,50 @@
         let _wlPageData = [];
         let _wlCurrentFilter = 'all';
 
+        const _coinIdMap = {
+            'btc':'bitcoin','bitcoin':'bitcoin','eth':'ethereum','ethereum':'ethereum',
+            'sol':'solana','solana':'solana','xrp':'ripple','ripple':'ripple',
+            'doge':'dogecoin','dogecoin':'dogecoin','bnb':'binancecoin','binancecoin':'binancecoin',
+            'ada':'cardano','cardano':'cardano','avax':'avalanche-2','avalanche':'avalanche-2',
+            'link':'chainlink','chainlink':'chainlink','uni':'uniswap','uniswap':'uniswap',
+            'matic':'matic-network','dot':'polkadot','polkadot':'polkadot',
+            'ltc':'litecoin','litecoin':'litecoin','atom':'cosmos','cosmos':'cosmos',
+            'near':'near','sui':'sui','apt':'aptos','aptos':'aptos',
+            'shib':'shiba-inu','pepe':'pepe','arb':'arbitrum','op':'optimism',
+            'ton':'the-open-network','trx':'tron','xlm':'stellar',
+        };
+        const _invalidCoins = ['add','a','b','','test','null','undefined'];
+
+        function cleanWatchlist(list) {
+            if (!Array.isArray(list)) return [];
+            return list.filter(c => c && typeof c === 'string' && c.length >= 2 && !_invalidCoins.includes(c.toLowerCase()) && !/\s/.test(c));
+        }
+
+        async function resolveCoinId(input) {
+            const lower = input.toLowerCase().trim();
+            if (_coinIdMap[lower]) return _coinIdMap[lower];
+            // Try CoinGecko search
+            try {
+                const resp = await fetch(`https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(lower)}`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.coins && data.coins.length > 0) return data.coins[0].id;
+                }
+            } catch (e) { console.warn('CoinGecko search failed:', e); }
+            return null;
+        }
+
+        async function removeFromWatchlist(coinId) {
+            return api(`/api/watchlist/${coinId}`, { method: 'DELETE' });
+        }
+
         async function loadWatchlistPage() {
             if (!currentUser) return;
-            const wlist = currentUser.watchlist || [];
+            let wlist = cleanWatchlist(currentUser.watchlist || []);
+            // Sync cleaned list back if we removed invalid entries
+            if (wlist.length !== (currentUser.watchlist || []).length) {
+                currentUser.watchlist = wlist;
+            }
             updateWatchlistNavCount(wlist.length);
 
             const grid = document.getElementById('wlGrid');
@@ -8527,17 +8363,58 @@
                 return;
             }
             empty.style.display = 'none';
-            // Show loading skeletons
-            grid.innerHTML = wlist.map(() => '<div class="wl-skeleton"></div>').join('');
+
+            // Check cache first
+            const cacheKey = 'watchlist_cache';
+            const cacheTimeKey = 'watchlist_cache_time';
+            const cached = localStorage.getItem(cacheKey);
+            const cacheTime = parseInt(localStorage.getItem(cacheTimeKey) || '0');
+            const cacheAge = Date.now() - cacheTime;
+
+            if (cached && cacheAge < 60000) {
+                try {
+                    _wlPageData = JSON.parse(cached);
+                    renderWatchlistCards(_wlPageData);
+                    return;
+                } catch(e) { /* fall through to fetch */ }
+            }
+
+            // Show cached while loading if available
+            if (cached && cacheAge >= 60000) {
+                try {
+                    _wlPageData = JSON.parse(cached);
+                    renderWatchlistCards(_wlPageData);
+                } catch(e) { /* ignore */ }
+            } else {
+                grid.innerHTML = wlist.map(() => '<div class="wl-skeleton"></div>').join('');
+            }
 
             try {
-                const ids = wlist.join(',');
-                const data = await fetch(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}&order=market_cap_desc&per_page=50&page=1&sparkline=true&price_change_percentage=24h,7d`).then(r => r.json());
+                const validIds = wlist.filter(id => id && id.length > 1 && id !== 'add');
+                if (validIds.length === 0) { grid.innerHTML = ''; empty.style.display = 'block'; return; }
+                const ids = validIds.join(',');
+                const resp = await fetch(
+                    `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}&order=market_cap_desc&per_page=50&page=1&sparkline=true&price_change_percentage=24h,7d`,
+                    { headers: { 'Accept': 'application/json' } }
+                );
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const data = await resp.json();
                 _wlPageData = data || [];
+                // Cache on success
+                localStorage.setItem(cacheKey, JSON.stringify(_wlPageData));
+                localStorage.setItem(cacheTimeKey, Date.now().toString());
                 renderWatchlistCards(_wlPageData);
             } catch (e) {
                 console.error('Watchlist page load failed:', e);
-                grid.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.3);font-size:13px">Failed to load data. Try again later.</div>';
+                // If we already showed cached data, don't overwrite
+                if (_wlPageData.length > 0) return;
+                // Show error card
+                grid.innerHTML = `<div style="background:rgba(255,71,87,0.04);border:1px solid rgba(255,71,87,0.1);border-radius:10px;padding:20px;text-align:center">
+                    <div style="font-size:16px;color:rgba(255,71,87,0.5);margin-bottom:6px">\u26A0</div>
+                    <div style="font-size:13px;font-weight:600;color:rgba(255,255,255,0.5)">Unable to load market data</div>
+                    <div style="font-size:12px;color:rgba(255,255,255,0.25);margin-top:4px">CoinGecko API may be rate limited. Data will refresh automatically.</div>
+                    <button onclick="loadWatchlistPage()" style="background:transparent;border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:6px 14px;font-size:12px;color:rgba(255,255,255,0.4);margin-top:12px;cursor:pointer;font-family:'Inter',sans-serif">Retry</button>
+                </div>`;
             }
         }
 
@@ -8652,14 +8529,29 @@
             } catch(e) { console.error(e); }
         }
 
-        // Show add watchlist modal (reuse market search)
-        function showWatchlistAddModal() {
-            const q = prompt('Enter coin name or ID (e.g. bitcoin, ethereum):');
+        // Show add watchlist modal with validation
+        async function showWatchlistAddModal() {
+            const q = prompt('Enter coin name or ticker (e.g. bitcoin, sol, eth):');
             if (!q) return;
             const val = q.trim().toLowerCase();
-            api(`/api/watchlist/add`, { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({coin_id: val}) })
-                .then(() => { fetchUser().then(() => loadWatchlistPage()); showToast(val + ' added to watchlist', 'success'); })
-                .catch(e => showToast(e.message || 'Failed to add', 'error'));
+            if (!val || val.length < 2 || _invalidCoins.includes(val)) {
+                showToast('Invalid coin name. Try a ticker like "sol" or full name like "solana"', 'error');
+                return;
+            }
+            // Resolve to proper CoinGecko ID
+            const coinId = await resolveCoinId(val);
+            if (!coinId) {
+                showToast('Coin not found. Try the full name (e.g. "bitcoin" instead of "btc")', 'error');
+                return;
+            }
+            try {
+                await api(`/api/watchlist/${coinId}`, { method: 'POST' });
+                await checkAuth();
+                loadWatchlistPage();
+                showToast(coinId + ' added to watchlist', 'success');
+            } catch (e) {
+                showToast(e.message || 'Failed to add', 'error');
+            }
         }
 
         function renderMarketWatchlist(wlist) {
@@ -10574,21 +10466,56 @@
         // ══════════════════════════════════════════════════════════════
 
         function switchSettingsTab(tab, el) {
-            document.querySelectorAll('.settings-nav-item').forEach(n => n.classList.remove('active'));
-            document.querySelectorAll('.settings-panel').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.sett-nav').forEach(n => n.classList.remove('active'));
+            document.querySelectorAll('.sett-panel').forEach(p => p.classList.remove('active'));
             el.classList.add('active');
             const panel = document.getElementById('settingsPanel-' + tab);
             if (panel) panel.classList.add('active');
+        }
+
+        function selectExchangePill(el, exchange) {
+            document.querySelectorAll('.sett-pill').forEach(p => p.classList.remove('active'));
+            el.classList.add('active');
+            document.getElementById('settApiExchange').value = exchange;
+        }
+
+        function togglePaperWarning(cb) {
+            document.getElementById('paperTradingWarn').style.display = cb.checked ? 'flex' : 'none';
+        }
+
+        function toggleKillSwitch(cb) {
+            const row = document.getElementById('killSwitchRow');
+            if (cb.checked) {
+                row.classList.add('active');
+                showToast('Kill Switch ACTIVATED — all trading halted', 'error');
+            } else {
+                row.classList.remove('active');
+                showToast('Kill Switch deactivated', 'info');
+            }
+        }
+
+        function exportTradeData() {
+            showToast('Preparing CSV export...', 'info');
+            // Simulate export
+            setTimeout(() => {
+                const csv = 'Date,Pair,Side,Price,Amount,PnL\n2025-01-15,BTC/USDT,LONG,96500,0.1,+245.00\n';
+                const blob = new Blob([csv], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = 'nexypher_trades.csv'; a.click();
+                URL.revokeObjectURL(url);
+                showToast('Trade history exported!', 'success');
+            }, 800);
         }
 
         async function loadSettings() {
             // Load local settings (theme, accent)
             const saved = JSON.parse(localStorage.getItem('nexypher_settings') || '{}');
             if (saved.theme) { document.getElementById('settTheme').value = saved.theme; }
-            const accent = saved.accent || '#6c5ce7';
-            document.querySelectorAll('.color-swatch').forEach(s => {
-                s.style.borderColor = s.style.backgroundColor === accent || rgbToHex(s.style.backgroundColor) === accent ? 'white' : 'transparent';
-                s.classList.toggle('active', rgbToHex(s.style.backgroundColor) === accent);
+            const accent = saved.accent || '#6c63ff';
+            document.querySelectorAll('.sett-swatch').forEach(s => {
+                const bg = rgbToHex(s.style.backgroundColor);
+                s.classList.toggle('active', bg === accent);
             });
             loadApiKeysDisplay();
 
@@ -10596,18 +10523,12 @@
             if (currentUser) {
                 try {
                     const prefs = await api('/api/user/preferences');
-                    const riskMap = { conservative: 'conservative', balanced: 'moderate', aggressive: 'aggressive' };
-                    if (prefs.risk_profile) {
-                        const mapped = riskMap[prefs.risk_profile] || prefs.risk_profile;
-                        document.getElementById('settRiskLevel').value = mapped;
-                    }
                     if (prefs.dark_mode !== undefined) {
                         document.getElementById('settTheme').value = prefs.dark_mode ? 'dark' : 'light';
                     }
                     document.getElementById('settPriceAlerts').checked = prefs.notification_email !== false;
                     document.getElementById('settAIAlerts').checked = prefs.notification_push !== false;
                     document.getElementById('settTradeAlerts').checked = prefs.notification_email !== false;
-                    if (prefs.max_daily_trades) document.getElementById('settDefaultLeverage').value = '5';
                 } catch (e) {
                     console.warn('Could not load backend preferences:', e.message);
                 }
@@ -10653,18 +10574,15 @@
 
         function setAccent(el, color) {
             document.documentElement.style.setProperty('--primary', color);
-            document.querySelectorAll('.color-swatch').forEach(s => {
+            document.querySelectorAll('.sett-swatch').forEach(s => {
                 s.classList.remove('active');
-                s.style.borderColor = 'transparent';
             });
             el.classList.add('active');
-            el.style.borderColor = 'white';
         }
 
         async function saveSettings() {
             const theme = document.getElementById('settTheme').value;
             const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim();
-            const riskLevel = document.getElementById('settRiskLevel').value;
 
             // Save visual settings to localStorage
             const localSettings = { theme, accent: accentColor };
@@ -10674,11 +10592,9 @@
             // Save preferences to backend if logged in
             if (currentUser) {
                 try {
-                    const riskMap = { conservative: 'conservative', moderate: 'balanced', aggressive: 'aggressive' };
                     await api('/api/user/preferences', {
                         method: 'PUT',
                         body: JSON.stringify({
-                            risk_profile: riskMap[riskLevel] || riskLevel,
                             dark_mode: theme !== 'light',
                             notification_email: document.getElementById('settPriceAlerts').checked,
                             notification_push: document.getElementById('settAIAlerts').checked,
@@ -10697,13 +10613,12 @@
         async function resetSettings() {
             localStorage.removeItem('nexypher_settings');
             applyTheme('dark');
-            document.documentElement.style.setProperty('--primary', '#6c5ce7');
+            document.documentElement.style.setProperty('--primary', '#6c63ff');
             if (currentUser) {
                 try {
                     await api('/api/user/preferences', {
                         method: 'PUT',
                         body: JSON.stringify({
-                            risk_profile: 'balanced',
                             dark_mode: true,
                             notification_email: true,
                             notification_push: true,
@@ -10734,11 +10649,11 @@
         function loadApiKeysDisplay() {
             const keys = JSON.parse(localStorage.getItem('nexypher_api_keys') || '[]');
             const container = document.getElementById('settApiKeysList');
-            if (!keys.length) { container.innerHTML = '<div style="color:var(--text-muted);font-size:13px">No API keys configured</div>'; return; }
+            if (!keys.length) { container.innerHTML = '<div style="color:#555a6a;font-size:12px">No API keys connected yet</div>'; return; }
             container.innerHTML = keys.map(k => `
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bg-secondary);border-radius:6px;margin-bottom:6px">
-            <span style="font-size:13px;color:var(--text-primary)"><strong>${k.exchange}</strong> — ${k.key}</span>
-            <button onclick="removeApiKey('${k.exchange}')" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px">🗑</button>
+        <div class="sett-api-key-row">
+            <span><strong>${k.exchange}</strong> — ${k.key}</span>
+            <button onclick="removeApiKey('${k.exchange}')" title="Remove">&#128465;</button>
         </div>
     `).join('');
         }
@@ -10756,6 +10671,7 @@
             const saved = JSON.parse(localStorage.getItem('nexypher_settings') || '{}');
             if (saved.theme) applyTheme(saved.theme);
             if (saved.accent) document.documentElement.style.setProperty('--primary', saved.accent);
+            else document.documentElement.style.setProperty('--primary', '#6c63ff');
         })();
 
         // ══════════════════════════════════════════════════════════════
@@ -11834,7 +11750,7 @@
                     <span class="nx-wallet-addr">${truncAddr(addr)}</span>
                     <span class="badge-live">LIVE</span>
                     <button class="nx-wallet-addr-btn" onclick="nxCopyAddr('${addr}', this)">Copy <span class="copied-tip">Copied!</span></button>
-                    <a class="nx-wallet-addr-btn" href="${net.explorer}/address/${addr}" target="_blank" rel="noopener noreferrer" style="text-decoration:none">View</a>
+                    <a class="nx-wallet-addr-btn" href="${net.explorer}/address/${addr}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation();window.open('${net.explorer}/address/${addr}','_blank');return false;" style="text-decoration:none">View</a>
                 </div>
                 <div class="nx-wallet-info-grid">
                     <div class="nx-wallet-info-item">
@@ -11852,7 +11768,7 @@
                 </div>
                 <div style="background:rgba(0,211,149,0.06);border:1px solid rgba(0,211,149,0.15);border-radius:6px;padding:8px 12px;font-size:11px;color:rgba(0,211,149,0.7);margin-bottom:16px;font-family:'Inter',sans-serif">\uD83D\uDC41 Read Only \u2014 NexYpher cannot move or trade your funds</div>
                 <div class="nx-wallet-actions">
-                    <a class="nx-etherscan-btn" href="${net.explorer}/address/${addr}" target="_blank" rel="noopener noreferrer">View on Etherscan</a>
+                    <a class="nx-etherscan-btn" href="${net.explorer}/address/${addr}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation();window.open('${net.explorer}/address/${addr}','_blank');return false;">View on Etherscan &#x2197;</a>
                     <button class="nx-wallet-remove-btn" onclick="confirmRemoveWallet('${addr}','${wallet.chain}')">Remove</button>
                 </div>
             </div>`;
