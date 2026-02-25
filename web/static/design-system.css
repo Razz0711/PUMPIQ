@@ -1724,11 +1724,17 @@ select.contact-input option {
     padding: 40px 0 80px;
 }
 
-/* Section 1: User Header */
-.profile-header {
+/* Section 1: User Header Card */
+.profile-header-card {
+    background: #111318;
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 16px;
+    padding: 24px 28px;
+}
+.profile-header-inner {
     display: flex;
-    align-items: flex-start;
-    gap: 24px;
+    align-items: center;
+    gap: 20px;
 }
 
 .profile-photo-wrap {
@@ -1739,6 +1745,7 @@ select.contact-input option {
     flex-shrink: 0;
     cursor: pointer;
     overflow: hidden;
+    border: 2px solid rgba(108,99,255,0.4);
 }
 
 .profile-avatar-lg {
@@ -1785,17 +1792,13 @@ select.contact-input option {
 .profile-header-info {
     flex: 1;
     min-width: 0;
-    padding-top: 4px;
-}
-
-.profile-name-row {
     display: flex;
-    align-items: center;
-    gap: 16px;
+    flex-direction: column;
+    gap: 2px;
 }
 
 .profile-name {
-    font-size: 22px;
+    font-size: 20px;
     font-weight: 700;
     color: #ffffff;
     font-family: 'Inter', sans-serif;
@@ -1803,15 +1806,17 @@ select.contact-input option {
 
 .profile-edit-btn {
     background: transparent;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 6px;
-    padding: 4px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 7px;
+    padding: 6px 14px;
     font-size: 12px;
     font-weight: 500;
     color: rgba(255, 255, 255, 0.6);
     cursor: pointer;
     font-family: 'Inter', sans-serif;
     transition: border-color 0.2s, color 0.2s;
+    align-self: flex-start;
+    flex-shrink: 0;
 }
 .profile-edit-btn:hover {
     border-color: #6c63ff;
@@ -1827,37 +1832,33 @@ select.contact-input option {
 
 .profile-member-since {
     font-size: 12px;
-    color: rgba(255, 255, 255, 0.3);
-    margin-top: 6px;
+    color: rgba(255, 255, 255, 0.25);
+    margin-top: 2px;
     font-family: 'Inter', sans-serif;
 }
 
-.profile-edit-form {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-top: 12px;
-}
-
-.profile-edit-input {
-    background: #111318;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 8px;
-    padding: 8px 12px;
-    font-size: 13px;
-    color: #fff;
+/* Verification badge on profile card */
+.profile-verify-badge {
+    display: inline-block;
+    border-radius: 999px;
+    padding: 3px 10px;
+    font-size: 11px;
     font-family: 'Inter', sans-serif;
-    width: 180px;
-    outline: none;
-    transition: border-color 0.2s;
+    cursor: pointer;
+    margin-top: 4px;
+    width: fit-content;
+    transition: opacity 0.2s;
 }
-.profile-edit-input:focus {
-    border-color: #6c63ff;
+.profile-verify-badge:hover { opacity: 0.85; }
+.profile-verify-badge.badge-verified {
+    background: rgba(0,211,149,0.08);
+    border: 1px solid rgba(0,211,149,0.2);
+    color: #00d395;
 }
-
-.profile-edit-actions {
-    display: flex;
-    gap: 6px;
+.profile-verify-badge.badge-unverified {
+    background: rgba(234,179,8,0.08);
+    border: 1px solid rgba(234,179,8,0.2);
+    color: #facc15;
 }
 
 .profile-verify-banner {
@@ -1877,7 +1878,7 @@ select.contact-input option {
     border: 1px solid rgba(108, 99, 255, 0.2);
     border-radius: 16px;
     padding: 28px 32px;
-    margin-top: 32px;
+    margin-top: 28px;
 }
 
 .profile-balance-label {
@@ -1948,7 +1949,7 @@ select.contact-input option {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 16px;
-    margin-top: 32px;
+    margin-top: 28px;
 }
 
 .profile-stat-card {
@@ -1977,7 +1978,7 @@ select.contact-input option {
 
 /* Sections 4-7 */
 .profile-section {
-    margin-top: 32px;
+    margin-top: 28px;
 }
 
 .profile-section-header {
@@ -1993,7 +1994,18 @@ select.contact-input option {
     color: #ffffff;
     font-family: 'Inter', sans-serif;
     margin: 0;
+    display: flex;
+    align-items: center;
 }
+
+.profile-section-link {
+    font-size: 12px;
+    color: rgba(255,255,255,0.3);
+    text-decoration: none;
+    font-family: 'Inter', sans-serif;
+    transition: color 0.2s;
+}
+.profile-section-link:hover { color: #6c63ff; }
 
 .profile-add-btn {
     background: transparent;
@@ -2057,7 +2069,18 @@ select.contact-input option {
     font-family: 'Inter', sans-serif;
 }
 
-/* Watchlist chips */
+/* Watchlist — horizontal scroll */
+.profile-watchlist-scroll {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.08) transparent;
+}
+.profile-watchlist-scroll::-webkit-scrollbar { height: 4px; }
+.profile-watchlist-scroll::-webkit-scrollbar-track { background: transparent; }
+.profile-watchlist-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
 .profile-watchlist-chips {
     display: flex;
     flex-wrap: wrap;
@@ -2100,17 +2123,13 @@ select.contact-input option {
     .profile-wrap {
         padding: 24px 16px 60px;
     }
-    .profile-header {
+    .profile-header-inner {
         flex-direction: column;
         align-items: center;
         text-align: center;
     }
-    .profile-name-row {
-        justify-content: center;
-    }
-    .profile-edit-form {
-        justify-content: center;
-        flex-wrap: wrap;
+    .profile-edit-btn {
+        align-self: center;
     }
     .profile-stats-row {
         grid-template-columns: 1fr;
@@ -2654,6 +2673,92 @@ select.contact-input option {
     border-color: #ff4757;
     color: #ff4757;
 }
+
+/* ── Unified Tooltip System ─────────────────────────────────────────── */
+.nx-tip-wrap {
+    position: relative;
+    display: inline-block;
+}
+.nx-tipbox {
+    visibility: hidden;
+    opacity: 0;
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    top: calc(100% + 12px);
+    width: 260px;
+    max-width: 260px;
+    background: #1e2130;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-size: 12px;
+    font-weight: 400;
+    color: rgba(255,255,255,0.75);
+    line-height: 1.6;
+    text-align: left;
+    z-index: 1000;
+    pointer-events: none;
+    transition: opacity 0.15s;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+.nx-tipbox-arrow {
+    position: absolute;
+    top: -6px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 10px;
+    height: 10px;
+    background: #1e2130;
+    border-left: 1px solid rgba(255,255,255,0.12);
+    border-top: 1px solid rgba(255,255,255,0.12);
+    transform: translateX(-50%) rotate(45deg);
+}
+.nx-tip-wrap:hover .nx-tipbox {
+    visibility: visible;
+    opacity: 1;
+}
+
+/* Import for Tracking Only tooltip */
+.nx-import-btn {
+    position: relative;
+}
+.nx-tipbox-import {
+    visibility: hidden;
+    opacity: 0;
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    top: calc(100% + 12px);
+    width: 260px;
+    background: #1e2130;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-size: 12px;
+    font-weight: 400;
+    color: rgba(255,255,255,0.75);
+    line-height: 1.6;
+    text-align: left;
+    z-index: 1000;
+    pointer-events: none;
+    transition: opacity 0.15s;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+.nx-tipbox-safe {
+    background: rgba(0,211,149,0.08);
+    border-top: 1px solid rgba(0,211,149,0.15);
+    color: #00d395;
+    font-size: 11px;
+    padding: 8px 16px;
+    margin: 8px -16px -12px -16px;
+    border-radius: 0 0 10px 10px;
+}
+.nx-import-btn:hover .nx-tipbox-import {
+    visibility: visible;
+    opacity: 1;
+}
+
 .nx-wallet-disconnected {
     text-align: center;
     padding: 16px;
@@ -2975,6 +3080,281 @@ select.contact-input option {
 }
 .nx-confirm-remove:hover { background: rgba(255, 71, 87, 0.2); }
 
+/* ── Etherscan Button ──────────────────────────────────────────────── */
+.nx-etherscan-btn {
+    background: transparent;
+    border: 1px solid rgba(108,99,255,0.3);
+    color: #6c63ff;
+    border-radius: 7px;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+    text-decoration: none;
+    text-align: center;
+    transition: all 0.2s;
+    flex: 1;
+}
+.nx-etherscan-btn:hover {
+    background: rgba(108,99,255,0.1);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   EDIT PROFILE MODAL
+   ══════════════════════════════════════════════════════════════════════════════ */
+.ep-modal {
+    background: #111318 !important;
+    border: 1px solid rgba(255,255,255,0.08) !important;
+    border-radius: 16px !important;
+    padding: 28px 32px !important;
+    width: 480px !important;
+    max-width: 95vw !important;
+    animation: epSlideIn 180ms ease-out;
+}
+@keyframes epSlideIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.ep-section {
+    margin-bottom: 20px;
+}
+.ep-label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: rgba(255,255,255,0.45);
+    margin-bottom: 6px;
+    font-family: 'Inter', sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.ep-input {
+    width: 100%;
+    box-sizing: border-box;
+    font-family: 'Inter', sans-serif;
+}
+.ep-readonly {
+    background: rgba(255,255,255,0.03) !important;
+    color: rgba(255,255,255,0.4) !important;
+    cursor: not-allowed;
+}
+.ep-email-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.ep-email-row .ep-input { flex: 1; }
+.ep-email-badge {
+    flex-shrink: 0;
+    white-space: nowrap;
+    font-family: 'Inter', sans-serif;
+}
+.ep-badge-verified {
+    display: inline-block;
+    background: rgba(0,211,149,0.08);
+    border: 1px solid rgba(0,211,149,0.2);
+    border-radius: 999px;
+    padding: 3px 10px;
+    font-size: 11px;
+    color: #00d395;
+}
+.ep-badge-unverified {
+    display: inline-block;
+    background: rgba(234,179,8,0.08);
+    border: 1px solid rgba(234,179,8,0.2);
+    border-radius: 999px;
+    padding: 3px 10px;
+    font-size: 11px;
+    color: #facc15;
+}
+.ep-resend {
+    font-size: 11px;
+    color: #facc15;
+    text-decoration: underline;
+    margin-left: 6px;
+}
+.ep-helper {
+    font-size: 11px;
+    color: rgba(255,255,255,0.2);
+    margin-top: 4px;
+    font-family: 'Inter', sans-serif;
+}
+.ep-link {
+    font-size: 12px;
+    color: #6c63ff;
+    text-decoration: none;
+    font-family: 'Inter', sans-serif;
+    transition: opacity 0.2s;
+}
+.ep-link:hover { opacity: 0.8; }
+.ep-password-display {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.ep-password-form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.ep-photo-circle {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    overflow: hidden;
+    cursor: pointer;
+    position: relative;
+    flex-shrink: 0;
+    border: 2px solid rgba(108,99,255,0.4);
+}
+.ep-photo-circle .ep-avatar {
+    width: 64px;
+    height: 64px;
+    font-size: 20px;
+}
+.ep-avatar-img {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+.ep-danger {
+    border-top: 1px solid rgba(255,255,255,0.04);
+    padding-top: 16px;
+}
+.ep-danger-header {
+    font-size: 12px;
+    font-weight: 600;
+    color: rgba(255,71,87,0.6);
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+    user-select: none;
+}
+.ep-danger-body {
+    display: none;
+    margin-top: 12px;
+}
+.ep-danger.expanded .ep-danger-body { display: block; }
+.ep-danger.expanded .ep-danger-header span::before { content: '▼ '; }
+.ep-delete-btn {
+    background: transparent;
+    border: 1px solid rgba(255,71,87,0.3);
+    color: rgba(255,71,87,0.7);
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-family: 'Inter', sans-serif;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+.ep-delete-btn:hover { background: rgba(255,71,87,0.08); }
+.ep-save-btn {
+    width: 100%;
+    background: linear-gradient(135deg, #6c63ff, #4f46e5);
+    border: none;
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #fff;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+    transition: opacity 0.2s, transform 0.2s;
+    margin-top: 8px;
+}
+.ep-save-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   MARKET PAGE — WATCHLIST PILLS
+   ══════════════════════════════════════════════════════════════════════════════ */
+.market-watchlist-section {
+    margin-bottom: 20px;
+}
+.market-watchlist-pills {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.mw-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: #111318;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    color: rgba(255,255,255,0.7);
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+    transition: border-color 0.2s;
+}
+.mw-pill:hover { border-color: rgba(108,99,255,0.4); }
+.mw-pill-name { font-weight: 600; }
+.mw-pill-add {
+    border: 1px dashed rgba(255,255,255,0.15) !important;
+    color: rgba(255,255,255,0.3) !important;
+    background: transparent !important;
+}
+.mw-pill-add:hover {
+    border-color: #6c63ff !important;
+    color: #6c63ff !important;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   NAVBAR DROPDOWN — HEADER WITH EMAIL
+   ══════════════════════════════════════════════════════════════════════════════ */
+.user-menu-header {
+    padding: 10px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.user-menu-header-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: #fff;
+    font-family: 'Inter', sans-serif;
+}
+.user-menu-header-email {
+    font-size: 11px;
+    color: rgba(255,255,255,0.25);
+    font-family: 'Inter', sans-serif;
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   TOAST NOTIFICATION
+   ══════════════════════════════════════════════════════════════════════════════ */
+.nx-toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: #111318;
+    border: 1px solid rgba(0,211,149,0.3);
+    border-left: 3px solid #00d395;
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 13px;
+    color: #fff;
+    font-family: 'Inter', sans-serif;
+    z-index: 10000;
+    animation: toastIn 200ms ease-out;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+}
+@keyframes toastIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
 /* ══════════════════════════════════════════════════════════════════════════════
    WALLET CARD MOBILE
    ══════════════════════════════════════════════════════════════════════════════ */
@@ -2983,4 +3363,7 @@ select.contact-input option {
     .nx-wallet-actions { flex-direction: column; }
     .nx-wallet-addr { font-size: 11px; }
     .nx-tx-row { flex-wrap: wrap; gap: 6px; }
+    .ep-modal { padding: 20px 16px !important; }
+    .profile-header-inner { flex-direction: column; text-align: center; }
+    .profile-edit-btn { align-self: center; }
 }

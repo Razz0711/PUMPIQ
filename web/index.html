@@ -5217,6 +5217,11 @@
     <!-- MARKET PAGE (detailed CoinGecko)                           -->
     <!-- ═══════════════════════════════════════════════════════════ -->
     <div class="page active" id="page-market">
+        <!-- My Watchlist -->
+        <div id="marketWatchlistSection" class="market-watchlist-section" style="display:none">
+            <div class="market-watchlist-pills" id="marketWatchlistPills"></div>
+        </div>
+
         <div class="section-header-row">
             <div class="section-header-left">
                 <div class="section-title">AI Market Scanner</div>
@@ -6497,34 +6502,26 @@
     <!-- ═══════════════════════════════════════════════════════════ -->
     <div class="page" id="page-profile">
         <div class="profile-wrap">
-            <!-- Section 1: User Header -->
-            <div class="profile-header">
-                <div class="profile-photo-wrap" id="profilePhotoWrap" onclick="document.getElementById('profilePhotoInput').click()">
-                    <div class="profile-avatar-lg" id="profileAvatarLarge"></div>
-                    <img class="profile-photo-img" id="profilePhotoImg" style="display:none" alt="Profile">
-                    <div class="profile-photo-overlay">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
-                    </div>
-                    <input type="file" id="profilePhotoInput" accept="image/jpeg,image/png,image/webp" style="display:none" onchange="handleProfilePhoto(event)">
-                </div>
-                <div class="profile-header-info">
-                    <div class="profile-name-row">
-                        <span class="profile-name" id="profileTitle">raj</span>
-                        <button class="profile-edit-btn" id="profileEditBtn" onclick="toggleProfileEdit()">Edit Profile</button>
-                    </div>
-                    <div class="profile-email" id="profileEmail"></div>
-                    <div class="profile-member-since" id="profileMemberSince">Member since Feb 2026</div>
-                    <!-- Inline edit form (hidden by default) -->
-                    <div class="profile-edit-form" id="profileEditForm" style="display:none">
-                        <input type="text" class="profile-edit-input" id="profileEditName" placeholder="Username">
-                        <div class="profile-edit-actions">
-                            <button class="profile-btn-primary" style="padding:6px 16px;height:auto;font-size:12px" onclick="saveProfileEdit()">Save</button>
-                            <button class="profile-btn-outline" style="padding:6px 16px;height:auto;font-size:12px" onclick="toggleProfileEdit()">Cancel</button>
+            <!-- Section 1: User Header Card -->
+            <div class="profile-header-card">
+                <div class="profile-header-inner">
+                    <div class="profile-photo-wrap" id="profilePhotoWrap" onclick="document.getElementById('profilePhotoInput').click()">
+                        <div class="profile-avatar-lg" id="profileAvatarLarge"></div>
+                        <img class="profile-photo-img" id="profilePhotoImg" style="display:none" alt="Profile">
+                        <div class="profile-photo-overlay">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
                         </div>
+                        <input type="file" id="profilePhotoInput" accept="image/jpeg,image/png,image/webp" style="display:none" onchange="handleProfilePhoto(event)">
                     </div>
+                    <div class="profile-header-info">
+                        <span class="profile-name" id="profileTitle">raj</span>
+                        <div class="profile-member-since" id="profileMemberSince">Member since Feb 2026</div>
+                        <span class="profile-verify-badge" id="profileVerifyBadge" onclick="showEditProfileModal()"></span>
+                    </div>
+                    <button class="profile-edit-btn" id="profileEditBtn" onclick="showEditProfileModal()">Edit Profile</button>
                 </div>
             </div>
-            <div id="verifyBannerSlot"></div>
+            <div class="profile-email" id="profileEmail" style="display:none"></div>
 
             <!-- Section 2: Wallet Balance Card -->
             <div class="profile-balance-card" style="border-color:rgba(108,99,255,0.2)">
@@ -6570,19 +6567,37 @@
             <!-- Section 5: Connected Wallets -->
             <div class="profile-section">
                 <div class="profile-section-header">
-                    <h3 class="profile-section-title">Connected Wallets</h3>
+                    <h3 class="profile-section-title">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="2" style="vertical-align:-2px;margin-right:4px"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                        Connected Wallets
+                        <span class="nx-tip-wrap">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="2" style="vertical-align:-1px;cursor:help;margin-left:4px"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                            <span class="nx-tipbox"><span class="nx-tipbox-arrow"></span>Your wallet is connected in read-only mode. No transactions can be initiated by NexYpher.</span>
+                        </span>
+                    </h3>
                     <button class="profile-add-btn" onclick="showWalletModal()">+ Add Wallet</button>
                 </div>
                 <div id="walletList"></div>
                 <div id="walletTxSection"></div>
             </div>
 
-            <!-- Section 6: Portfolio -->
+            <!-- Section 6: Watched Coins -->
+            <div class="profile-section">
+                <div class="profile-section-header">
+                    <h3 class="profile-section-title">Watched Coins</h3>
+                    <a href="#" class="profile-section-link" onclick="event.preventDefault();navigate('market')">Go to Market &rarr;</a>
+                </div>
+                <div id="watchlistArea" class="profile-watchlist-scroll"></div>
+            </div>
+
+            <!-- Section 7: Portfolio -->
             <div class="profile-section">
                 <div class="profile-section-header">
                     <h3 class="profile-section-title">Portfolio</h3>
                     <div style="display:flex;gap:8px">
-                        <button class="profile-add-btn" id="syncWalletBtn" onclick="syncPortfolioFromWallet()" style="display:none">Sync from Wallet</button>
+                        <button class="profile-add-btn nx-import-btn" id="syncWalletBtn" onclick="syncPortfolioFromWallet()" style="display:none">Import for Tracking Only
+                            <span class="nx-tipbox nx-tipbox-import"><span class="nx-tipbox-arrow"></span><strong style="color:#fff;font-weight:600;display:block;margin-bottom:4px">ℹ️ Read Only Import</strong><span style="color:rgba(255,255,255,0.6)">Imports wallet holdings for display only.</span><br><span style="color:rgba(255,255,255,0.6)">Auto Trader will NEVER trade these assets.</span><div class="nx-tipbox-safe">✓ Real wallet is completely isolated</div></span>
+                        </button>
                         <button class="profile-add-btn" onclick="showPortfolioModal()">+ Add Position</button>
                     </div>
                 </div>
@@ -6600,12 +6615,84 @@
                     <tbody id="portfolioBody"></tbody>
                 </table>
             </div>
+        </div>
+    </div>
 
-            <!-- Section 7: Watchlist -->
-            <div class="profile-section">
-                <h3 class="profile-section-title">Watchlist</h3>
-                <div id="watchlistArea" class="profile-watchlist-chips"></div>
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- EDIT PROFILE MODAL                                         -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <div class="modal-overlay" id="editProfileModal">
+        <div class="modal ep-modal">
+            <button class="modal-close" onclick="closeModal('editProfileModal')">&times;</button>
+            <h2 style="font-size:18px;font-weight:700;margin:0">Edit Profile</h2>
+            <p style="font-size:13px;color:rgba(255,255,255,0.35);margin:4px 0 20px">Manage your account details</p>
+
+            <!-- Profile Photo -->
+            <div class="ep-section">
+                <div style="display:flex;align-items:center;gap:16px">
+                    <div class="ep-photo-circle" id="epPhotoCircle" onclick="document.getElementById('profilePhotoInput').click()">
+                        <div class="profile-avatar-lg ep-avatar" id="epAvatarInitials"></div>
+                        <img class="ep-avatar-img" id="epAvatarImg" style="display:none" alt="">
+                    </div>
+                    <a href="#" class="ep-link" onclick="event.preventDefault();document.getElementById('profilePhotoInput').click()">Change Photo</a>
+                </div>
             </div>
+
+            <!-- Username -->
+            <div class="ep-section">
+                <label class="ep-label">Username</label>
+                <input class="form-input ep-input" id="epUsername" placeholder="Username" autocomplete="off">
+                <div class="ep-helper" id="epUsernameError" style="color:#ff4757;display:none">Min 3 characters, no spaces</div>
+            </div>
+
+            <!-- Email -->
+            <div class="ep-section">
+                <label class="ep-label">Email Address</label>
+                <div class="ep-email-row">
+                    <input class="form-input ep-input ep-readonly" id="epEmail" readonly>
+                    <span class="ep-email-badge" id="epEmailBadge"></span>
+                </div>
+                <div class="ep-helper">To change your email, contact support</div>
+            </div>
+
+            <!-- Password -->
+            <div class="ep-section">
+                <label class="ep-label">Password</label>
+                <div class="ep-password-display" id="epPasswordDisplay">
+                    <span style="letter-spacing:3px;color:rgba(255,255,255,0.3)">••••••••</span>
+                    <a href="#" class="ep-link" onclick="event.preventDefault();togglePasswordChange()">Change Password &rarr;</a>
+                </div>
+                <div class="ep-password-form" id="epPasswordForm" style="display:none">
+                    <input class="form-input ep-input" id="epCurrentPassword" type="password" placeholder="Current password">
+                    <input class="form-input ep-input" id="epNewPassword" type="password" placeholder="New password">
+                    <input class="form-input ep-input" id="epConfirmPassword" type="password" placeholder="Confirm new password">
+                    <div class="ep-helper">8+ chars, 1 number, 1 special character</div>
+                    <div style="display:flex;gap:8px;margin-top:8px">
+                        <button class="profile-btn-primary" style="padding:6px 16px;height:auto;font-size:12px" onclick="updatePassword()">Update Password</button>
+                        <a href="#" class="ep-link" style="font-size:12px;padding-top:6px" onclick="event.preventDefault();togglePasswordChange()">Cancel</a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Member Since -->
+            <div class="ep-section">
+                <label class="ep-label">Member Since</label>
+                <div style="font-size:13px;color:rgba(255,255,255,0.35);font-family:'Inter',sans-serif" id="epMemberSince">February 2026</div>
+            </div>
+
+            <!-- Danger Zone -->
+            <div class="ep-section ep-danger">
+                <div class="ep-danger-header" onclick="this.parentElement.classList.toggle('expanded')">
+                    <span>&#9654; Danger Zone</span>
+                </div>
+                <div class="ep-danger-body">
+                    <button class="ep-delete-btn" onclick="confirmDeleteAccount()">Delete Account</button>
+                    <div class="ep-helper" style="margin-top:8px">This will permanently delete your account, trading history, and AI training data. This action cannot be undone.</div>
+                </div>
+            </div>
+
+            <!-- Save -->
+            <button class="ep-save-btn" onclick="saveEditProfile()">Save Changes</button>
         </div>
     </div>
 
@@ -6905,6 +6992,7 @@
         <div class="modal">
             <button class="modal-close" onclick="closeModal('portfolioModal')">&times;</button>
             <h2>Add Position</h2>
+            <p style="color:rgba(255,255,255,0.35);font-size:12px;margin-bottom:16px;line-height:1.5">Enter position details manually. This is for tracking purposes only.</p>
             <div class="form-group">
                 <label>Coin ID (e.g. bitcoin, solana)</label>
                 <input class="form-input" id="pfCoinId" placeholder="bitcoin">
@@ -7412,6 +7500,11 @@
                     <svg class="user-menu-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6l4 4 4-4"/></svg>
                 </div>
                 <div class="user-menu-dropdown">
+                    <div class="user-menu-header">
+                        <span class="user-menu-header-name">${displayName}</span>
+                        <span class="user-menu-header-email">${currentUser.email}</span>
+                    </div>
+                    <div class="user-menu-divider"></div>
                     <button class="user-menu-item" onclick="navigate('profile'); closeUserMenu()">
                         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3 2.7-5 6-5s6 2 6 5"/></svg>
                         Profile
@@ -7929,28 +8022,102 @@
         }
 
         function toggleProfileEdit() {
-            const form = document.getElementById('profileEditForm');
-            const nameEl = document.getElementById('profileTitle');
-            const editBtn = document.getElementById('profileEditBtn');
-            if (form.style.display === 'none') {
-                form.style.display = 'flex';
-                editBtn.style.display = 'none';
-                document.getElementById('profileEditName').value = nameEl.textContent;
-                document.getElementById('profileEditName').focus();
+            showEditProfileModal();
+        }
+
+        // ── Edit Profile Modal ─────────────────────────────────────
+        function showEditProfileModal() {
+            if (!currentUser) return;
+            const savedName = localStorage.getItem('nexypher_display_name');
+            const uname = savedName || currentUser.username || currentUser.email.split('@')[0];
+            document.getElementById('epUsername').value = uname;
+            document.getElementById('epEmail').value = currentUser.email;
+
+            // Photo in modal
+            const photo = getProfilePhoto();
+            const epImg = document.getElementById('epAvatarImg');
+            const epInit = document.getElementById('epAvatarInitials');
+            if (photo) {
+                epImg.src = photo; epImg.style.display = 'block';
+                if (epInit) epInit.style.display = 'none';
             } else {
-                form.style.display = 'none';
-                editBtn.style.display = '';
+                epImg.style.display = 'none';
+                if (epInit) { epInit.style.display = 'flex'; epInit.textContent = (currentUser.username || currentUser.email).slice(0,2).toUpperCase(); }
+            }
+
+            // Email badge
+            const badge = document.getElementById('epEmailBadge');
+            if (currentUser.email_verified) {
+                badge.innerHTML = '<span class="ep-badge-verified">&#10003; Verified</span>';
+            } else {
+                badge.innerHTML = '<span class="ep-badge-unverified">&#9888; Not Verified</span> <a href="#" class="ep-resend" onclick="event.preventDefault();resendVerification()">Resend</a>';
+            }
+
+            // Member since
+            const created = currentUser.created_at ? new Date(currentUser.created_at) : new Date();
+            const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+            document.getElementById('epMemberSince').textContent = months[created.getMonth()] + ' ' + created.getFullYear();
+
+            // Reset password form
+            document.getElementById('epPasswordForm').style.display = 'none';
+            document.getElementById('epPasswordDisplay').style.display = 'flex';
+
+            document.getElementById('editProfileModal').classList.add('active');
+        }
+
+        function togglePasswordChange() {
+            const form = document.getElementById('epPasswordForm');
+            const disp = document.getElementById('epPasswordDisplay');
+            if (form.style.display === 'none') {
+                form.style.display = 'flex'; disp.style.display = 'none';
+            } else {
+                form.style.display = 'none'; disp.style.display = 'flex';
             }
         }
 
-        async function saveProfileEdit() {
-            const newName = document.getElementById('profileEditName').value.trim();
-            if (!newName) { showToast('Name cannot be empty', 'error'); return; }
+        async function updatePassword() {
+            const cur = document.getElementById('epCurrentPassword').value;
+            const np = document.getElementById('epNewPassword').value;
+            const cp = document.getElementById('epConfirmPassword').value;
+            if (!cur || !np || !cp) { showToast('Fill all password fields', 'error'); return; }
+            if (np !== cp) { showToast('Passwords do not match', 'error'); return; }
+            if (np.length < 8 || !/\d/.test(np) || !/[!@#$%^&*(),.?":{}|<>]/.test(np)) {
+                showToast('Password needs 8+ chars, 1 number, 1 special character', 'error'); return;
+            }
+            try {
+                await api('/api/auth/change-password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ current_password: cur, new_password: np })
+                });
+                showToast('Password updated', 'success');
+                togglePasswordChange();
+            } catch (e) { showToast(e.message || 'Failed to update password', 'error'); }
+        }
+
+        function confirmDeleteAccount() {
+            if (!confirm('Are you sure? This will permanently delete your account, trading history, and AI training data. This cannot be undone.')) return;
+            api('/api/auth/delete-account', { method: 'DELETE' })
+                .then(() => { logout(); showToast('Account deleted', 'success'); })
+                .catch(e => showToast(e.message || 'Failed to delete account', 'error'));
+        }
+
+        async function saveEditProfile() {
+            const newName = document.getElementById('epUsername').value.trim();
+            if (!newName || newName.length < 3 || /\s/.test(newName)) {
+                document.getElementById('epUsernameError').style.display = 'block';
+                return;
+            }
+            document.getElementById('epUsernameError').style.display = 'none';
             document.getElementById('profileTitle').textContent = newName;
             localStorage.setItem('nexypher_display_name', newName);
-            toggleProfileEdit();
             updateAuthUI();
-            showToast('Profile updated', 'success');
+            closeModal('editProfileModal');
+            showToast('Profile updated successfully', 'success');
+        }
+
+        async function saveProfileEdit() {
+            saveEditProfile();
         }
 
         async function loadProfile() {
@@ -7958,7 +8125,18 @@
             const savedName = localStorage.getItem('nexypher_display_name');
             const uname = savedName || currentUser.username || currentUser.email.split('@')[0];
             document.getElementById('profileTitle').textContent = uname;
-            document.getElementById('profileEmail').textContent = currentUser.email;
+
+            // Verification badge in profile card (no email shown)
+            const badge = document.getElementById('profileVerifyBadge');
+            if (badge) {
+                if (currentUser.email_verified) {
+                    badge.innerHTML = '&#10003; Verified';
+                    badge.className = 'profile-verify-badge badge-verified';
+                } else {
+                    badge.innerHTML = '&#9888; Email not verified';
+                    badge.className = 'profile-verify-badge badge-unverified';
+                }
+            }
 
             // Member since
             const msEl = document.getElementById('profileMemberSince');
@@ -7974,17 +8152,6 @@
             if (avatarEl) avatarEl.textContent = initials;
             const photo = getProfilePhoto();
             applyProfilePhoto(photo);
-
-            // Email verification banner
-            const bannerSlot = document.getElementById('verifyBannerSlot');
-            if (bannerSlot) {
-                if (currentUser.email_verified) {
-                    bannerSlot.innerHTML = '<div style="margin-top:12px;font-size:13px;color:#00d4aa">Email verified</div>';
-                } else {
-                    bannerSlot.innerHTML = '<div class="profile-verify-banner">'
-                        + 'Email not verified &mdash; <a href="#" onclick="resendVerification()" style="color:#6c63ff;text-decoration:underline">Resend verification email</a></div>';
-                }
-            }
 
             // Quick stat counts
             const banks = currentUser.bank_accounts || [];
@@ -8061,7 +8228,7 @@
                 console.error('Portfolio error:', e);
             }
 
-            // Watchlist
+            // Watchlist (horizontal scroll in profile)
             const wlArea = document.getElementById('watchlistArea');
             if (wlist.length === 0) {
                 wlArea.innerHTML = '<div class="profile-empty-state">Watchlist empty — click the star on any token to add</div>';
@@ -8073,6 +8240,22 @@
             </span>
         `).join(' ');
             }
+
+            // Market page watchlist pills
+            renderMarketWatchlist(wlist);
+        }
+
+        function renderMarketWatchlist(wlist) {
+            const section = document.getElementById('marketWatchlistSection');
+            const pills = document.getElementById('marketWatchlistPills');
+            if (!section || !pills) return;
+            if (!wlist || wlist.length === 0) {
+                section.style.display = 'none';
+                return;
+            }
+            section.style.display = 'block';
+            pills.innerHTML = wlist.map(c => `<span class="mw-pill" onclick="openToken('${c}','${c}')"><span class="mw-pill-name">${c.toUpperCase()}</span></span>`).join('')
+                + '<span class="mw-pill mw-pill-add" onclick="navigate(\'profile\')">+ Add to Watchlist</span>';
         }
 
         // ── Home Data ─────────────────────────────────────────────────
@@ -11234,7 +11417,7 @@
                     <span class="nx-wallet-addr">${truncAddr(addr)}</span>
                     <span class="badge-live">LIVE</span>
                     <button class="nx-wallet-addr-btn" onclick="nxCopyAddr('${addr}', this)">Copy <span class="copied-tip">Copied!</span></button>
-                    <a class="nx-wallet-addr-btn" href="${net.explorer}/address/${addr}" target="_blank" rel="noopener" style="text-decoration:none">View</a>
+                    <a class="nx-wallet-addr-btn" href="${net.explorer}/address/${addr}" target="_blank" rel="noopener noreferrer" style="text-decoration:none">View</a>
                 </div>
                 <div class="nx-wallet-info-grid">
                     <div class="nx-wallet-info-item">
@@ -11250,8 +11433,9 @@
                         <span class="nx-wallet-info-value">${tokenCount} asset${tokenCount !== 1 ? 's' : ''}</span>
                     </div>
                 </div>
+                <div style="background:rgba(0,211,149,0.06);border:1px solid rgba(0,211,149,0.15);border-radius:6px;padding:8px 12px;font-size:11px;color:rgba(0,211,149,0.7);margin-bottom:16px;font-family:'Inter',sans-serif">\uD83D\uDC41 Read Only \u2014 NexYpher cannot move or trade your funds</div>
                 <div class="nx-wallet-actions">
-                    <button class="nx-wallet-sync-btn" onclick="syncPortfolioFromWallet()">Sync Portfolio</button>
+                    <a class="nx-etherscan-btn" href="${net.explorer}/address/${addr}" target="_blank" rel="noopener noreferrer">View on Etherscan</a>
                     <button class="nx-wallet-remove-btn" onclick="confirmRemoveWallet('${addr}','${wallet.chain}')">Remove</button>
                 </div>
             </div>`;
