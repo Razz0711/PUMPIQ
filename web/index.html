@@ -21,7 +21,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/design-system.css">
+    <link rel="stylesheet" href="/static/design-system.css?v=20260226">
     <style>
         /* ── CSS Reset & Variables ────────────────────────────────── */
         :root {
@@ -10939,9 +10939,9 @@
             };
 
             try {
-                const res = await fetch('/api/algo/strategies', {
+                const res = await fetch(API + '/api/algo/strategies', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
                     body: JSON.stringify(body),
                 });
                 if (!res.ok) { const err = await res.json().catch(() => ({})); showToast(err.detail || 'Failed to save', 'error'); return; }
@@ -10963,8 +10963,8 @@
         async function sbLoadStrategies() {
             if (!currentUser) return;
             try {
-                const res = await fetch('/api/algo/strategies', {
-                    headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') },
+                const res = await fetch(API + '/api/algo/strategies', {
+                    headers: { 'Authorization': 'Bearer ' + authToken },
                 });
                 if (!res.ok) return;
                 const strategies = await res.json();
@@ -10999,9 +10999,9 @@
         async function sbToggleStrat(id, currentStatus) {
             const newStatus = currentStatus === 'active' ? 'paused' : 'active';
             try {
-                await fetch('/api/algo/strategies/' + id, {
+                await fetch(API + '/api/algo/strategies/' + id, {
                     method: 'PUT',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
                     body: JSON.stringify({ status: newStatus }),
                 });
                 showToast(`Strategy ${newStatus}`, 'success');
@@ -11012,9 +11012,9 @@
         async function sbDeleteStrat(id) {
             if (!confirm('Delete this strategy?')) return;
             try {
-                await fetch('/api/algo/strategies/' + id, {
+                await fetch(API + '/api/algo/strategies/' + id, {
                     method: 'DELETE',
-                    headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') },
+                    headers: { 'Authorization': 'Bearer ' + authToken },
                 });
                 showToast('Strategy deleted', 'info');
                 sbLoadStrategies();
