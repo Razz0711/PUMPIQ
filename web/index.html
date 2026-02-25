@@ -4660,6 +4660,10 @@
         <div class="header-right">
             <input class="search-box" id="globalSearch" placeholder="Search tokens..."
                 onkeydown="if(event.key==='Enter')doSearch()">
+            <button class="nx-watchlist-nav-btn" id="navWatchlistBtn" onclick="navigate('watchlist')" title="My Watchlist" style="display:none">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                <span class="nx-wl-count" id="navWlCount">0</span>
+            </button>
             <div id="authArea">
                 <button class="btn btn-primary" onclick="showAuthModal('login')">Login</button>
             </div>
@@ -6498,122 +6502,230 @@
     </div>
 
     <!-- ═══════════════════════════════════════════════════════════ -->
-    <!-- PROFILE PAGE (visible when logged in)                      -->
+    <!-- PROFILE PAGE — Bloomberg Terminal Style                    -->
     <!-- ═══════════════════════════════════════════════════════════ -->
     <div class="page" id="page-profile">
-        <div class="profile-wrap">
-            <!-- Section 1: User Header Card -->
-            <div class="profile-header-card">
-                <div class="profile-header-inner">
-                    <div class="profile-photo-wrap" id="profilePhotoWrap" onclick="document.getElementById('profilePhotoInput').click()">
-                        <div class="profile-avatar-lg" id="profileAvatarLarge"></div>
-                        <img class="profile-photo-img" id="profilePhotoImg" style="display:none" alt="Profile">
-                        <div class="profile-photo-overlay">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
-                        </div>
+        <div class="pro-wrap">
+
+            <!-- ── Section 1: Compact Identity Bar ── -->
+            <div class="pro-identity-bar">
+                <div class="pro-id-left">
+                    <div class="pro-avatar-sm" id="profilePhotoWrap" onclick="document.getElementById('profilePhotoInput').click()">
+                        <div class="pro-avatar-initials" id="profileAvatarLarge"></div>
+                        <img class="pro-avatar-img" id="profilePhotoImg" style="display:none" alt="Profile">
                         <input type="file" id="profilePhotoInput" accept="image/jpeg,image/png,image/webp" style="display:none" onchange="handleProfilePhoto(event)">
                     </div>
-                    <div class="profile-header-info">
-                        <span class="profile-name" id="profileTitle">raj</span>
-                        <div class="profile-member-since" id="profileMemberSince">Member since Feb 2026</div>
-                        <span class="profile-verify-badge" id="profileVerifyBadge" onclick="showEditProfileModal()"></span>
+                    <div class="pro-id-info">
+                        <div class="pro-id-name-row">
+                            <span class="pro-id-name" id="profileTitle">User</span>
+                            <span class="pro-verify-badge" id="profileVerifyBadge"></span>
+                            <span class="pro-paper-tag">PAPER</span>
+                        </div>
+                        <div class="pro-id-meta" id="profileMemberSince">Member since Feb 2026</div>
                     </div>
-                    <button class="profile-edit-btn" id="profileEditBtn" onclick="showEditProfileModal()">Edit Profile</button>
+                </div>
+                <div class="pro-id-right">
+                    <button class="pro-id-btn" onclick="showEditProfileModal()">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                        Edit Profile
+                    </button>
+                    <button class="pro-id-btn" onclick="navigate('settings')">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+                        Settings
+                    </button>
                 </div>
             </div>
-            <div class="profile-email" id="profileEmail" style="display:none"></div>
 
-            <!-- Section 2: Wallet Balance Card -->
-            <div class="profile-balance-card" style="border-color:rgba(108,99,255,0.2)">
-                <div class="profile-balance-label">Wallet Balance <span class="badge-paper">PAPER</span>
-                    <span style="position:relative;cursor:help;margin-left:4px" title="This is simulated paper trading balance. Not real money.">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+            <!-- ── Section 2: Trading Performance Hero ── -->
+            <div class="pro-perf-section">
+                <div class="pro-perf-header">
+                    <h3 class="pro-section-label">Trading Performance</h3>
+                    <div class="pro-perf-tabs" id="proPerfTabs">
+                        <button class="pro-perf-tab active" data-range="24h">24H</button>
+                        <button class="pro-perf-tab" data-range="7d">7D</button>
+                        <button class="pro-perf-tab" data-range="1m">1M</button>
+                        <button class="pro-perf-tab" data-range="all">ALL</button>
+                    </div>
+                </div>
+                <div class="pro-perf-grid">
+                    <div class="pro-metric-card pro-metric-balance">
+                        <div class="pro-metric-label">Paper Balance</div>
+                        <div class="pro-metric-value" id="proBalanceVal">$0.00</div>
+                        <div class="pro-metric-actions">
+                            <button class="pro-metric-action" onclick="showDepositModal()">+ Add</button>
+                            <button class="pro-metric-action" onclick="showWithdrawModal()">Withdraw</button>
+                            <button class="pro-metric-action" onclick="showTransactionsModal()">History</button>
+                        </div>
+                    </div>
+                    <div class="pro-metric-card">
+                        <div class="pro-metric-label">Total P&L</div>
+                        <div class="pro-metric-value" id="proTotalPnl">$0.00</div>
+                    </div>
+                    <div class="pro-metric-card">
+                        <div class="pro-metric-label">Win Rate</div>
+                        <div class="pro-metric-value" id="proWinRate">0%</div>
+                    </div>
+                    <div class="pro-metric-card">
+                        <div class="pro-metric-label">Total Trades</div>
+                        <div class="pro-metric-value" id="proTotalTrades">0</div>
+                    </div>
+                    <div class="pro-metric-card">
+                        <div class="pro-metric-label">Best Trade</div>
+                        <div class="pro-metric-value pro-positive" id="proBestTrade">$0.00</div>
+                    </div>
+                    <div class="pro-metric-card">
+                        <div class="pro-metric-label">Avg Hold Time</div>
+                        <div class="pro-metric-value" id="proAvgHold">--</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── Section 3: P&L Sparkline Chart ── -->
+            <div class="pro-sparkline-wrap">
+                <svg id="proSparklineSvg" class="pro-sparkline-svg" viewBox="0 0 900 100" preserveAspectRatio="none"></svg>
+            </div>
+
+            <!-- ── Section 4: Two-Column Layout (Portfolio + Watched Coins) ── -->
+            <div class="pro-two-col">
+                <!-- Left: Portfolio Table -->
+                <div class="pro-col-left">
+                    <div class="pro-col-header">
+                        <h3 class="pro-section-label">Portfolio</h3>
+                        <div style="display:flex;gap:8px">
+                            <button class="pro-small-btn nx-import-btn" id="syncWalletBtn" onclick="syncPortfolioFromWallet()" style="display:none">Import for Tracking Only
+                                <span class="nx-tipbox nx-tipbox-import"><span class="nx-tipbox-arrow"></span><strong style="color:#fff;font-weight:600;display:block;margin-bottom:4px">ℹ️ Read Only Import</strong><span style="color:rgba(255,255,255,0.6)">Imports wallet holdings for display only.</span><br><span style="color:rgba(255,255,255,0.6)">Auto Trader will NEVER trade these assets.</span><div class="nx-tipbox-safe">✓ Real wallet is completely isolated</div></span>
+                            </button>
+                            <button class="pro-small-btn" onclick="showPortfolioModal()">+ Add Position</button>
+                        </div>
+                    </div>
+                    <div id="portfolioSyncStatus" style="display:none;font-size:11px;color:rgba(255,255,255,0.3);margin-bottom:8px;font-family:'Inter',sans-serif"></div>
+                    <table class="pro-portfolio-table">
+                        <thead>
+                            <tr><th>Coin</th><th>Amount</th><th>Avg Price</th><th>Current</th><th>PnL</th></tr>
+                        </thead>
+                        <tbody id="portfolioBody"></tbody>
+                    </table>
+                </div>
+
+                <!-- Right: Watched Coins -->
+                <div class="pro-col-right">
+                    <div class="pro-col-header">
+                        <h3 class="pro-section-label">Watched Coins</h3>
+                        <a href="#" class="pro-view-all" onclick="event.preventDefault();navigate('watchlist')">View All &rarr;</a>
+                    </div>
+                    <div id="watchlistArea" class="pro-watchlist-area"></div>
+                    <div class="pro-watch-add">
+                        <input class="pro-watch-input" id="proWatchInput" placeholder="+ Watch a coin..." onkeydown="if(event.key==='Enter')addWatchFromInput()">
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── Section 5: Account & Security Accordion ── -->
+            <div class="pro-accordion">
+                <div class="pro-accordion-header" onclick="toggleProAccordion(this)">
+                    <span>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-3px;margin-right:8px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                        Account &amp; Security
                     </span>
+                    <svg class="pro-accordion-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
                 </div>
-                <div class="profile-balance-amount" style="color:rgba(255,255,255,0.9)"><span class="profile-currency">$</span><span id="walletBalanceDisplay">0.00</span></div>
-                <div class="profile-balance-actions">
-                    <button class="profile-btn-primary" onclick="showDepositModal()">+ Add Money</button>
-                    <button class="profile-btn-outline" onclick="showWithdrawModal()">Withdraw</button>
-                    <button class="profile-btn-outline" onclick="showTransactionsModal()">History</button>
-                </div>
-            </div>
+                <div class="pro-accordion-body">
+                    <!-- Tabs inside accordion -->
+                    <div class="pro-sec-tabs">
+                        <button class="pro-sec-tab active" onclick="switchProSecTab(this,'security')">Security</button>
+                        <button class="pro-sec-tab" onclick="switchProSecTab(this,'wallets')">Wallets</button>
+                        <button class="pro-sec-tab" onclick="switchProSecTab(this,'banks')">Bank Accounts</button>
+                        <button class="pro-sec-tab" onclick="switchProSecTab(this,'apikeys')">API Keys</button>
+                    </div>
 
-            <!-- Section 3: Stats Row -->
-            <div class="profile-stats-row">
-                <div class="profile-stat-card">
-                    <div class="profile-stat-label">Bank Accounts</div>
-                    <div class="profile-stat-value" id="profileBankCount">0</div>
-                </div>
-                <div class="profile-stat-card" style="position:relative">
-                    <span class="badge-live" style="position:absolute;top:10px;right:12px">LIVE</span>
-                    <div class="profile-stat-label">Connected Wallets</div>
-                    <div class="profile-stat-value" id="profileWalletCount">0</div>
-                </div>
-                <div class="profile-stat-card">
-                    <div class="profile-stat-label">Watchlist</div>
-                    <div class="profile-stat-value" id="profileWatchCount">0</div>
-                </div>
-            </div>
+                    <!-- Security Tab -->
+                    <div class="pro-sec-panel active" id="proSecPanel-security">
+                        <div class="pro-sec-row">
+                            <div class="pro-sec-row-label">Email</div>
+                            <div class="pro-sec-row-value" id="proSecEmail">--</div>
+                        </div>
+                        <div class="pro-sec-row">
+                            <div class="pro-sec-row-label">Password</div>
+                            <div class="pro-sec-row-value">
+                                <span style="letter-spacing:3px;color:rgba(255,255,255,0.3)">••••••••</span>
+                                <a href="#" class="pro-sec-link" onclick="event.preventDefault();showEditProfileModal()">Change &rarr;</a>
+                            </div>
+                        </div>
+                        <div class="pro-sec-row">
+                            <div class="pro-sec-row-label">Two-Factor Auth</div>
+                            <div class="pro-sec-row-value"><span class="pro-sec-badge-off">OFF</span></div>
+                        </div>
+                        <div class="pro-sec-row">
+                            <div class="pro-sec-row-label">Last Login</div>
+                            <div class="pro-sec-row-value" id="proSecLastLogin">--</div>
+                        </div>
+                    </div>
 
-            <!-- Section 4: Linked Bank Accounts -->
-            <div class="profile-section">
-                <div class="profile-section-header">
-                    <h3 class="profile-section-title">Linked Bank Accounts</h3>
-                    <button class="profile-add-btn" onclick="showBankModal()">+ Add Bank</button>
-                </div>
-                <div id="bankList"></div>
-            </div>
+                    <!-- Wallets Tab -->
+                    <div class="pro-sec-panel" id="proSecPanel-wallets">
+                        <div class="pro-sec-panel-header">
+                            <span>Connected Wallets
+                                <span class="nx-tip-wrap">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="2" style="vertical-align:-1px;cursor:help;margin-left:4px"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                                    <span class="nx-tipbox"><span class="nx-tipbox-arrow"></span>Read-only mode. No transactions can be initiated.</span>
+                                </span>
+                            </span>
+                            <button class="pro-small-btn" onclick="showWalletModal()">+ Add Wallet</button>
+                        </div>
+                        <div id="walletList"></div>
+                        <div id="walletTxSection"></div>
+                    </div>
 
-            <!-- Section 5: Connected Wallets -->
-            <div class="profile-section">
-                <div class="profile-section-header">
-                    <h3 class="profile-section-title">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="2" style="vertical-align:-2px;margin-right:4px"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
-                        Connected Wallets
-                        <span class="nx-tip-wrap">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="2" style="vertical-align:-1px;cursor:help;margin-left:4px"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-                            <span class="nx-tipbox"><span class="nx-tipbox-arrow"></span>Your wallet is connected in read-only mode. No transactions can be initiated by NexYpher.</span>
-                        </span>
-                    </h3>
-                    <button class="profile-add-btn" onclick="showWalletModal()">+ Add Wallet</button>
-                </div>
-                <div id="walletList"></div>
-                <div id="walletTxSection"></div>
-            </div>
+                    <!-- Bank Accounts Tab -->
+                    <div class="pro-sec-panel" id="proSecPanel-banks">
+                        <div class="pro-sec-panel-header">
+                            <span>Linked Bank Accounts</span>
+                            <button class="pro-small-btn" onclick="showBankModal()">+ Add Bank</button>
+                        </div>
+                        <div id="bankList"></div>
+                    </div>
 
-            <!-- Section 6: Watched Coins -->
-            <div class="profile-section">
-                <div class="profile-section-header">
-                    <h3 class="profile-section-title">Watched Coins</h3>
-                    <a href="#" class="profile-section-link" onclick="event.preventDefault();navigate('market')">Go to Market &rarr;</a>
-                </div>
-                <div id="watchlistArea" class="profile-watchlist-scroll"></div>
-            </div>
-
-            <!-- Section 7: Portfolio -->
-            <div class="profile-section">
-                <div class="profile-section-header">
-                    <h3 class="profile-section-title">Portfolio</h3>
-                    <div style="display:flex;gap:8px">
-                        <button class="profile-add-btn nx-import-btn" id="syncWalletBtn" onclick="syncPortfolioFromWallet()" style="display:none">Import for Tracking Only
-                            <span class="nx-tipbox nx-tipbox-import"><span class="nx-tipbox-arrow"></span><strong style="color:#fff;font-weight:600;display:block;margin-bottom:4px">ℹ️ Read Only Import</strong><span style="color:rgba(255,255,255,0.6)">Imports wallet holdings for display only.</span><br><span style="color:rgba(255,255,255,0.6)">Auto Trader will NEVER trade these assets.</span><div class="nx-tipbox-safe">✓ Real wallet is completely isolated</div></span>
-                        </button>
-                        <button class="profile-add-btn" onclick="showPortfolioModal()">+ Add Position</button>
+                    <!-- API Keys Tab -->
+                    <div class="pro-sec-panel" id="proSecPanel-apikeys">
+                        <div class="pro-sec-empty">No API keys configured. API access coming soon.</div>
                     </div>
                 </div>
-                <div id="portfolioSyncStatus" style="display:none;font-size:11px;color:rgba(255,255,255,0.3);margin-bottom:8px;font-family:'Inter',sans-serif"></div>
-                <table class="profile-portfolio-table">
-                    <thead>
-                        <tr>
-                            <th>Coin</th>
-                            <th>Amount</th>
-                            <th>Avg Price</th>
-                            <th>Current</th>
-                            <th>PnL</th>
-                        </tr>
-                    </thead>
-                    <tbody id="portfolioBody"></tbody>
-                </table>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- WATCHLIST PAGE — Full Token Discovery                      -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <div class="page" id="page-watchlist">
+        <div class="wl-wrap">
+            <div class="wl-header">
+                <div class="wl-header-left">
+                    <h2 class="wl-title">My Watchlist <span class="wl-count" id="wlCountBadge">0</span></h2>
+                </div>
+                <div class="wl-header-right">
+                    <input class="wl-search" id="wlSearchInput" placeholder="Search watched tokens..." oninput="filterWatchlistCards()">
+                    <button class="wl-add-btn" id="wlAddBtn" onclick="showWatchlistAddModal()">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                        Add
+                    </button>
+                </div>
+            </div>
+            <div class="wl-filters">
+                <button class="wl-filter active" data-filter="all" onclick="setWlFilter(this)">All</button>
+                <button class="wl-filter" data-filter="gainers" onclick="setWlFilter(this)">Gainers 24h</button>
+                <button class="wl-filter" data-filter="losers" onclick="setWlFilter(this)">Losers 24h</button>
+                <button class="wl-filter" data-filter="volume" onclick="setWlFilter(this)">Most Volume</button>
+                <button class="wl-filter" data-filter="ai" onclick="setWlFilter(this)">AI Score ↑</button>
+            </div>
+            <div class="wl-grid" id="wlGrid">
+                <!-- Token cards rendered by JS -->
+            </div>
+            <div class="wl-empty" id="wlEmpty" style="display:none">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                <div class="wl-empty-title">No coins in your watchlist</div>
+                <div class="wl-empty-desc">Star any token from the Market page or click Add above</div>
             </div>
         </div>
     </div>
@@ -7286,7 +7398,7 @@
         });
 
         function navigate(page) {
-            if (page === 'profile' && !currentUser) {
+            if ((page === 'profile' || page === 'watchlist') && !currentUser) {
                 showAuthModal('login');
                 return;
             }
@@ -7310,6 +7422,7 @@
             else if (page === 'settings') { loadSettings(); }
             else if (page === 'contact') { /* static page */ }
             else if (page === 'profile') { loadProfile(); }
+            else if (page === 'watchlist') { loadWatchlistPage(); }
 
             // Paper mode indicator
             var paperNav = document.getElementById('nxPaperNav');
@@ -7485,7 +7598,9 @@
 
         function updateAuthUI() {
             const area = document.getElementById('authArea');
+            const navWlBtn = document.getElementById('navWatchlistBtn');
             if (currentUser) {
+                if (navWlBtn) { navWlBtn.style.display = 'flex'; updateWatchlistNavCount((currentUser.watchlist||[]).length); }
                 const initials = (currentUser.username || currentUser.email).slice(0, 2).toUpperCase();
                 const displayName = currentUser.username || currentUser.email.split('@')[0];
                 const photo = getProfilePhoto();
@@ -7509,6 +7624,10 @@
                         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3 2.7-5 6-5s6 2 6 5"/></svg>
                         Profile
                     </button>
+                    <button class="user-menu-item" onclick="navigate('watchlist'); closeUserMenu()">
+                        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="8 1 10.2 5.4 15 6.1 11.5 9.5 12.3 14.3 8 12 3.7 14.3 4.5 9.5 1 6.1 5.8 5.4 8 1"/></svg>
+                        My Watchlist
+                    </button>
                     <button class="user-menu-item" onclick="openPnlHeatmap(); closeUserMenu()">
                         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="4" height="4" rx="0.5"/><rect x="6" y="1" width="4" height="4" rx="0.5"/><rect x="11" y="1" width="4" height="4" rx="0.5"/><rect x="1" y="6" width="4" height="4" rx="0.5"/><rect x="6" y="6" width="4" height="4" rx="0.5"/><rect x="11" y="6" width="4" height="4" rx="0.5"/><rect x="1" y="11" width="4" height="4" rx="0.5"/><rect x="6" y="11" width="4" height="4" rx="0.5"/><rect x="11" y="11" width="4" height="4" rx="0.5"/></svg>
                         P&amp;L Heatmap
@@ -7525,6 +7644,7 @@
                 </div>
             </div>`;
             } else {
+                if (navWlBtn) navWlBtn.style.display = 'none';
                 area.innerHTML = '<button class="btn btn-primary" onclick="showAuthModal(\'login\')">Login</button>';
             }
         }
@@ -7901,7 +8021,8 @@
                 document.getElementById('depositOTPStep').style.display = 'none';
                 // Update local state
                 if (currentUser) currentUser.wallet_balance = res.new_balance;
-                document.getElementById('walletBalanceDisplay').textContent = formatUSD(res.new_balance);
+                const balEl = document.getElementById('proBalanceVal');
+                if (balEl) balEl.textContent = '$' + formatUSD(res.new_balance);
                 pendingDepositData = null;
                 setTimeout(() => { closeModal('depositModal'); document.getElementById('depositFields').style.display = 'block'; }, 4000);
             } catch (e) {
@@ -7928,7 +8049,8 @@
                 successEl.style.display = 'block';
                 document.getElementById('withdrawOTPStep').style.display = 'none';
                 if (currentUser) currentUser.wallet_balance = res.new_balance;
-                document.getElementById('walletBalanceDisplay').textContent = formatUSD(res.new_balance);
+                const balEl2 = document.getElementById('proBalanceVal');
+                if (balEl2) balEl2.textContent = '$' + formatUSD(res.new_balance);
                 pendingWithdrawData = null;
                 setTimeout(() => { closeModal('withdrawModal'); document.getElementById('withdrawFields').style.display = 'block'; }, 4000);
             } catch (e) {
@@ -8126,15 +8248,15 @@
             const uname = savedName || currentUser.username || currentUser.email.split('@')[0];
             document.getElementById('profileTitle').textContent = uname;
 
-            // Verification badge in profile card (no email shown)
+            // Verification badge
             const badge = document.getElementById('profileVerifyBadge');
             if (badge) {
                 if (currentUser.email_verified) {
                     badge.innerHTML = '&#10003; Verified';
-                    badge.className = 'profile-verify-badge badge-verified';
+                    badge.className = 'pro-verify-badge badge-verified';
                 } else {
-                    badge.innerHTML = '&#9888; Email not verified';
-                    badge.className = 'profile-verify-badge badge-unverified';
+                    badge.innerHTML = '&#9888; Not Verified';
+                    badge.className = 'pro-verify-badge badge-unverified';
                 }
             }
 
@@ -8153,21 +8275,44 @@
             const photo = getProfilePhoto();
             applyProfilePhoto(photo);
 
-            // Quick stat counts
             const banks = currentUser.bank_accounts || [];
             const wallets = currentUser.wallets || [];
             const wlist = currentUser.watchlist || [];
-            const bankCountEl = document.getElementById('profileBankCount');
-            const walletCountEl = document.getElementById('profileWalletCount');
-            const watchCountEl = document.getElementById('profileWatchCount');
-            if (bankCountEl) bankCountEl.textContent = banks.length;
-            if (walletCountEl) walletCountEl.textContent = wallets.length;
-            if (watchCountEl) watchCountEl.textContent = wlist.length;
 
-            // Wallet Balance
-            document.getElementById('walletBalanceDisplay').textContent = formatUSD(currentUser.wallet_balance || 0);
+            // ── Trading Performance Hero ──
+            try {
+                const perf = await api('/api/trader/performance');
+                const balance = currentUser.wallet_balance || 0;
+                document.getElementById('proBalanceVal').textContent = '$' + formatUSD(balance);
+                const totalPnl = (perf.realized_pnl || 0) + (perf.unrealized_pnl || 0);
+                const pnlEl = document.getElementById('proTotalPnl');
+                pnlEl.textContent = (totalPnl >= 0 ? '+$' : '-$') + formatUSD(Math.abs(totalPnl));
+                pnlEl.className = 'pro-metric-value ' + (totalPnl >= 0 ? 'pro-positive' : 'pro-negative');
 
-            // Bank Accounts
+                const wrEl = document.getElementById('proWinRate');
+                wrEl.textContent = (perf.win_rate || 0) + '%';
+
+                document.getElementById('proTotalTrades').textContent = perf.total_trades || 0;
+
+                const bestEl = document.getElementById('proBestTrade');
+                bestEl.textContent = '+$' + formatUSD(perf.best_trade || 0);
+
+                // Avg hold time from trade history
+                const avgHold = perf.avg_hold_minutes;
+                const holdEl = document.getElementById('proAvgHold');
+                holdEl.textContent = avgHold ? avgHold.toFixed(1) + 'm' : '--';
+            } catch (e) {
+                console.warn('Profile perf load failed:', e);
+                document.getElementById('proBalanceVal').textContent = '$' + formatUSD(currentUser.wallet_balance || 0);
+            }
+
+            // ── P&L Sparkline Chart ──
+            try {
+                const chartData = await api('/api/trader/pnl-chart?days=14');
+                renderProSparkline(chartData);
+            } catch (e) { console.warn('Sparkline failed:', e); }
+
+            // ── Bank Accounts (inside accordion) ──
             const bl = document.getElementById('bankList');
             if (banks.length === 0) {
                 bl.innerHTML = '<div class="profile-empty-state">No bank accounts linked yet</div>';
@@ -8187,7 +8332,7 @@
         `).join('');
             }
 
-            // Wallets
+            // ── Wallets (inside accordion) ──
             const wl = document.getElementById('walletList');
             if (window._nxWalletEngine) {
                 window._nxWalletEngine.renderWallets(wallets);
@@ -8207,12 +8352,12 @@
         `).join('');
             }
 
-            // Portfolio
+            // ── Portfolio ──
             try {
                 const portfolio = await api('/api/portfolio');
                 const pb = document.getElementById('portfolioBody');
                 if (portfolio.length === 0) {
-                    pb.innerHTML = '<tr><td colspan="5" class="profile-empty-state" style="border:none">No positions added yet — click + Add Position to start</td></tr>';
+                    pb.innerHTML = '<tr><td colspan="5" class="profile-empty-state" style="border:none">No positions yet</td></tr>';
                 } else {
                     pb.innerHTML = portfolio.map(p => `
                 <tr>
@@ -8228,21 +8373,293 @@
                 console.error('Portfolio error:', e);
             }
 
-            // Watchlist (horizontal scroll in profile)
-            const wlArea = document.getElementById('watchlistArea');
-            if (wlist.length === 0) {
-                wlArea.innerHTML = '<div class="profile-empty-state">Watchlist empty — click the star on any token to add</div>';
-            } else {
-                wlArea.innerHTML = wlist.map(c => `
-            <span class="profile-chip" onclick="openToken('${c}','${c}')">
-                ${c}
-                <span class="profile-chip-remove" onclick="event.stopPropagation();removeFromWatchlist('${c}')">&times;</span>
-            </span>
-        `).join(' ');
-            }
+            // ── Watched Coins (right column, rich rows) ──
+            renderProfileWatchlist(wlist);
+
+            // ── Security Panel ──
+            const secEmail = document.getElementById('proSecEmail');
+            if (secEmail) secEmail.textContent = currentUser.email || '--';
+            const secLogin = document.getElementById('proSecLastLogin');
+            if (secLogin) secLogin.textContent = new Date().toLocaleString();
+
+            // ── Update navbar watchlist count ──
+            updateWatchlistNavCount(wlist.length);
 
             // Market page watchlist pills
             renderMarketWatchlist(wlist);
+        }
+
+        // ── P&L Sparkline ──
+        function renderProSparkline(chartData) {
+            const svg = document.getElementById('proSparklineSvg');
+            if (!svg || !chartData || chartData.length < 2) { svg.innerHTML = ''; return; }
+            const vals = chartData.map(d => d.cumulative_pnl != null ? d.cumulative_pnl : d.pnl || 0);
+            const w = 900, h = 100;
+            const min = Math.min(...vals), max = Math.max(...vals);
+            const range = max - min || 1;
+            const points = vals.map((v, i) => {
+                const x = (i / (vals.length - 1)) * w;
+                const y = h - ((v - min) / range) * (h - 8) - 4;
+                return `${x},${y}`;
+            }).join(' ');
+            const lastVal = vals[vals.length - 1] - vals[0];
+            const color = lastVal >= 0 ? '#00d395' : '#ff4757';
+            const gradId = 'proSparkGrad';
+            svg.innerHTML = `
+                <defs>
+                    <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="${color}" stop-opacity="0.2"/>
+                        <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
+                    </linearGradient>
+                </defs>
+                <polygon points="0,${h} ${points} ${w},${h}" fill="url(#${gradId})" />
+                <polyline points="${points}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
+            `;
+        }
+
+        // ── Profile Watched Coins as rich rows ──
+        async function renderProfileWatchlist(wlist) {
+            const area = document.getElementById('watchlistArea');
+            if (!area) return;
+            if (!wlist || wlist.length === 0) {
+                area.innerHTML = '<div class="profile-empty-state">No coins watched yet</div>';
+                return;
+            }
+            // Fetch market data for watched coins
+            try {
+                const ids = wlist.join(',');
+                const data = await fetch(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}&order=market_cap_desc&per_page=50&page=1&sparkline=false&price_change_percentage=24h`).then(r => r.json());
+                const lookup = {};
+                data.forEach(c => { lookup[c.id] = c; });
+                area.innerHTML = wlist.map(coinId => {
+                    const c = lookup[coinId];
+                    if (!c) return `<div class="pro-watch-row" onclick="openToken('${coinId}','${coinId}')">
+                        <div class="pro-watch-icon">${coinId.slice(0,2).toUpperCase()}</div>
+                        <div class="pro-watch-info"><div class="pro-watch-symbol">${coinId}</div></div>
+                        <div class="pro-watch-price">--</div>
+                        <button class="pro-watch-remove" onclick="event.stopPropagation();removeFromWatchlist('${coinId}')">&times;</button>
+                    </div>`;
+                    const ch = c.price_change_percentage_24h || 0;
+                    const chColor = ch >= 0 ? '#00d395' : '#ff4757';
+                    const chSign = ch >= 0 ? '+' : '';
+                    return `<div class="pro-watch-row" onclick="openToken('${c.id}','${c.name}')">
+                        <div class="pro-watch-icon"><img src="${c.image}" alt="" onerror="this.style.display='none';this.parentElement.textContent='${c.symbol.slice(0,2).toUpperCase()}'"></div>
+                        <div class="pro-watch-info"><div class="pro-watch-symbol">${c.symbol.toUpperCase()}</div></div>
+                        <div style="text-align:right">
+                            <div class="pro-watch-price">$${c.current_price.toLocaleString()}</div>
+                            <div class="pro-watch-change" style="color:${chColor}">${chSign}${ch.toFixed(1)}%</div>
+                        </div>
+                        <button class="pro-watch-remove" onclick="event.stopPropagation();removeFromWatchlist('${c.id}')">&times;</button>
+                    </div>`;
+                }).join('');
+            } catch (e) {
+                console.warn('Watch coin data failed:', e);
+                area.innerHTML = wlist.map(c => `<div class="pro-watch-row" onclick="openToken('${c}','${c}')">
+                    <div class="pro-watch-icon">${c.slice(0,2).toUpperCase()}</div>
+                    <div class="pro-watch-info"><div class="pro-watch-symbol">${c}</div></div>
+                    <button class="pro-watch-remove" onclick="event.stopPropagation();removeFromWatchlist('${c}')">&times;</button>
+                </div>`).join('');
+            }
+        }
+
+        // ── Profile Accordion ──
+        function toggleProAccordion(header) {
+            header.parentElement.classList.toggle('open');
+        }
+        function switchProSecTab(btn, tab) {
+            btn.parentElement.querySelectorAll('.pro-sec-tab').forEach(t => t.classList.remove('active'));
+            btn.classList.add('active');
+            btn.closest('.pro-accordion-body').querySelectorAll('.pro-sec-panel').forEach(p => p.classList.remove('active'));
+            document.getElementById('proSecPanel-' + tab)?.classList.add('active');
+        }
+
+        // ── Performance Tab Switching ──
+        document.addEventListener('click', function(e) {
+            if (e.target.classList.contains('pro-perf-tab')) {
+                document.querySelectorAll('.pro-perf-tab').forEach(t => t.classList.remove('active'));
+                e.target.classList.add('active');
+                // Future: reload stats for selected range
+            }
+        });
+
+        // ── Add Coin from Profile Watch Input ──
+        async function addWatchFromInput() {
+            const inp = document.getElementById('proWatchInput');
+            if (!inp) return;
+            const val = inp.value.trim().toLowerCase();
+            if (!val) return;
+            inp.value = '';
+            try {
+                await api(`/api/watchlist/add`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({coin_id: val}) });
+                await fetchUser();
+                loadProfile();
+                showToast(`${val} added to watchlist`, 'success');
+            } catch(e) { showToast(e.message || 'Failed to add coin', 'error'); }
+        }
+
+        // ── Navbar Watchlist Count ──
+        function updateWatchlistNavCount(count) {
+            const btn = document.getElementById('navWatchlistBtn');
+            const badge = document.getElementById('navWlCount');
+            const wlCountBadge = document.getElementById('wlCountBadge');
+            if (btn) btn.style.display = currentUser ? 'flex' : 'none';
+            if (badge) badge.textContent = count || 0;
+            if (wlCountBadge) wlCountBadge.textContent = count || 0;
+        }
+
+        // ══════════════════════════════════════════════════════════
+        // WATCHLIST PAGE — Full Token Discovery
+        // ══════════════════════════════════════════════════════════
+        let _wlPageData = [];
+        let _wlCurrentFilter = 'all';
+
+        async function loadWatchlistPage() {
+            if (!currentUser) return;
+            const wlist = currentUser.watchlist || [];
+            updateWatchlistNavCount(wlist.length);
+
+            const grid = document.getElementById('wlGrid');
+            const empty = document.getElementById('wlEmpty');
+
+            if (wlist.length === 0) {
+                grid.innerHTML = '';
+                empty.style.display = 'block';
+                return;
+            }
+            empty.style.display = 'none';
+            // Show loading skeletons
+            grid.innerHTML = wlist.map(() => '<div class="wl-skeleton"></div>').join('');
+
+            try {
+                const ids = wlist.join(',');
+                const data = await fetch(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}&order=market_cap_desc&per_page=50&page=1&sparkline=true&price_change_percentage=24h,7d`).then(r => r.json());
+                _wlPageData = data || [];
+                renderWatchlistCards(_wlPageData);
+            } catch (e) {
+                console.error('Watchlist page load failed:', e);
+                grid.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.3);font-size:13px">Failed to load data. Try again later.</div>';
+            }
+        }
+
+        function renderWatchlistCards(data) {
+            const grid = document.getElementById('wlGrid');
+            const empty = document.getElementById('wlEmpty');
+            if (!data || data.length === 0) {
+                grid.innerHTML = '';
+                empty.style.display = 'block';
+                return;
+            }
+            empty.style.display = 'none';
+            grid.innerHTML = data.map((c, i) => {
+                const ch24 = c.price_change_percentage_24h || 0;
+                const ch7d = c.price_change_percentage_7d_in_currency || 0;
+                const chColor = ch24 >= 0 ? '#00d395' : '#ff4757';
+                const chSign = ch24 >= 0 ? '+' : '';
+                const aiScore = Math.min(99, Math.max(1, Math.round((c.market_cap_rank ? (100 - c.market_cap_rank) : 50) + ch24 * 0.5)));
+                const aiClass = aiScore >= 65 ? 'high' : aiScore >= 35 ? 'mid' : 'low';
+                const signal = ch24 > 3 ? 'LONG' : ch24 < -3 ? 'SHORT' : 'HOLD';
+                const sigClass = signal === 'LONG' ? 'long' : signal === 'SHORT' ? 'short' : 'hold';
+                const sparkPts = buildSparklinePath(c.sparkline_in_7d?.price || [], 200, 48);
+                const sparkColor = ch7d >= 0 ? '#00d395' : '#ff4757';
+                const verdict = signal === 'LONG' ? 'Bullish momentum detected' : signal === 'SHORT' ? 'Bearish pressure building' : 'Consolidation phase';
+
+                return `<div class="wl-card" style="animation-delay:${i * 50}ms" data-coin="${c.id}" data-change24="${ch24}" data-volume="${c.total_volume || 0}" data-ai="${aiScore}">
+                    <div class="wl-card-head">
+                        <div class="wl-card-icon"><img src="${c.image}" alt="" onerror="this.style.display='none';this.parentElement.textContent='${c.symbol.slice(0,2).toUpperCase()}'"></div>
+                        <div class="wl-card-name">
+                            <div class="wl-card-name-text">${c.name}</div>
+                            <div class="wl-card-symbol">${c.symbol.toUpperCase()} #${c.market_cap_rank || '--'}</div>
+                        </div>
+                        <div class="wl-card-badges">
+                            <span class="wl-ai-score ${aiClass}">AI ${aiScore}</span>
+                            <span class="wl-signal-badge ${sigClass}">${signal}</span>
+                        </div>
+                    </div>
+                    <div class="wl-card-price-row">
+                        <span class="wl-card-price">$${c.current_price?.toLocaleString() || '0'}</span>
+                        <span class="wl-card-change" style="color:${chColor}">${chSign}${ch24.toFixed(1)}%</span>
+                    </div>
+                    <div class="wl-card-stats">
+                        <div class="wl-card-stat"><div class="wl-card-stat-label">Market Cap</div><div class="wl-card-stat-value">${fmtCompact(c.market_cap)}</div></div>
+                        <div class="wl-card-stat"><div class="wl-card-stat-label">Volume 24h</div><div class="wl-card-stat-value">${fmtCompact(c.total_volume)}</div></div>
+                        <div class="wl-card-stat"><div class="wl-card-stat-label">7d Change</div><div class="wl-card-stat-value" style="color:${ch7d >= 0 ? '#00d395' : '#ff4757'}">${ch7d >= 0 ? '+' : ''}${ch7d.toFixed(1)}%</div></div>
+                        <div class="wl-card-stat"><div class="wl-card-stat-label">Rank</div><div class="wl-card-stat-value">#${c.market_cap_rank || '--'}</div></div>
+                    </div>
+                    <div class="wl-card-sparkline">
+                        <svg viewBox="0 0 200 48" preserveAspectRatio="none"><polyline points="${sparkPts}" fill="none" stroke="${sparkColor}" stroke-width="1.5" stroke-linejoin="round"/></svg>
+                    </div>
+                    <div class="wl-card-footer">
+                        <span class="wl-card-verdict">${verdict}</span>
+                        <button class="wl-card-analyze" onclick="event.stopPropagation();openToken('${c.id}','${c.name}')">Analyze</button>
+                        <button class="wl-card-remove-btn" onclick="event.stopPropagation();removeFromWatchlistPage('${c.id}')" title="Remove">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                        </button>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        function buildSparklinePath(prices, w, h) {
+            if (!prices || prices.length < 2) return '0,24 200,24';
+            const min = Math.min(...prices), max = Math.max(...prices);
+            const range = max - min || 1;
+            return prices.map((p, i) => {
+                const x = (i / (prices.length -1)) * w;
+                const y = h - ((p - min) / range) * (h - 4) - 2;
+                return `${x.toFixed(1)},${y.toFixed(1)}`;
+            }).join(' ');
+        }
+
+        function fmtCompact(n) {
+            if (!n) return '--';
+            if (n >= 1e12) return '$' + (n/1e12).toFixed(1) + 'T';
+            if (n >= 1e9) return '$' + (n/1e9).toFixed(1) + 'B';
+            if (n >= 1e6) return '$' + (n/1e6).toFixed(1) + 'M';
+            if (n >= 1e3) return '$' + (n/1e3).toFixed(0) + 'K';
+            return '$' + n.toFixed(0);
+        }
+
+        // Watchlist filter
+        function setWlFilter(btn) {
+            document.querySelectorAll('.wl-filter').forEach(f => f.classList.remove('active'));
+            btn.classList.add('active');
+            _wlCurrentFilter = btn.dataset.filter;
+            applyWlFilter();
+        }
+        function applyWlFilter() {
+            let filtered = [..._wlPageData];
+            if (_wlCurrentFilter === 'gainers') filtered = filtered.filter(c => (c.price_change_percentage_24h || 0) > 0).sort((a,b) => (b.price_change_percentage_24h||0)-(a.price_change_percentage_24h||0));
+            else if (_wlCurrentFilter === 'losers') filtered = filtered.filter(c => (c.price_change_percentage_24h || 0) < 0).sort((a,b) => (a.price_change_percentage_24h||0)-(b.price_change_percentage_24h||0));
+            else if (_wlCurrentFilter === 'volume') filtered.sort((a,b) => (b.total_volume||0)-(a.total_volume||0));
+            else if (_wlCurrentFilter === 'ai') filtered.sort((a,b) => { const as = Math.round((100-(a.market_cap_rank||50))+(a.price_change_percentage_24h||0)*0.5); const bs = Math.round((100-(b.market_cap_rank||50))+(b.price_change_percentage_24h||0)*0.5); return bs-as; });
+            renderWatchlistCards(filtered);
+        }
+
+        // Watchlist search filter
+        function filterWatchlistCards() {
+            const q = (document.getElementById('wlSearchInput')?.value || '').toLowerCase();
+            if (!q) { renderWatchlistCards(_wlPageData); return; }
+            renderWatchlistCards(_wlPageData.filter(c => c.name.toLowerCase().includes(q) || c.symbol.toLowerCase().includes(q) || c.id.toLowerCase().includes(q)));
+        }
+
+        // Remove from watchlist page
+        async function removeFromWatchlistPage(coinId) {
+            try {
+                await removeFromWatchlist(coinId);
+                _wlPageData = _wlPageData.filter(c => c.id !== coinId);
+                applyWlFilter();
+                updateWatchlistNavCount(_wlPageData.length);
+            } catch(e) { console.error(e); }
+        }
+
+        // Show add watchlist modal (reuse market search)
+        function showWatchlistAddModal() {
+            const q = prompt('Enter coin name or ID (e.g. bitcoin, ethereum):');
+            if (!q) return;
+            const val = q.trim().toLowerCase();
+            api(`/api/watchlist/add`, { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({coin_id: val}) })
+                .then(() => { fetchUser().then(() => loadWatchlistPage()); showToast(val + ' added to watchlist', 'success'); })
+                .catch(e => showToast(e.message || 'Failed to add', 'error'));
         }
 
         function renderMarketWatchlist(wlist) {
