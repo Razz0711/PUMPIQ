@@ -584,3 +584,47 @@ def send_trade_email(
     subject = f"{action_emoji} NEXYPHER Auto Trade: {action_label} {symbol.upper()} @ ${price:,.4f}{pnl_str}"
 
     return _send_email(to_email, subject, _base_template(f"Trade Executed — {action_label} {symbol.upper()}", content))
+
+
+# ── Contact Form Email ─────────────────────────────────────────────
+
+def send_contact_email(
+    from_name: str,
+    from_email: str,
+    subject: str,
+    message: str,
+    to_email: str,
+) -> bool:
+    """Forward a contact form submission to the admin inbox."""
+    content = f"""
+    <p style="color: #ccc; font-size: 14px; line-height: 1.7;">
+        You received a new message from the <strong>NexYpher Contact Form</strong>.
+    </p>
+
+    <table style="width:100%; border-collapse: collapse; margin: 20px 0;">
+        <tr>
+            <td style="padding:10px 14px; color:#888; font-size:13px; border-bottom:1px solid #2a2a2a; width:100px;">Name</td>
+            <td style="padding:10px 14px; color:#fff; font-size:14px; border-bottom:1px solid #2a2a2a;">{from_name}</td>
+        </tr>
+        <tr>
+            <td style="padding:10px 14px; color:#888; font-size:13px; border-bottom:1px solid #2a2a2a;">Email</td>
+            <td style="padding:10px 14px; color:#fff; font-size:14px; border-bottom:1px solid #2a2a2a;">
+                <a href="mailto:{from_email}" style="color:#7c5cff;">{from_email}</a>
+            </td>
+        </tr>
+        <tr>
+            <td style="padding:10px 14px; color:#888; font-size:13px; border-bottom:1px solid #2a2a2a;">Subject</td>
+            <td style="padding:10px 14px; color:#fff; font-size:14px; border-bottom:1px solid #2a2a2a;">{subject}</td>
+        </tr>
+    </table>
+
+    <div style="background: #1a1b23; border-radius: 10px; padding: 18px 20px; margin: 16px 0;">
+        <p style="color: #ccc; font-size: 14px; line-height: 1.7; white-space: pre-wrap; margin: 0;">{message}</p>
+    </div>
+
+    <p style="color: #666; font-size: 12px; margin-top: 20px;">
+        You can reply directly to <a href="mailto:{from_email}" style="color:#7c5cff;">{from_email}</a>.
+    </p>
+    """
+    email_subject = f"[NexYpher Contact] {subject} — from {from_name}"
+    return _send_email(to_email, email_subject, _base_template("New Contact Message", content))

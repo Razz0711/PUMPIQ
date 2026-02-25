@@ -922,12 +922,36 @@ def retrain_with_feedback(timeframe: str = "1d", min_feedback: int = 10):
     log.info(f"  {'Direction':<12} {old_dir_acc:>10.4f} {new_dir_acc:>10.4f} "
              f"{new_dir_acc - old_dir_acc:>+10.4f}")
 
-    # Step 4f: Save if improved (or always save for continuous learning)
+    # Step 4f: ONLY save if the new model is better or equal
+    # Previously this always saved, causing bad retrains to overwrite good models!
     import joblib
     os.makedirs(MODELS_DIR, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    # Save models
+    # Composite improvement check: average of all three models must not degrade
+    old_composite = (old_24h_acc + old_7d_acc + old_dir_acc) / 3.0
+    new_composite = (new_24h_acc + new_7d_acc + new_dir_acc) / 3.0
+    improved = new_composite >= old_composite - 0.005  # Allow tiny 0.5% tolerance
+
+    if not improved:
+        log.warning(f"  ⚠️ New model is WORSE (composite: {old_composite:.4f} → {new_composite:.4f}). "
+                    f"NOT saving. Keeping previous model.")
+        _log_learning_event(
+            "model_retrain_rejected",
+            f"Retrain rejected: accuracy degraded ({old_composite:.4f} → {new_composite:.4f})",
+            {
+                "accuracy_24h_old": old_24h_acc, "accuracy_24h_new": new_24h_acc,
+                "accuracy_7d_old": old_7d_acc, "accuracy_7d_new": new_7d_acc,
+                "composite_old": old_composite, "composite_new": new_composite,
+            },
+            accuracy_before=old_composite,
+            accuracy_after=new_composite,
+        )
+        return None
+
+    log.info(f"  ✅ Model improved (composite: {old_composite:.4f} → {new_composite:.4f}). Saving...")
+
+    # Save models (only reached if improved)
     joblib.dump(model_24h, os.path.join(MODELS_DIR, f"model_24h_{timeframe}_latest.pkl"))
     joblib.dump(model_7d, os.path.join(MODELS_DIR, f"model_7d_{timeframe}_latest.pkl"))
     joblib.dump(model_dir, os.path.join(MODELS_DIR, f"model_dir_{timeframe}_latest.pkl"))

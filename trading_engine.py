@@ -43,8 +43,8 @@ logger = logging.getLogger(__name__)
 SYSTEM_USER_ID = 1  # trades under the primary user account so dashboard shows activity
 SYSTEM_INITIAL_BALANCE = 10_000_000.0  # ₹1,00,00,000 (1 Cr)
 AUTO_TRADE_INTERVAL_SECONDS = 30   # 30 seconds — continuous market scanning
-MAX_HOLD_HOURS = 1                  # auto-sell if TP/SL not hit within 1 hour
-WARNING_MINUTES_BEFORE_CLOSE = 5    # SMS warning 5 min before auto-close
+MAX_HOLD_HOURS = 24                 # auto-sell if TP/SL not hit within 24 hours (aligned with model prediction horizon)
+WARNING_MINUTES_BEFORE_CLOSE = 30   # SMS warning 30 min before auto-close
 MAX_PORTFOLIO_SLOTS = 15            # 10-15 simultaneous positions
 MAX_POSITION_PCT = 15.0             # no single token > 15% of portfolio
 MIN_POSITION_AMOUNT = 100           # minimum $ per position (lowered for small wallets)
@@ -244,8 +244,8 @@ def get_trade_settings(user_id: int) -> Dict[str, Any]:
     return {
         "user_id": user_id, "auto_trade_enabled": 1,  # ON by default
         "max_trade_pct": 20.0, "daily_loss_limit_pct": 10.0,
-        "max_open_positions": 15, "stop_loss_pct": 5.0,
-        "take_profit_pct": 10.0, "cooldown_minutes": 0,
+        "max_open_positions": 15, "stop_loss_pct": 3.0,
+        "take_profit_pct": 5.0, "cooldown_minutes": 0,
         "min_market_cap": 1000000, "risk_level": "aggressive",
     }
 
@@ -667,35 +667,34 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
 
             # Market cap tier (both sides benefit from liquidity)
             if coin.market_cap > 50_000_000_000:
-                cap_score = 12; cap_label = "Mega cap — liquid"
+                cap_score = 8; cap_label = "Mega cap — liquid"
             elif coin.market_cap > 10_000_000_000:
-                cap_score = 10; cap_label = "Large cap"
+                cap_score = 6; cap_label = "Large cap"
             elif coin.market_cap > 1_000_000_000:
-                cap_score = 8; cap_label = "Mid cap"
+                cap_score = 5; cap_label = "Mid cap"
             elif coin.market_cap > 100_000_000:
-                cap_score = 5; cap_label = "Small cap"
+                cap_score = 3; cap_label = "Small cap"
             else:
-                cap_score = 3; cap_label = "Micro cap"
+                cap_score = 2; cap_label = "Micro cap"
 
             # Volume (both sides benefit from active trading)
             if vol_ratio > 0.3:
-                vol_score = 20; vol_label = f"High volume: {vol_ratio:.2f}"
+                vol_score = 10; vol_label = f"High volume: {vol_ratio:.2f}"
             elif vol_ratio > 0.1:
-                vol_score = 12; vol_label = f"Healthy volume: {vol_ratio:.2f}"
+                vol_score = 6; vol_label = f"Healthy volume: {vol_ratio:.2f}"
             elif vol_ratio > 0.05:
-                vol_score = 6; vol_label = f"Normal volume: {vol_ratio:.2f}"
+                vol_score = 3; vol_label = f"Normal volume: {vol_ratio:.2f}"
             else:
-                vol_score = 2; vol_label = f"Low volume: {vol_ratio:.2f}"
+                vol_score = 1; vol_label = f"Low volume: {vol_ratio:.2f}"
 
             # Trending (attention = opportunity in BOTH directions)
-            trend_score = 15 if is_trending else 0
+            trend_score = 5 if is_trending else 0
 
             # ── ML PREDICTION SIGNAL ──
             # NOTE: The XGBoost model predicts "will price rise ≥5% in 7 days?"
-            # buy_prob > 0.65 = strong bullish signal → boost LONG
-            # buy_prob < 0.35 = model says "unlikely to rise" → mild SHORT support
-            # The model is ONLY reliable when its accuracy > 55%.
+            # Model is the PRIMARY signal — heuristics are secondary confirmation.
             # Low buy_prob does NOT equal "will crash" — it could mean sideways.
+            # SHORT is only taken when direction model explicitly says DOWN.
             ml_pred = ml_predictions.get(coin.coin_id)
             ml_long_boost = 0
             ml_short_boost = 0
@@ -705,20 +704,21 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
                 ml_acc = ml_pred.get("model_accuracy", 0.5)
                 # Accuracy gate already applied during loading (>= 0.55)
                 if buy_prob >= 0.70:
-                    ml_long_boost = 15
+                    ml_long_boost = 30
                     ml_reason = f"🤖 ML: strong BUY signal ({buy_prob*100:.0f}% up-prob, {ml_acc*100:.0f}% model acc)"
-                elif buy_prob >= 0.55:
-                    ml_long_boost = 8
+                elif buy_prob >= 0.60:
+                    ml_long_boost = 20
                     ml_reason = f"🤖 ML: leans bullish ({buy_prob*100:.0f}% up-prob)"
-                elif buy_prob <= 0.30:
-                    # Model says "very unlikely to rise 5%" — supports SHORT
-                    ml_short_boost = 10  # weaker than LONG boost (model not trained for DOWN)
-                    ml_reason = f"🤖 ML: unlikely to rise ({buy_prob*100:.0f}% up-prob) — supports SHORT"
-                elif buy_prob <= 0.40:
-                    ml_short_boost = 5
-                    ml_reason = f"🤖 ML: weak upside ({buy_prob*100:.0f}% up-prob)"
+                elif buy_prob >= 0.55:
+                    ml_long_boost = 10
+                    ml_reason = f"🤖 ML: mild bullish ({buy_prob*100:.0f}% up-prob)"
+                elif buy_prob <= 0.25:
+                    # Only SHORT when model is very confident price won’t rise
+                    ml_short_boost = 10
+                    ml_reason = f"🤖 ML: very unlikely to rise ({buy_prob*100:.0f}% up-prob) — mild SHORT"
+                # buy_prob 0.25-0.55 = no ML signal (ambiguous zone — skip)
 
-            # ── PRETRAINED 38-FEATURE MODEL SIGNAL ──
+            # ── PRETRAINED 38-FEATURE MODEL SIGNAL (PRIMARY DECISION MAKER) ──
             pt_pred = pt_predictions.get(coin.coin_id)
             pt_long_boost = 0
             pt_short_boost = 0
@@ -729,70 +729,78 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
                 p7d = pt_pred.get("prob_up_7d", 50)
                 conf = pt_pred.get("confidence", 1)
                 acc7d = pt_pred.get("model_7d_acc", 0)
-                # Verdict-based boost
+                # Verdict-based boost (MUCH higher weights — ML is primary signal)
                 if verdict == "STRONG BUY":
-                    pt_long_boost = 12
+                    pt_long_boost = 30
                     pt_reason = f"🧠 PT: STRONG BUY ({p7d:.0f}% 7d, conf {conf})"
                 elif verdict == "BUY":
-                    pt_long_boost = 6
+                    pt_long_boost = 18
                     pt_reason = f"🧠 PT: BUY ({p7d:.0f}% 7d)"
                 elif verdict == "SELL":
-                    pt_short_boost = 12
+                    pt_short_boost = 25
                     pt_reason = f"🧠 PT: SELL ({p7d:.0f}% 7d, conf {conf})"
                 elif verdict == "AVOID":
-                    pt_short_boost = 6
+                    pt_short_boost = 12
                     pt_reason = f"🧠 PT: AVOID ({p7d:.0f}% 7d)"
-                # Direction confirmation bonus (+5 max)
+                elif verdict == "NEUTRAL":
+                    # NEUTRAL = no ML edge = don’t trade this coin
+                    pt_reason = f"🧠 PT: NEUTRAL ({p7d:.0f}% 7d) — no edge"
+                # Direction confirmation bonus (+8 max)
                 if direction == "UP" and pt_long_boost > 0:
-                    pt_long_boost += 5
+                    pt_long_boost += 8
                     pt_reason += " | dir=UP"
                 elif direction == "DOWN" and pt_short_boost > 0:
-                    pt_short_boost += 5
+                    pt_short_boost += 8
                     pt_reason += " | dir=DOWN"
                 # Cap combined ML+pretrained boost to prevent score inflation
                 total_long_ml = ml_long_boost + pt_long_boost
                 total_short_ml = ml_short_boost + pt_short_boost
-                if total_long_ml > 25:
-                    pt_long_boost = max(0, 25 - ml_long_boost)
-                if total_short_ml > 25:
-                    pt_short_boost = max(0, 25 - ml_short_boost)
+                if total_long_ml > 50:
+                    pt_long_boost = max(0, 50 - ml_long_boost)
+                if total_short_ml > 40:
+                    pt_short_boost = max(0, 40 - ml_short_boost)
 
             # ══════════════════════════════════════════════════════
             # ── LONG SIGNAL SCORING ──
+            # ML models now contribute 50-60% of score; heuristics are secondary.
             # ══════════════════════════════════════════════════════
             long_score = 0
             long_reasons = []
 
-            # Bullish momentum
+            # Bullish momentum (reduced weights — heuristic-only max ~35 points)
             if change_24h > 10:
-                long_score += 30; long_reasons.append(f"Explosive momentum: {change_24h:+.1f}%")
+                long_score += 15; long_reasons.append(f"Explosive momentum: {change_24h:+.1f}%")
             elif change_24h > 3:
-                long_score += 25; long_reasons.append(f"Strong bullish: {change_24h:+.1f}%")
+                long_score += 12; long_reasons.append(f"Strong bullish: {change_24h:+.1f}%")
             elif change_24h > 0.5:
-                long_score += 15; long_reasons.append(f"Positive: {change_24h:+.1f}%")
+                long_score += 8; long_reasons.append(f"Positive: {change_24h:+.1f}%")
             elif change_24h > -1:
-                long_score += 8; long_reasons.append(f"Flat — mild dip-buy: {change_24h:+.1f}%")
+                long_score += 4; long_reasons.append(f"Flat — mild dip-buy: {change_24h:+.1f}%")
             elif change_24h > -3:
-                long_score += 5; long_reasons.append(f"Dip-buy zone: {change_24h:+.1f}%")
+                long_score += 2; long_reasons.append(f"Dip-buy zone: {change_24h:+.1f}%")
             # No points for LONG if change < -3% (don't catch falling knives)
 
             # ATH recovery potential (LONG-specific)
             if 0.2 < ath_ratio < 0.6:
-                long_score += 12; long_reasons.append(f"Recovery potential — {(1-ath_ratio)*100:.0f}% below ATH")
+                long_score += 8; long_reasons.append(f"Recovery potential — {(1-ath_ratio)*100:.0f}% below ATH")
             elif 0.6 <= ath_ratio < 0.85:
-                long_score += 6; long_reasons.append("Near ATH recovery zone")
+                long_score += 4; long_reasons.append("Near ATH recovery zone")
 
             # Add shared scores
             long_score += cap_score; long_reasons.append(cap_label)
             long_score += vol_score; long_reasons.append(vol_label)
             if trend_score:
                 long_score += trend_score; long_reasons.append("Trending on CoinGecko")
-            # ML boost for LONG
+            # ML boost for LONG (PRIMARY signal)
             if ml_long_boost:
                 long_score += ml_long_boost; long_reasons.append(ml_reason)
-            # Pretrained model boost for LONG
+            # Pretrained model boost for LONG (PRIMARY signal)
             if pt_long_boost:
                 long_score += pt_long_boost; long_reasons.append(pt_reason)
+            # PENALTY: No ML confirmation = risky trade → halve score
+            if ml_long_boost == 0 and pt_long_boost == 0:
+                long_score = int(long_score * 0.5)
+                long_reasons.append("⚠️ No ML confirmation — score halved")
 
             long_score = max(0, min(100, long_score))
 
@@ -811,33 +819,31 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
             short_score = 0
             short_reasons = []
 
-            # Bearish momentum (MIRROR of bullish scoring)
+            # Bearish momentum (reduced weights — heuristic max ~30 points)
             if change_24h < -10:
-                short_score += 30; short_reasons.append(f"Strong bearish momentum: {change_24h:+.1f}%")
+                short_score += 15; short_reasons.append(f"Strong bearish momentum: {change_24h:+.1f}%")
             elif change_24h < -3:
-                short_score += 25; short_reasons.append(f"Bearish continuation: {change_24h:+.1f}%")
+                short_score += 12; short_reasons.append(f"Bearish continuation: {change_24h:+.1f}%")
             elif change_24h < -0.5:
-                short_score += 15; short_reasons.append(f"Declining: {change_24h:+.1f}%")
+                short_score += 8; short_reasons.append(f"Declining: {change_24h:+.1f}%")
             elif change_24h < 1:
-                short_score += 8; short_reasons.append(f"Flat — mild short: {change_24h:+.1f}%")
-            elif change_24h < 3:
-                short_score += 5; short_reasons.append(f"Mild rally — fade zone: {change_24h:+.1f}%")
-            # No points for SHORT if change > 3% alone (don't short a rocket)
+                short_score += 3; short_reasons.append(f"Flat — mild short: {change_24h:+.1f}%")
+            # No points for SHORT if change > 1% alone (don't short rising momentum)
 
             # Overextended pump (contrarian short — BONUS on top of base)
             if change_24h > 15:
-                short_score += 12; short_reasons.append(f"Pump overextended: {change_24h:+.1f}% — pullback likely")
+                short_score += 8; short_reasons.append(f"Pump overextended: {change_24h:+.1f}% — pullback likely")
             elif change_24h > 8:
-                short_score += 8; short_reasons.append(f"Rally exhaustion: {change_24h:+.1f}%")
+                short_score += 5; short_reasons.append(f"Rally exhaustion: {change_24h:+.1f}%")
 
             # ATH resistance (SHORT-specific: near ATH = rejection zone)
             if ath_ratio > 0.95:
-                short_score += 12; short_reasons.append(f"At ATH ({ath_ratio*100:.0f}%) — heavy resistance")
+                short_score += 8; short_reasons.append(f"At ATH ({ath_ratio*100:.0f}%) — heavy resistance")
             elif ath_ratio > 0.85:
-                short_score += 8; short_reasons.append(f"Near ATH ({ath_ratio*100:.0f}%) — resistance zone")
+                short_score += 5; short_reasons.append(f"Near ATH ({ath_ratio*100:.0f}%) — resistance zone")
             # Far below ATH = already weak (short-friendly)
             elif ath_ratio < 0.3:
-                short_score += 6; short_reasons.append(f"Deep below ATH ({ath_ratio*100:.0f}%) — sustained weakness")
+                short_score += 3; short_reasons.append(f"Deep below ATH ({ath_ratio*100:.0f}%) — sustained weakness")
 
             # Add shared scores (liquidity matters for shorts too)
             short_score += cap_score; short_reasons.append(cap_label)
@@ -850,6 +856,11 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
             # Pretrained model boost for SHORT
             if pt_short_boost:
                 short_score += pt_short_boost; short_reasons.append(pt_reason)
+            # PENALTY: Shorts REQUIRE ML direction model confirmation
+            # Without it, "low prob_up" could just mean sideways, not bearish.
+            if ml_short_boost == 0 and pt_short_boost == 0:
+                short_score = int(short_score * 0.3)  # 70% penalty — shorts need ML backing
+                short_reasons.append("⚠️ No ML SHORT confirmation — score reduced 70%")
 
             short_score = max(0, min(100, short_score))
 
@@ -1029,9 +1040,9 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
         max_daily = 100
         risk_profile = "aggressive"
 
-    # Override max_daily for aggressive mode (never stop trading due to daily limit)
+    # Aggressive mode: remove daily trade cap entirely (let position limits & balance guard)
     if settings.get("risk_level") == "aggressive":
-        max_daily = max(max_daily, 200)
+        max_daily = 999_999
 
     # Trade settings risk_level overrides user prefs (auto-trader sets this to "aggressive")
     risk_profile = settings.get("risk_level", risk_profile)
@@ -1051,9 +1062,9 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
     # Risk profile modifiers
     risk_modifiers = {
         "conservative": {"max_trade_pct_mult": 0.5, "min_score": 70, "stop_loss_add": 2},
-        "moderate":     {"max_trade_pct_mult": 1.0, "min_score": 50, "stop_loss_add": 0},
-        "balanced":     {"max_trade_pct_mult": 1.0, "min_score": 50, "stop_loss_add": 0},
-        "aggressive":   {"max_trade_pct_mult": 1.5, "min_score": 40, "stop_loss_add": 0},
+        "moderate":     {"max_trade_pct_mult": 1.0, "min_score": 55, "stop_loss_add": 0},
+        "balanced":     {"max_trade_pct_mult": 1.0, "min_score": 55, "stop_loss_add": 0},
+        "aggressive":   {"max_trade_pct_mult": 1.5, "min_score": 50, "stop_loss_add": 0},
     }
     mods = risk_modifiers.get(risk_profile, risk_modifiers["aggressive"])
 
@@ -1359,15 +1370,18 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
                 # ── SCORE-TIERED RISK PARAMETERS ──
                 # High conviction = wider stops + more capital
                 # Low conviction = tighter stops + less capital (or skip)
+                # ── SCORE-TIERED RISK PARAMETERS ──
+                # Calibrated for 24h holds: crypto typically moves 2-8% in a day.
+                # Tighter stops = cut losses fast. Realistic targets = lock in gains.
                 if score >= 80:
-                    effective_sl = max(base_sl, 7.0); effective_tp = 15.0; max_alloc_pct = 12.0
+                    effective_sl = max(base_sl, 4.0); effective_tp = 6.0; max_alloc_pct = 10.0
                 elif score >= 60:
-                    effective_sl = max(base_sl, 5.0); effective_tp = 10.0; max_alloc_pct = 8.0
-                elif score >= 40:
-                    effective_sl = max(base_sl, 4.0); effective_tp = 8.0; max_alloc_pct = 5.0
+                    effective_sl = max(base_sl, 3.0); effective_tp = 5.0; max_alloc_pct = 7.0
+                elif score >= 50:
+                    effective_sl = max(base_sl, 2.5); effective_tp = 4.0; max_alloc_pct = 5.0
                 else:
-                    logger.info("Skipping %s (score %d < 40) — below quality floor", opp["symbol"], score)
-                    continue  # Hard floor: never trade below score 40
+                    logger.info("Skipping %s (score %d < 50) — below quality floor", opp["symbol"], score)
+                    continue  # Raised floor: don't trade on weak signals
 
                 # Reduce size if learning loop recommends caution
                 if learning_mods.get("reduce_position_size"):
@@ -1451,7 +1465,44 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
         "available_balance": balance,
     }
 
+    # ── AUTO-RETRAIN: Trigger continuous learner periodically ──
+    # Run the ML feedback loop every 6 hours (checks internally if enough feedback exists)
+    try:
+        _trigger_periodic_retrain()
+    except Exception as e:
+        logger.debug("Periodic retrain check: %s", e)
+
     return results
+
+
+# ── Periodic ML Retraining ────────────────────────────────────────────────────
+_last_retrain_check = 0.0
+_RETRAIN_INTERVAL = 6 * 3600  # 6 hours
+
+def _trigger_periodic_retrain():
+    """Trigger the continuous learner's feedback loop every 6 hours."""
+    global _last_retrain_check
+    now = time.time()
+    if now - _last_retrain_check < _RETRAIN_INTERVAL:
+        return  # Not yet time
+
+    _last_retrain_check = now
+    logger.info("Triggering periodic ML retrain check...")
+
+    try:
+        import subprocess
+        import sys
+        ml_script = os.path.join(os.path.dirname(__file__), "ml", "continuous_learner.py")
+        if os.path.exists(ml_script):
+            # Run in subprocess to avoid blocking the trading engine
+            subprocess.Popen(
+                [sys.executable, ml_script, "--action", "loop"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            logger.info("ML retrain subprocess launched")
+    except Exception as e:
+        logger.warning("Failed to trigger ML retrain: %s", e)
 
 
 

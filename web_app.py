@@ -575,6 +575,37 @@ async def smtp_status():
     return {"configured": smtp_service.is_configured()}
 
 
+class ContactRequest(BaseModel):
+    name: str
+    email: str
+    subject: str = "General Inquiry"
+    message: str
+
+
+@app.post("/api/contact")
+async def submit_contact(body: ContactRequest):
+    """Receive contact form submissions and forward via SMTP."""
+    import threading
+    admin_email = os.getenv("SMTP_EMAIL", "rajkumar648321@gmail.com")
+    ok = False
+    if smtp_service.is_configured():
+        ok = smtp_service.send_contact_email(
+            from_name=body.name,
+            from_email=body.email,
+            subject=body.subject,
+            message=body.message,
+            to_email=admin_email,
+        )
+    else:
+        # Even without SMTP, log the message so it's not lost
+        logger.info("Contact form (SMTP not configured): name=%s email=%s subject=%s message=%s",
+                     body.name, body.email, body.subject, body.message[:200])
+        ok = True  # still return success — message logged
+    if not ok:
+        raise HTTPException(500, "Failed to send message")
+    return {"status": "ok"}
+
+
 # ══════════════════════════════════════════════════════════════════
 # WALLET ENDPOINTS
 # ══════════════════════════════════════════════════════════════════
@@ -1893,6 +1924,42 @@ async def get_trader_positions(user=Depends(require_user)):
         "open": trading_engine.get_open_positions(user.id),
         "closed": trading_engine.get_closed_positions(user.id, limit=20),
     }
+
+
+@app.get("/api/trader/heatmap")
+async def get_trader_heatmap(year: int = 2026, user=Depends(require_user)):
+    """Return daily P&L aggregated data for the heatmap."""
+    closed = trading_engine.get_closed_positions(user.id, limit=5000)
+    daily: dict = {}
+    for p in closed:
+        if p.get("pnl") is None:
+            continue
+        # Parse date from closed_at (ISO string or datetime)
+        closed_at = p.get("closed_at") or p.get("updated_at") or p.get("created_at")
+        if not closed_at:
+            continue
+        try:
+            dt_str = str(closed_at)[:10]  # "YYYY-MM-DD"
+            d_year = int(dt_str[:4])
+        except Exception:
+            continue
+        if d_year != year:
+            continue
+        if dt_str not in daily:
+            daily[dt_str] = {"pnl": 0.0, "trades": 0, "wins": 0}
+        daily[dt_str]["pnl"] += float(p["pnl"])
+        daily[dt_str]["trades"] += 1
+        if float(p["pnl"]) >= 0:
+            daily[dt_str]["wins"] += 1
+    result = []
+    for date_str, v in daily.items():
+        result.append({
+            "date": date_str,
+            "pnl": round(v["pnl"], 2),
+            "trades": v["trades"],
+            "win_rate": round(v["wins"] / v["trades"] * 100) if v["trades"] else 0,
+        })
+    return result
 
 
 @app.post("/api/trader/sell/{position_id}")

@@ -437,20 +437,34 @@ async def predict_pretrained(
         logger.warning("Pretrained model prediction failed for %s: %s", coin_id, e)
         return None
 
-    # ── Confidence: directional agreement strength ──
+    # ── Confidence: directional agreement + direction model confirmation ──
+    # Confidence is HIGH only when:
+    # 1. Both 24h and 7d models agree on direction
+    # 2. The direction classifier confirms via its top-class probability
+    # 3. The probabilities are well away from 50% (not just noise)
     both_bullish = min(prob_24h, prob_7d)
     both_bearish = min(1 - prob_24h, 1 - prob_7d)
     directional_strength = max(both_bullish, both_bearish)
-    confidence = round(max(1.0, min(10.0, (directional_strength - 0.5) * 20)), 1)
+    dir_confirmation = float(max(dir_probs))  # How confident is the direction model?
+    # Penalize when direction model disagrees with prob models
+    if dir_pred == "UP" and both_bearish > both_bullish:
+        directional_strength *= 0.6  # Direction model says UP but prob models say DOWN
+    elif dir_pred == "DOWN" and both_bullish > both_bearish:
+        directional_strength *= 0.6  # Disagreement penalty
+    # Scale: 0.5 = random → 1, 0.75 = strong → 7, 0.9+ = very strong → 10
+    raw_conf = (directional_strength - 0.5) * 16 * dir_confirmation
+    confidence = round(max(1.0, min(10.0, raw_conf)), 1)
 
     # ── Verdict ──
-    if prob_7d >= 0.60 and prob_24h >= 0.55:
+    # Thresholds raised: model CV accuracy is ~59%, so 50% = random noise.
+    # Require clear edge (>65%) before acting, and strong agreement for STRONG BUY.
+    if prob_7d >= 0.70 and prob_24h >= 0.65:
         verdict = "STRONG BUY"
-    elif prob_7d >= 0.50:
+    elif prob_7d >= 0.62 and prob_24h >= 0.55:
         verdict = "BUY"
-    elif prob_7d <= 0.30:
+    elif prob_7d <= 0.30 and prob_24h <= 0.35:
         verdict = "SELL"
-    elif prob_7d <= 0.40 and prob_24h <= 0.40:
+    elif prob_7d <= 0.38 and prob_24h <= 0.40:
         verdict = "AVOID"
     else:
         verdict = "NEUTRAL"

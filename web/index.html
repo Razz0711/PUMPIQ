@@ -281,13 +281,13 @@
 
         /* ── Hero Section ─────────────────────────────────────────── */
         .hero {
-            text-align: center;
-            padding: 60px 20px 40px;
+            text-align: left;
+            padding: 48px 40px 40px;
         }
 
         .hero-tag {
-            color: var(--cyan);
-            font-size: 13px;
+            color: var(--green);
+            font-size: 12px;
             font-weight: 700;
             letter-spacing: 2px;
             text-transform: uppercase;
@@ -295,8 +295,8 @@
         }
 
         .hero-title {
-            font-size: 48px;
-            font-weight: 900;
+            font-size: 42px;
+            font-weight: 800;
             line-height: 1.1;
             margin-bottom: 16px;
             color: var(--text-primary);
@@ -304,29 +304,27 @@
 
         .hero-desc {
             color: var(--text-secondary);
-            font-size: 16px;
-            max-width: 600px;
-            margin: 0 auto 40px;
+            font-size: 15px;
+            max-width: 640px;
+            margin: 0 0 40px 0;
             line-height: 1.6;
         }
 
         .hero-steps {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
-            gap: 20px;
-            max-width: 900px;
-            margin: 0 auto;
+            gap: 16px;
+            max-width: 100%;
+            margin: 0;
         }
 
         .step-card {
-            background: var(--bg-card);
+            background: rgba(255, 255, 255, 0.02);
             border: 1px solid rgba(255, 255, 255, 0.06);
             border-radius: 12px;
             padding: 24px;
             text-align: left;
             transition: border 0.2s;
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
         }
 
         .step-card:hover {
@@ -334,14 +332,15 @@
         }
 
         .step-num {
-            color: var(--cyan);
-            font-size: 12px;
+            color: var(--green);
+            font-size: 14px;
             font-weight: 700;
-            margin-bottom: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            margin-bottom: 12px;
         }
 
         .step-title {
-            font-size: 18px;
+            font-size: 16px;
             font-weight: 700;
             margin-bottom: 8px;
         }
@@ -1008,7 +1007,7 @@
             width: 120px;
             height: 120px;
             border-radius: 50%;
-            background: rgba(124, 92, 255, 0.08);
+            background: rgba(124, 92, 255, 0.03);
         }
 
         .balance-label {
@@ -2880,25 +2879,13 @@
             padding: 20px;
             position: relative;
             overflow: hidden;
-            transition: border-color 0.3s, transform 0.2s;
+            transition: border-color 0.2s;
             backdrop-filter: blur(10px);
             -webkit-backdrop-filter: blur(10px);
         }
 
         .live-stat-card:hover {
             border-color: rgba(255, 255, 255, 0.12);
-            transform: translateY(-2px);
-        }
-
-        .live-stat-card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 3px;
-            background: var(--gradient);
-            opacity: 0.8;
         }
 
         .live-stat-icon {
@@ -2965,8 +2952,7 @@
 
         .module-card:hover {
             border-color: rgba(255, 255, 255, 0.12);
-            transform: translateY(-4px);
-            box-shadow: 0 12px 40px rgba(59, 130, 246, 0.15);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
         }
 
         .module-card.glow-green {
@@ -4021,8 +4007,17 @@
         }
 
         .insight-score-icon {
-            font-size: 28px;
+            font-size: 12px;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
             margin-bottom: 8px;
+            background: rgba(255, 255, 255, 0.04);
+            border-radius: 6px;
+            padding: 4px 8px;
+            display: inline-block;
         }
 
         .insight-score-value {
@@ -4644,6 +4639,7 @@
         }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/ethers@6.11.1/dist/ethers.umd.min.js"></script>
 </head>
 
 <body>
@@ -4655,15 +4651,15 @@
         <div class="logo" onclick="navigate('market')">NexYpher</div>
         <div class="nav-tabs">
             <button class="nav-tab active" data-page="market">Market</button>
-            <button class="nav-tab" data-page="insights">🧠 AI Insights</button>
-            <button class="nav-tab" data-page="learning">📊 Learning</button>
-            <button class="nav-tab" data-page="trader">🤖 Auto Trader</button>
-            <button class="nav-tab" data-page="settings">⚙️</button>
+            <button class="nav-tab" data-page="insights">AI Insights</button>
+            <button class="nav-tab" data-page="learning">Learning</button>
+            <button class="nav-tab" data-page="trader">Auto Trader</button>
+            <button class="nav-tab" data-page="contact">Contact</button>
+            <span class="nx-paper-indicator" id="nxPaperNav">&#x1F4CB; Paper Mode Active</span>
         </div>
         <div class="header-right">
             <input class="search-box" id="globalSearch" placeholder="Search tokens..."
                 onkeydown="if(event.key==='Enter')doSearch()">
-            <button class="header-profile-btn" onclick="navigate('profile')" title="Profile" style="background:none;border:1px solid var(--border);border-radius:8px;padding:4px 10px;cursor:pointer;color:var(--text-muted);font-size:16px;display:none" id="headerProfileBtn">👤</button>
             <div id="authArea">
                 <button class="btn btn-primary" onclick="showAuthModal('login')">Login</button>
             </div>
@@ -4709,20 +4705,20 @@
             </p>
             <div class="hero-steps">
                 <div class="step-card">
-                    <div class="step-num">STEP 01</div>
-                    <div class="step-title">🔍 Browse</div>
+                    <div class="step-num">01</div>
+                    <div class="step-title">Browse</div>
                     <div class="step-desc">Scan 1000+ tokens with live price feeds and
                         market cap data.</div>
                 </div>
                 <div class="step-card">
-                    <div class="step-num">STEP 02</div>
-                    <div class="step-title">🧠 Analyze</div>
+                    <div class="step-num">02</div>
+                    <div class="step-title">Analyze</div>
                     <div class="step-desc">AI scores every token using 15+ indicators — RSI, MACD, volume anomalies,
                         news sentiment & more.</div>
                 </div>
                 <div class="step-card">
-                    <div class="step-num">STEP 03</div>
-                    <div class="step-title">⚡ Act</div>
+                    <div class="step-num">03</div>
+                    <div class="step-title">Act</div>
                     <div class="step-desc">Auto-trade with AI-managed positions, stop-loss, take-profit, and full
                         blockchain audit trail.</div>
                 </div>
@@ -4730,36 +4726,32 @@
         </div>
 
         <!-- ── Live Platform Stats ─────────────────────────────── -->
-        <div class="section-divider">📊 Live Platform Metrics</div>
+        <div class="section-divider">Live Platform Metrics</div>
         <div class="live-stats-banner">
             <div class="live-stat-card">
-                <span class="live-stat-icon">🪙</span>
                 <div class="live-stat-value" id="homeStatTokens">--</div>
                 <div class="live-stat-label">Tokens Tracked</div>
             </div>
             <div class="live-stat-card">
-                <span class="live-stat-icon">🧠</span>
                 <div class="live-stat-value" id="homeStatAIScans">--</div>
                 <div class="live-stat-label">AI Analyses Run</div>
             </div>
             <div class="live-stat-card">
-                <span class="live-stat-icon">📈</span>
                 <div class="live-stat-value" id="homeStatRegime">--</div>
                 <div class="live-stat-label">Market Regime</div>
             </div>
             <div class="live-stat-card">
-                <span class="live-stat-icon">🤖</span>
                 <div class="live-stat-value" id="homeStatAutoTrades">--</div>
                 <div class="live-stat-label">Auto Trades Today</div>
             </div>
         </div>
 
         <!-- ── Module Showcase ─────────────────────────────────── -->
-        <div class="section-divider">🔌 Platform Modules — All Active</div>
+        <div class="section-divider">Platform Modules</div>
         <div class="module-showcase">
             <div class="module-card glow-purple" onclick="navigate('ai')">
                 <div class="module-status-dot"></div>
-                <div class="module-icon">🧠</div>
+                <div class="module-icon"></div>
                 <div class="module-title">AI Recommendation Engine</div>
                 <div class="module-desc">Multi-model AI pipeline with GPT + Gemini reasoning, confidence scoring, and
                     transparent thought summaries.</div>
@@ -4771,7 +4763,7 @@
             </div>
             <div class="module-card glow-cyan" onclick="navigate('market')">
                 <div class="module-status-dot"></div>
-                <div class="module-icon">📡</div>
+                <div class="module-icon"></div>
                 <div class="module-title">Real-Time Crypto Data Layer</div>
                 <div class="module-desc">Live feeds from CoinGecko, on-chain data, and news aggregators powering every
                     analysis in real-time.</div>
@@ -4783,7 +4775,7 @@
             </div>
             <div class="module-card glow-green" onclick="navigate('insights')">
                 <div class="module-status-dot"></div>
-                <div class="module-icon">📊</div>
+                <div class="module-icon"></div>
                 <div class="module-title">Intelligent Market Analysis</div>
                 <div class="module-desc">15+ technical indicators including RSI, MACD, Bollinger Bands, market regime
                     detection, and breakout quality scoring.</div>
@@ -4795,7 +4787,7 @@
             </div>
             <div class="module-card glow-blue" onclick="navigate('settings')">
                 <div class="module-status-dot"></div>
-                <div class="module-icon">👤</div>
+                <div class="module-icon"></div>
                 <div class="module-title">Auth & Personalization</div>
                 <div class="module-desc">JWT authentication, user preferences, risk profiles, watchlists, and AI
                     sensitivity controls.</div>
@@ -4807,7 +4799,7 @@
             </div>
             <div class="module-card glow-yellow" onclick="navigate('trader')">
                 <div class="module-status-dot"></div>
-                <div class="module-icon">🤖</div>
+                <div class="module-icon"></div>
                 <div class="module-title">AI-Assisted Auto-Trading</div>
                 <div class="module-desc">Autonomous trading with position management, stop-loss/take-profit, risk
                     controls, and blockchain-verified transactions.</div>
@@ -4819,7 +4811,7 @@
             </div>
             <div class="module-card glow-red" onclick="navigate('learning')">
                 <div class="module-status-dot"></div>
-                <div class="module-icon">🔄</div>
+                <div class="module-icon"></div>
                 <div class="module-title">Continuous Learning Loop</div>
                 <div class="module-desc">AI tracks its own predictions, evaluates accuracy over time, and auto-adjusts
                     strategies based on performance.</div>
@@ -4833,13 +4825,20 @@
 
         <!-- Trending Pills -->
         <div style="margin-bottom:24px">
-            <h3 style="font-size:16px;margin-bottom:12px;color:var(--text-secondary)">🔥 Trending</h3>
+            <h3 style="font-size:14px;margin-bottom:10px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.05em">Trending</h3>
             <div id="trendingBar" style="display:flex;gap:8px;flex-wrap:wrap"></div>
         </div>
 
         <!-- Quick Market Table -->
-        <div class="section-title">Top Coins</div>
-        <div class="section-desc">Live market data from CoinGecko</div>
+        <div class="section-header-row">
+            <div class="section-header-left">
+                <div class="section-title">Top Coins</div>
+                <div class="section-desc">Live market data from CoinGecko</div>
+            </div>
+            <div class="section-header-right">
+                <span class="live-indicator">Live</span>
+            </div>
+        </div>
         <div style="overflow-x:auto">
             <table class="feed-table" id="homeMarketTable">
                 <thead>
@@ -4875,7 +4874,7 @@
 
         <!-- Hero -->
         <div class="insight-hero">
-            <div class="insight-hero-title">🧠 AI Insights</div>
+            <div class="insight-hero-title">AI Insights</div>
             <div class="insight-hero-desc">
                 Deep technical analysis with 15+ indicators — RSI, MACD, Bollinger Bands, support/resistance, market
                 regime detection, news sentiment, and AI-powered recommendations.
@@ -4891,17 +4890,17 @@
                     <div class="simple-toggle" id="toggleTechnical" onclick="toggleSwitch(this)"></div>
                     <span style="font-size:12px;color:var(--text-muted)">Technical</span>
                 </div>
-                <button class="btn btn-green btn-sm" onclick="loadAIRecs()">🔍 Quick Scan All</button>
-                <button class="btn btn-primary btn-sm" onclick="loadEnhancedAIRecs()">🧠 Enhanced AI Scan</button>
+                <button class="btn btn-green btn-sm" onclick="loadAIRecs()">Quick Scan All</button>
+                <button class="btn btn-primary btn-sm" onclick="loadEnhancedAIRecs()">Enhanced AI Scan</button>
             </div>
 
             <!-- Single coin search -->
             <div class="insight-search-wrap">
-                <span class="insight-search-icon">🔍</span>
+                <span class="insight-search-icon"></span>
                 <input class="insight-search-input" id="insightSearch"
                     placeholder="Search any coin — bitcoin, ethereum, solana, dogecoin..."
                     onkeydown="if(event.key==='Enter')loadInsightAnalysis()">
-                <button class="insight-analyze-btn" onclick="loadInsightAnalysis()">⚡ Deep Analyze</button>
+                <button class="insight-analyze-btn" onclick="loadInsightAnalysis()">Deep Analyze</button>
             </div>
             <div class="insight-chips">
                 <div class="insight-chip" onclick="quickInsight('bitcoin')"><span class="insight-chip-icon">₿</span>
@@ -4929,7 +4928,7 @@
         <!-- AI Thought Summary (from Enhanced endpoint) -->
         <div class="thought-summary-box" id="aiThoughtBox" style="display:none">
             <div class="thought-header">
-                <span style="font-size:22px">🧠</span>
+                <span style="font-size:22px"></span>
                 <h3>AI Thought Summary</h3>
                 <span class="thought-badge">TRANSPARENT REASONING</span>
             </div>
@@ -4967,7 +4966,7 @@
             <!-- TradingView Advanced Chart -->
             <div class="tv-chart-container" id="insightTVChart" style="display:none">
                 <div class="tv-chart-header">
-                    <span class="tv-chart-label">📈 Live Chart</span>
+                    <span class="tv-chart-label">Live Chart</span>
                     <div class="tv-chart-timeframes">
                         <button class="tv-tf-btn active" onclick="switchInsightTF('1', this)">1m</button>
                         <button class="tv-tf-btn" onclick="switchInsightTF('5', this)">5m</button>
@@ -4984,7 +4983,7 @@
             <!-- TradingView Technical Analysis Widget -->
             <div class="tv-ta-row" id="insightTVTA" style="display:none">
                 <div class="tv-ta-box">
-                    <div class="tv-ta-box-header">🔮 TradingView Technical Analysis</div>
+                    <div class="tv-ta-box-header">TradingView Technical Analysis</div>
                     <div id="insightTVTAWidget" style="height:280px;overflow:hidden"></div>
                 </div>
             </div>
@@ -4992,26 +4991,26 @@
             <!-- Score cards -->
             <div class="insight-score-grid">
                 <div class="insight-score-card">
-                    <div class="insight-score-icon">📊</div>
+                    <div class="insight-score-icon">TA</div>
                     <div class="insight-score-value" id="insightTAScore">--</div>
                     <div class="insight-score-label">TA Score (0-10)</div>
                     <div class="insight-score-bar" id="insightTABar" style="width:0%;background:var(--accent)"></div>
                 </div>
                 <div class="insight-score-card">
-                    <div class="insight-score-icon">📈</div>
+                    <div class="insight-score-icon">RSI</div>
                     <div class="insight-score-value" id="insightRSI">--</div>
                     <div class="insight-score-label">RSI (14)</div>
                     <div class="insight-score-bar" id="insightRSIBar" style="width:0%;background:var(--green)"></div>
                 </div>
                 <div class="insight-score-card">
-                    <div class="insight-score-icon">💹</div>
+                    <div class="insight-score-icon">TD</div>
                     <div class="insight-score-value" id="insightTrend">--</div>
                     <div class="insight-score-label">Trend Direction</div>
                     <div class="insight-score-bar" id="insightTrendBar" style="width:100%;background:var(--purple)">
                     </div>
                 </div>
                 <div class="insight-score-card">
-                    <div class="insight-score-icon">📰</div>
+                    <div class="insight-score-icon">NS</div>
                     <div class="insight-score-value" id="insightNewsSentiment">--</div>
                     <div class="insight-score-label">News Sentiment</div>
                     <div class="insight-score-bar" id="insightSentBar" style="width:50%;background:var(--yellow)"></div>
@@ -5021,11 +5020,11 @@
             <!-- Technical + News side by side -->
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
                 <div class="insight-panel">
-                    <div class="insight-panel-header">📉 Technical Indicators</div>
+                    <div class="insight-panel-header">Technical Indicators</div>
                     <div class="insight-panel-body" id="insightTAContent"></div>
                 </div>
                 <div class="insight-panel">
-                    <div class="insight-panel-header">📰 News & Sentiment</div>
+                    <div class="insight-panel-header">News & Sentiment</div>
                     <div class="insight-panel-body">
                         <div id="insightNewsNarrative"
                             style="font-size:14px;margin-bottom:16px;color:var(--text-secondary);line-height:1.6;font-style:italic">
@@ -5037,26 +5036,26 @@
 
             <!-- AI Recommendation -->
             <div class="insight-ai-box" id="insightAIBox" style="display:none">
-                <div class="insight-ai-header">🤖 AI Recommendation</div>
+                <div class="insight-ai-header">AI Recommendation</div>
                 <div class="insight-ai-text" id="insightAIText"></div>
             </div>
 
             <!-- Market Data -->
             <div class="insight-panel">
-                <div class="insight-panel-header">💰 Market Data</div>
+                <div class="insight-panel-header">Market Data</div>
                 <div class="insight-panel-body" id="insightMarketContent"></div>
             </div>
 
             <!-- Backtest Strategy Analysis -->
             <div class="insight-panel" id="insightBacktestPanel" style="display:none">
-                <div class="insight-panel-header">🧪 Backtest Strategy Analysis</div>
+                <div class="insight-panel-header">Backtest Strategy Analysis</div>
                 <div class="insight-panel-body" id="insightBacktestContent"></div>
             </div>
         </div>
 
         <!-- Empty state -->
         <div id="insightEmpty" class="insight-empty">
-            <div class="insight-empty-icon">🔍</div>
+            <div class="insight-empty-icon"></div>
             <div class="insight-empty-title">Search any cryptocurrency for deep analysis</div>
             <div class="insight-empty-desc">
                 Get real-time technical analysis with RSI, MACD, Bollinger Bands, support/resistance levels, market
@@ -5080,15 +5079,15 @@
     <div class="page" id="page-learning">
         <!-- Hero -->
         <div class="learning-hero">
-            <div class="learning-hero-title">🧠 AI Learning Loop</div>
+            <div class="learning-hero-title">AI Learning Loop</div>
             <div class="learning-hero-desc">
                 Track how NexYpher's AI evolves over time. Every prediction is recorded, evaluated against actual market
                 movements, and used to refine future trading strategies.
             </div>
             <div class="learning-actions">
-                <button class="btn btn-primary" onclick="loadLearningStats()">📊 Refresh Stats</button>
-                <button class="btn btn-outline" onclick="triggerLearningEvaluation()">⚡ Evaluate Predictions</button>
-                <button class="btn btn-outline" onclick="loadStrategyAdjustments()">🔧 Strategy Adjustments</button>
+                <button class="btn btn-primary" onclick="loadLearningStats()">Refresh Stats</button>
+                <button class="btn btn-outline" onclick="triggerLearningEvaluation()">Evaluate Predictions</button>
+                <button class="btn btn-outline" onclick="loadStrategyAdjustments()">Strategy Adjustments</button>
             </div>
         </div>
 
@@ -5113,37 +5112,37 @@
         <!-- Stats Grid -->
         <div class="learning-grid" style="grid-template-columns:repeat(6,1fr);margin-bottom:28px">
             <div class="learning-stat">
-                <div class="learning-stat-icon">🔮</div>
+                <div class="learning-stat-icon"></div>
                 <div class="learning-stat-value" id="learnTotalPreds">0</div>
                 <div class="learning-stat-label">Total Predictions</div>
                 <div class="learning-stat-bar" id="learnBarTotal" style="width:0%"></div>
             </div>
             <div class="learning-stat">
-                <div class="learning-stat-icon">✅</div>
+                <div class="learning-stat-icon"></div>
                 <div class="learning-stat-value" id="learnEvaluated24h">0</div>
                 <div class="learning-stat-label">Evaluated (24h)</div>
                 <div class="learning-stat-bar" id="learnBar24h" style="width:0%"></div>
             </div>
             <div class="learning-stat">
-                <div class="learning-stat-icon">📅</div>
+                <div class="learning-stat-icon"></div>
                 <div class="learning-stat-value" id="learnEvaluated7d">0</div>
                 <div class="learning-stat-label">Evaluated (7d)</div>
                 <div class="learning-stat-bar" id="learnBar7d" style="width:0%"></div>
             </div>
             <div class="learning-stat">
-                <div class="learning-stat-icon">📈</div>
+                <div class="learning-stat-icon"></div>
                 <div class="learning-stat-value" id="learnAvgPnl">0%</div>
                 <div class="learning-stat-label">Avg P&L (24h)</div>
                 <div class="learning-stat-bar" style="width:100%"></div>
             </div>
             <div class="learning-stat">
-                <div class="learning-stat-icon">🎯</div>
+                <div class="learning-stat-icon"></div>
                 <div class="learning-stat-value" id="learnConfCorrect">0</div>
                 <div class="learning-stat-label">Avg Conf (Correct)</div>
                 <div class="learning-stat-bar" style="width:100%"></div>
             </div>
             <div class="learning-stat">
-                <div class="learning-stat-icon">❌</div>
+                <div class="learning-stat-icon"></div>
                 <div class="learning-stat-value" id="learnConfIncorrect">0</div>
                 <div class="learning-stat-label">Avg Conf (Wrong)</div>
                 <div class="learning-stat-bar" style="width:100%"></div>
@@ -5152,7 +5151,7 @@
 
         <!-- Regime Accuracy -->
         <div class="learning-panel">
-            <div class="learning-panel-header">📊 Accuracy by Market Regime</div>
+            <div class="learning-panel-header">Accuracy by Market Regime</div>
             <div class="learning-panel-body padded" id="learningRegimeStats">
                 <div class="empty-state">
                     <p>Click "Refresh Stats" to load data</p>
@@ -5162,7 +5161,7 @@
 
         <!-- Direction Accuracy -->
         <div class="learning-panel">
-            <div class="learning-panel-header">🧭 Accuracy by Strategy Direction</div>
+            <div class="learning-panel-header">Accuracy by Strategy Direction</div>
             <div class="learning-panel-body padded" id="learningDirectionStats">
                 <div class="empty-state">
                     <p>Click "Refresh Stats" to load data</p>
@@ -5173,7 +5172,7 @@
         <!-- Best / Worst Predictions -->
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
             <div class="learning-panel">
-                <div class="learning-panel-header">🏆 Best Predictions (7d)</div>
+                <div class="learning-panel-header">Best Predictions (7d)</div>
                 <div class="learning-panel-body" id="learningBest">
                     <div class="empty-state" style="padding:24px">
                         <p>No data yet</p>
@@ -5181,7 +5180,7 @@
                 </div>
             </div>
             <div class="learning-panel">
-                <div class="learning-panel-header">💀 Worst Predictions (7d)</div>
+                <div class="learning-panel-header">Worst Predictions (7d)</div>
                 <div class="learning-panel-body" id="learningWorst">
                     <div class="empty-state" style="padding:24px">
                         <p>No data yet</p>
@@ -5192,7 +5191,7 @@
 
         <!-- Strategy Adjustments -->
         <div class="learning-panel">
-            <div class="learning-panel-header">🔧 AI Strategy Adjustments</div>
+            <div class="learning-panel-header">AI Strategy Adjustments</div>
             <div class="learning-panel-body padded" id="learningAdjustments">
                 <div class="empty-state">
                     <p>Click "Strategy Adjustments" to load AI recommendations</p>
@@ -5202,12 +5201,12 @@
 
         <!-- Token Lookup -->
         <div class="learning-panel" style="margin-top:20px">
-            <div class="learning-panel-header">🔍 Token Track Record</div>
+            <div class="learning-panel-header">Token Track Record</div>
             <div class="learning-panel-body padded">
                 <div class="token-search-wrap">
                     <input id="learningTokenSearch" placeholder="Enter token ticker (e.g. BTC, ETH, SOL)..."
                         onkeydown="if(event.key==='Enter')loadTokenTrackRecord()">
-                    <button class="btn btn-primary" onclick="loadTokenTrackRecord()">🔍 Look Up</button>
+                    <button class="btn btn-primary" onclick="loadTokenTrackRecord()">Look Up</button>
                 </div>
                 <div id="learningTokenResult"></div>
             </div>
@@ -5218,13 +5217,20 @@
     <!-- MARKET PAGE (detailed CoinGecko)                           -->
     <!-- ═══════════════════════════════════════════════════════════ -->
     <div class="page active" id="page-market">
-        <div class="section-title">🧠 AI Market Scanner</div>
-        <div class="section-desc">Coins ranked by NexYpher AI opportunity score — momentum, volume anomalies, trend signals & recovery potential</div>
+        <div class="section-header-row">
+            <div class="section-header-left">
+                <div class="section-title">AI Market Scanner</div>
+                <div class="section-desc">Coins ranked by AI opportunity score — momentum, volume, trend signals & recovery potential</div>
+            </div>
+            <div class="section-header-right">
+                <span class="live-indicator">Live</span>
+            </div>
+        </div>
 
         <!-- Market Sub-tabs: Top Coins | DEX Feed -->
         <div class="trader-subtabs" style="margin-bottom:20px">
-            <button class="trader-subtab active" onclick="switchMarketTab('coins')">🪙 Top Coins</button>
-            <button class="trader-subtab" onclick="switchMarketTab('dex')">⚡ DEX Feed</button>
+            <button class="trader-subtab active" onclick="switchMarketTab('coins')">Top Coins</button>
+            <button class="trader-subtab" onclick="switchMarketTab('dex')">DEX Feed</button>
         </div>
 
         <!-- SUB: Top Coins (CoinGecko) -->
@@ -5239,7 +5245,7 @@
         <!-- TradingView Crypto Heatmap -->
         <div class="tv-heatmap-container" style="margin-bottom:24px">
             <div class="tv-chart-header" style="margin-bottom:0;border-radius:12px 12px 0 0">
-                <span class="tv-chart-label">🔥 Crypto Heatmap</span>
+                <span class="tv-chart-label">Crypto Heatmap</span>
             </div>
             <iframe id="tvHeatmap" style="width:100%;height:350px;border:none;display:block;border-radius:0 0 12px 12px"
                 frameborder="0" allowtransparency="true"></iframe>
@@ -5297,9 +5303,8 @@
     <div class="page" id="page-trader">
         <div class="trader-header">
             <div>
-                <div class="trader-title">🤖 Auto Trader <span>Live Trading</span></div>
-                <div style="color:var(--text-secondary);font-size:13px;margin-top:4px">AI-powered autonomous trading
-                    with strategy builder and real wallet balance</div>
+                <div class="trader-title">Auto Trader <span class="badge-paper" style="font-size:12px;padding:4px 12px;border-radius:6px;border:1px solid #6c63ff">&#x1F4CB; PAPER MODE</span></div>
+                <div style="color:rgba(255,255,255,0.3);font-size:12px;margin-top:4px">Using simulated paper balance — no real funds at risk</div>
                 <div id="blockchainStatusBadge" style="margin-top:4px"></div>
             </div>
             <div style="display:flex;align-items:center;gap:16px">
@@ -5308,15 +5313,25 @@
                     <input type="checkbox" id="autoTradeToggle" checked onchange="toggleAutoTrade()">
                     <span class="toggle-slider"></span>
                 </label>
-                <button class="btn btn-outline btn-sm" onclick="refreshTraderDashboard()" id="traderRefreshBtn" title="Refresh Dashboard" style="padding:6px 12px;font-size:16px;border-radius:10px;min-width:auto">🔄</button>
+                <button class="btn btn-outline btn-sm" onclick="refreshTraderDashboard()" id="traderRefreshBtn" title="Refresh Dashboard" style="padding:6px 12px;font-size:14px;border-radius:10px;min-width:auto">Refresh</button>
             </div>
+        </div>
+
+        <!-- Paper Mode Onboarding Banner -->
+        <div class="nx-onboarding-banner" id="nxOnboardingBanner" style="display:none">
+            <div>
+                <strong>&#x1F4CB; You are in Paper Trading Mode</strong><br>
+                All trades use simulated money for AI training.
+                <span id="nxOnboardingWallet"></span>
+            </div>
+            <button class="nx-onboarding-dismiss" onclick="dismissOnboarding()">Got it — don't show again</button>
         </div>
 
         <!-- ── Sub-tabs ── -->
         <div class="trader-subtabs">
-            <button class="trader-subtab active" onclick="switchTraderTab('live')">⚡ Live Trading</button>
-            <button class="trader-subtab" onclick="switchTraderTab('builder')">🛠️ Strategy Builder</button>
-            <button class="trader-subtab" onclick="switchTraderTab('strategies')">📋 My Strategies</button>
+            <button class="trader-subtab active" onclick="switchTraderTab('live')">Live Trading</button>
+            <button class="trader-subtab" onclick="switchTraderTab('builder')">Strategy Builder</button>
+            <button class="trader-subtab" onclick="switchTraderTab('strategies')">My Strategies</button>
         </div>
 
         <!-- ═══════════════ SUB-PAGE: LIVE TRADING ═══════════════ -->
@@ -5324,7 +5339,11 @@
             <!-- Stats Cards -->
             <div class="trader-grid" style="grid-template-columns:repeat(4,1fr);margin-top:0">
                 <div class="trader-stat-card">
-                    <div class="trader-stat-label">Wallet Balance</div>
+                    <div class="trader-stat-label" style="display:flex;align-items:center;gap:6px">Paper Balance
+                        <span style="position:relative;cursor:help" title="This balance is simulated for AI training. Your real wallet is separate and unaffected.">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                        </span>
+                    </div>
                     <div class="trader-stat-value" id="traderBalance">$0</div>
                     <div class="trader-stat-sub" id="traderReturn">0% return</div>
                 </div>
@@ -5347,18 +5366,18 @@
 
             <!-- Action Buttons -->
             <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
-                <button class="btn btn-primary" onclick="runTradeCycle()">⚡ Run Trade Cycle</button>
-                <button class="btn btn-outline" onclick="runResearch()">🔍 Research Market</button>
-                <button class="btn btn-outline" onclick="showManualBuyModal()">🛒 Manual Buy</button>
-                <button class="btn btn-outline" onclick="showTraderSettings()">⚙️ Settings</button>
-                <button class="btn btn-danger btn-sm" onclick="resetTrading()" style="margin-left:auto">🔄 Reset
+                <button class="btn btn-primary" onclick="runTradeCycle()">Run Trade Cycle</button>
+                <button class="btn btn-outline" onclick="runResearch()">Research Market</button>
+                <button class="btn btn-outline" onclick="showManualBuyModal()">Manual Buy</button>
+                <button class="btn btn-outline" onclick="showTraderSettings()">Settings</button>
+                <button class="btn btn-danger btn-sm" onclick="resetTrading()" style="margin-left:auto">Reset
                     Stats</button>
             </div>
 
             <!-- ── TODAY'S QUICK STATS ─────────────────────────────── -->
             <div style="margin-top:20px">
                 <h3 style="font-size:16px;margin-bottom:10px;display:flex;align-items:center;gap:8px">
-                    📊 Today's Performance
+                    Today's Performance
                     <span id="todayStatsTime" style="font-size:11px;color:var(--text-muted);font-weight:400"></span>
                 </h3>
                 <div class="trader-grid" style="grid-template-columns:repeat(5,1fr);margin-top:0;gap:10px">
@@ -5393,7 +5412,7 @@
             <!-- ── LIVE TRADE FEED ─────────────────────────────────── -->
             <div style="margin-top:24px">
                 <h3 style="font-size:16px;margin-bottom:10px;display:flex;align-items:center;gap:8px">
-                    ⚡ Live Trade Feed
+                    Live Trade Feed
                     <span class="live-pulse" style="width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;animation:pulse 2s infinite"></span>
                 </h3>
                 <div id="liveFeedContainer" style="max-height:280px;overflow-y:auto;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:0">
@@ -5404,7 +5423,7 @@
             <!-- ── P&L PERFORMANCE CHART ───────────────────────────── -->
             <div style="margin-top:24px">
                 <h3 style="font-size:16px;margin-bottom:10px;display:flex;align-items:center;gap:8px">
-                    📈 P&L Performance
+                    P&L Performance
                     <select id="chartDaysSelect" onchange="loadPnlChart()" style="margin-left:auto;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px">
                         <option value="7">7 days</option>
                         <option value="14" selected>14 days</option>
@@ -5419,7 +5438,7 @@
 
             <!-- ── CYCLE LOG ───────────────────────────────────────── -->
             <div style="margin-top:24px">
-                <h3 style="font-size:16px;margin-bottom:10px">🔄 Auto-Trade Cycle Log</h3>
+                <h3 style="font-size:16px;margin-bottom:10px">Auto-Trade Cycle Log</h3>
                 <div id="cycleLogContainer" style="max-height:320px;overflow-y:auto;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:0">
                     <div class="empty-state" style="padding:20px"><p>Cycle log loads when auto-trader runs...</p></div>
                 </div>
@@ -5427,7 +5446,7 @@
 
             <!-- Open Positions -->
             <div style="margin-top:24px">
-                <h3 style="font-size:18px;margin-bottom:12px">📈 Open Positions</h3>
+                <h3 style="font-size:18px;margin-bottom:12px">Open Positions</h3>
                 <div id="traderPositions">
                     <div class="empty-state">
                         <p>No open positions</p>
@@ -5437,7 +5456,7 @@
 
             <!-- AI Opportunities -->
             <div style="margin-top:24px">
-                <h3 style="font-size:18px;margin-bottom:12px">🎯 AI Opportunities</h3>
+                <h3 style="font-size:18px;margin-bottom:12px">AI Opportunities</h3>
                 <div id="traderOpportunities">
                     <div class="empty-state">
                         <p>Click "Research Market" to find opportunities</p>
@@ -5447,14 +5466,25 @@
 
             <!-- Trade History & Log tabs -->
             <div style="margin-top:24px">
-                <div style="display:flex;gap:8px;margin-bottom:12px">
-                    <button class="btn btn-sm btn-outline" onclick="loadTraderHistory()" id="histTabBtn">📋 Trade
-                        History</button>
-                    <button class="btn btn-sm btn-outline" onclick="loadTraderLog()" id="logTabBtn">📝 AI Log</button>
-                    <button class="btn btn-sm btn-outline" onclick="loadClosedPositions()" id="closedTabBtn">📊 Closed
-                        Positions</button>
+                <div class="nx-history-tabs" id="tradeHistoryMainTabs">
+                    <button class="nx-history-tab active" onclick="switchHistoryView('paper')">&#x1F4CB; Paper Trades</button>
+                    <button class="nx-history-tab" onclick="switchHistoryView('wallet')">&#x26D3; Wallet Transactions</button>
                 </div>
-                <div id="traderHistoryArea"></div>
+                <div id="tradeHistoryPaperView">
+                    <div style="display:flex;gap:8px;margin-bottom:12px">
+                        <button class="btn btn-sm btn-outline" onclick="loadTraderHistory()" id="histTabBtn">Trade
+                            History</button>
+                        <button class="btn btn-sm btn-outline" onclick="loadTraderLog()" id="logTabBtn">AI Log</button>
+                        <button class="btn btn-sm btn-outline" onclick="loadClosedPositions()" id="closedTabBtn">Closed
+                            Positions</button>
+                    </div>
+                    <div id="traderHistoryArea"></div>
+                    <div class="nx-history-footer">These are simulated trades using paper money. No real funds were used.</div>
+                </div>
+                <div id="tradeHistoryWalletView" style="display:none">
+                    <div id="walletHistoryArea"><div class="empty-state"><p>Connect a wallet to see on-chain transactions</p></div></div>
+                    <div class="nx-history-footer">Real on-chain transactions from your connected wallet.</div>
+                </div>
             </div>
         </div>
 
@@ -5469,12 +5499,12 @@
                         <label>Strategy Type</label>
                         <select id="sbStratType" onchange="sbTemplateChanged()">
                             <option value="custom" selected>Custom Strategy</option>
-                            <option value="grid">📊 Grid Trading</option>
-                            <option value="dca">💰 DCA Bot</option>
-                            <option value="momentum">🚀 Momentum</option>
-                            <option value="mean_reversion">🔄 Mean Reversion</option>
-                            <option value="scalping">⚡ Scalping</option>
-                            <option value="swing">📈 Swing Trading</option>
+                            <option value="grid">Grid Trading</option>
+                            <option value="dca">DCA Bot</option>
+                            <option value="momentum">Momentum</option>
+                            <option value="mean_reversion">Mean Reversion</option>
+                            <option value="scalping">Scalping</option>
+                            <option value="swing">Swing Trading</option>
                             <option value="funding_farm">🏦 Funding Rate Farm</option>
                             <option value="breakout">💥 Breakout</option>
                         </select>
@@ -5970,185 +6000,495 @@
     <!-- SETTINGS PAGE                                              -->
     <!-- ═══════════════════════════════════════════════════════════ -->
     <div class="page" id="page-settings">
-        <div class="section-title">⚙️ Settings</div>
+        <div class="section-title">Settings</div>
         <div class="section-desc">Customize your NexYpher experience</div>
 
-        <!-- Appearance -->
-        <div class="card" style="margin-top:20px">
-            <h3 style="margin-bottom:16px;font-size:16px">🎨 Appearance</h3>
-            <div class="settings-grid">
-                <div>
-                    <label style="color:var(--text-muted);font-size:13px;display:block;margin-bottom:6px">Theme</label>
-                    <select id="settTheme" onchange="applyTheme(this.value)"
-                        style="width:100%;padding:10px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-size:14px">
-                        <option value="dark" selected>🌙 Dark (Default)</option>
-                        <option value="light">☀️ Light</option>
-                        <option value="midnight">🌑 Midnight</option>
-                    </select>
-                </div>
-                <div>
-                    <label style="color:var(--text-muted);font-size:13px;display:block;margin-bottom:6px">Accent
-                        Color</label>
-                    <div style="display:flex;gap:8px;flex-wrap:wrap">
-                        <button class="color-swatch active" onclick="setAccent(this,'#6c5ce7')"
-                            style="width:36px;height:36px;border-radius:50%;border:2px solid transparent;background:#6c5ce7;cursor:pointer"></button>
-                        <button class="color-swatch" onclick="setAccent(this,'#00b894')"
-                            style="width:36px;height:36px;border-radius:50%;border:2px solid transparent;background:#00b894;cursor:pointer"></button>
-                        <button class="color-swatch" onclick="setAccent(this,'#0984e3')"
-                            style="width:36px;height:36px;border-radius:50%;border:2px solid transparent;background:#0984e3;cursor:pointer"></button>
-                        <button class="color-swatch" onclick="setAccent(this,'#e17055')"
-                            style="width:36px;height:36px;border-radius:50%;border:2px solid transparent;background:#e17055;cursor:pointer"></button>
-                        <button class="color-swatch" onclick="setAccent(this,'#fdcb6e')"
-                            style="width:36px;height:36px;border-radius:50%;border:2px solid transparent;background:#fdcb6e;cursor:pointer"></button>
+        <div class="settings-layout">
+            <!-- Sidebar -->
+            <nav class="settings-sidebar">
+                <button class="settings-nav-item active" onclick="switchSettingsTab('general', this)">
+                    <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="9" cy="9" r="7"/><path d="M9 6v3l2 2"/></svg>
+                    General
+                </button>
+                <button class="settings-nav-item" onclick="switchSettingsTab('appearance', this)">
+                    <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="9" cy="9" r="7"/><path d="M9 2a7 7 0 000 14V2z"/></svg>
+                    Appearance
+                </button>
+                <button class="settings-nav-item" onclick="switchSettingsTab('notifications', this)">
+                    <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 7a5 5 0 0110 0c0 4 2 5 2 5H2s2-1 2-5zM7 14a2 2 0 004 0"/></svg>
+                    Notifications
+                </button>
+                <button class="settings-nav-item" onclick="switchSettingsTab('trading', this)">
+                    <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 13l4-4 3 3 7-8"/><path d="M12 4h4v4"/></svg>
+                    Trading
+                </button>
+                <button class="settings-nav-item" onclick="switchSettingsTab('risk', this)">
+                    <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 2l7 13H2L9 2z"/><path d="M9 7v3M9 12.5v.5"/></svg>
+                    Risk Management
+                </button>
+                <button class="settings-nav-item" onclick="switchSettingsTab('apikeys', this)">
+                    <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="3"/><path d="M9.5 9.5l6 6M13 13l2-2M14.5 14.5l2-2"/></svg>
+                    API Keys
+                </button>
+                <button class="settings-nav-item" onclick="switchSettingsTab('privacy', this)">
+                    <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="8" width="10" height="8" rx="1"/><path d="M6 8V5a3 3 0 016 0v3"/></svg>
+                    Data &amp; Privacy
+                </button>
+            </nav>
+
+            <!-- Content -->
+            <div class="settings-content">
+
+                <!-- GENERAL -->
+                <div class="settings-panel active" id="settingsPanel-general">
+                    <div class="settings-panel-title">General</div>
+                    <div class="settings-panel-desc">Basic preferences for your account</div>
+
+                    <div class="settings-group">
+                        <div class="settings-group-title">Exchange</div>
+                        <div class="settings-row">
+                            <div class="settings-row-info">
+                                <div class="settings-row-label">Default Exchange</div>
+                                <div class="settings-row-hint">Primary exchange for trading</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <select id="settDefaultExchange" class="settings-select">
+                                    <option value="binance">Binance</option>
+                                    <option value="bybit">Bybit</option>
+                                    <option value="okx">OKX</option>
+                                    <option value="coinbase">Coinbase</option>
+                                    <option value="kraken">Kraken</option>
+                                    <option value="kucoin">KuCoin</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="settings-row">
+                            <div class="settings-row-info">
+                                <div class="settings-row-label">Default Stablecoin</div>
+                                <div class="settings-row-hint">Quote currency for pairs</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <select id="settDefaultStable" class="settings-select">
+                                    <option value="USDT">USDT</option>
+                                    <option value="USDC">USDC</option>
+                                    <option value="BUSD">BUSD</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-group">
+                        <div class="settings-group-title">Display</div>
+                        <div class="settings-row">
+                            <div class="settings-row-info">
+                                <div class="settings-row-label">Currency</div>
+                                <div class="settings-row-hint">Display currency for portfolio values</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <select id="settDisplayCurrency" class="settings-select">
+                                    <option value="USD">USD ($)</option>
+                                    <option value="EUR">EUR (&#8364;)</option>
+                                    <option value="GBP">GBP (&#163;)</option>
+                                    <option value="BTC">BTC (&#8383;)</option>
+                                </select>
+                            </div>
+                        </div>
                     </div>
                 </div>
+
+                <!-- APPEARANCE -->
+                <div class="settings-panel" id="settingsPanel-appearance">
+                    <div class="settings-panel-title">Appearance</div>
+                    <div class="settings-panel-desc">Theme and visual preferences</div>
+
+                    <div class="settings-group">
+                        <div class="settings-group-title">Theme</div>
+                        <div class="settings-row">
+                            <div class="settings-row-info">
+                                <div class="settings-row-label">Color Theme</div>
+                                <div class="settings-row-hint">Choose your preferred theme</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <select id="settTheme" class="settings-select" onchange="applyTheme(this.value)">
+                                    <option value="dark" selected>Dark</option>
+                                    <option value="light">Light</option>
+                                    <option value="midnight">Midnight</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-group">
+                        <div class="settings-group-title">Accent Color</div>
+                        <div style="display:flex;gap:10px;flex-wrap:wrap;padding:4px 0">
+                            <button class="color-swatch active" onclick="setAccent(this,'#6c5ce7')"
+                                style="width:36px;height:36px;border-radius:50%;border:2px solid transparent;background:#6c5ce7;cursor:pointer;transition:border-color .2s"></button>
+                            <button class="color-swatch" onclick="setAccent(this,'#00b894')"
+                                style="width:36px;height:36px;border-radius:50%;border:2px solid transparent;background:#00b894;cursor:pointer;transition:border-color .2s"></button>
+                            <button class="color-swatch" onclick="setAccent(this,'#0984e3')"
+                                style="width:36px;height:36px;border-radius:50%;border:2px solid transparent;background:#0984e3;cursor:pointer;transition:border-color .2s"></button>
+                            <button class="color-swatch" onclick="setAccent(this,'#e17055')"
+                                style="width:36px;height:36px;border-radius:50%;border:2px solid transparent;background:#e17055;cursor:pointer;transition:border-color .2s"></button>
+                            <button class="color-swatch" onclick="setAccent(this,'#fdcb6e')"
+                                style="width:36px;height:36px;border-radius:50%;border:2px solid transparent;background:#fdcb6e;cursor:pointer;transition:border-color .2s"></button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- NOTIFICATIONS -->
+                <div class="settings-panel" id="settingsPanel-notifications">
+                    <div class="settings-panel-title">Notifications</div>
+                    <div class="settings-panel-desc">Control what alerts you receive</div>
+
+                    <div class="settings-group">
+                        <div class="settings-group-title">Alerts</div>
+                        <div class="settings-row">
+                            <div class="settings-row-info">
+                                <div class="settings-row-label">Price Alerts</div>
+                                <div class="settings-row-hint">Get notified on significant price moves</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <label class="toggle-switch"><input type="checkbox" id="settPriceAlerts" checked><span class="toggle-track"></span></label>
+                            </div>
+                        </div>
+                        <div class="settings-row">
+                            <div class="settings-row-info">
+                                <div class="settings-row-label">AI Recommendations</div>
+                                <div class="settings-row-hint">Alerts when AI detects opportunities</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <label class="toggle-switch"><input type="checkbox" id="settAIAlerts" checked><span class="toggle-track"></span></label>
+                            </div>
+                        </div>
+                        <div class="settings-row">
+                            <div class="settings-row-info">
+                                <div class="settings-row-label">Trade Execution</div>
+                                <div class="settings-row-hint">Notifications for filled orders</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <label class="toggle-switch"><input type="checkbox" id="settTradeAlerts" checked><span class="toggle-track"></span></label>
+                            </div>
+                        </div>
+                        <div class="settings-row">
+                            <div class="settings-row-info">
+                                <div class="settings-row-label">Whale Movements</div>
+                                <div class="settings-row-hint">Large transaction alerts</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <label class="toggle-switch"><input type="checkbox" id="settWhaleAlerts"><span class="toggle-track"></span></label>
+                            </div>
+                        </div>
+                        <div class="settings-row">
+                            <div class="settings-row-info">
+                                <div class="settings-row-label">Daily Portfolio Summary</div>
+                                <div class="settings-row-hint">End-of-day performance digest</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <label class="toggle-switch"><input type="checkbox" id="settDailySummary" checked><span class="toggle-track"></span></label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TRADING -->
+                <div class="settings-panel" id="settingsPanel-trading">
+                    <div class="settings-panel-title">Trading</div>
+                    <div class="settings-panel-desc">Default parameters for trade execution</div>
+
+                    <div class="settings-group">
+                        <div class="settings-group-title">Order Defaults</div>
+                        <div class="settings-row">
+                            <div class="settings-row-info">
+                                <div class="settings-row-label">Default Leverage</div>
+                                <div class="settings-row-hint">Applied to new positions</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <select id="settDefaultLeverage" class="settings-select">
+                                    <option value="1">1x</option>
+                                    <option value="2">2x</option>
+                                    <option value="5" selected>5x</option>
+                                    <option value="10">10x</option>
+                                    <option value="25">25x</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="settings-row">
+                            <div class="settings-row-info">
+                                <div class="settings-row-label">Default Position Size</div>
+                                <div class="settings-row-hint">Percentage of portfolio per trade</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <select id="settPositionSize" class="settings-select">
+                                    <option value="1">1%</option>
+                                    <option value="2" selected>2%</option>
+                                    <option value="5">5%</option>
+                                    <option value="10">10%</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="settings-row">
+                            <div class="settings-row-info">
+                                <div class="settings-row-label">Default Timeframe</div>
+                                <div class="settings-row-hint">Chart & analysis timeframe</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <select id="settTimeframe" class="settings-select">
+                                    <option value="5m">5 min</option>
+                                    <option value="15m" selected>15 min</option>
+                                    <option value="1h">1 hour</option>
+                                    <option value="4h">4 hours</option>
+                                    <option value="1d">1 day</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-group">
+                        <div class="settings-group-title">Automation</div>
+                        <div class="settings-row">
+                            <div class="settings-row-info">
+                                <div class="settings-row-label">Auto Stop-Loss</div>
+                                <div class="settings-row-hint">Automatically set SL on every trade</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <label class="toggle-switch"><input type="checkbox" id="settAutoSL" checked><span class="toggle-track"></span></label>
+                            </div>
+                        </div>
+                        <div class="settings-row">
+                            <div class="settings-row-info">
+                                <div class="settings-row-label">Auto Take-Profit</div>
+                                <div class="settings-row-hint">Automatically set TP targets</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <label class="toggle-switch"><input type="checkbox" id="settAutoTP" checked><span class="toggle-track"></span></label>
+                            </div>
+                        </div>
+                        <div class="settings-row">
+                            <div class="settings-row-info">
+                                <div class="settings-row-label">Paper Trading Mode</div>
+                                <div class="settings-row-hint">Execute trades with simulated funds</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <label class="toggle-switch"><input type="checkbox" id="settPaperTrading"><span class="toggle-track"></span></label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- RISK MANAGEMENT -->
+                <div class="settings-panel" id="settingsPanel-risk">
+                    <div class="settings-panel-title">Risk Management</div>
+                    <div class="settings-panel-desc">Protect your capital with safety controls</div>
+
+                    <div class="settings-group">
+                        <div class="settings-group-title">Risk Profile</div>
+                        <div class="settings-row">
+                            <div class="settings-row-info">
+                                <div class="settings-row-label">Risk Level</div>
+                                <div class="settings-row-hint">Determines position sizing and alerts</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <select id="settRiskLevel" class="settings-select">
+                                    <option value="conservative">Conservative</option>
+                                    <option value="moderate" selected>Moderate</option>
+                                    <option value="aggressive">Aggressive</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-group">
+                        <div class="settings-group-title">Safety Controls</div>
+                        <div class="settings-row">
+                            <div class="settings-row-info">
+                                <div class="settings-row-label">Max Open Positions</div>
+                                <div class="settings-row-hint">Limit concurrent open trades</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <select id="settMaxPositions" class="settings-select">
+                                    <option value="3">3</option>
+                                    <option value="5" selected>5</option>
+                                    <option value="10">10</option>
+                                    <option value="20">20</option>
+                                    <option value="0">Unlimited</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="settings-row">
+                            <div class="settings-row-info">
+                                <div class="settings-row-label">Max Daily Loss</div>
+                                <div class="settings-row-hint">Stop trading after this loss (% of portfolio)</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <select id="settMaxDailyLoss" class="settings-select">
+                                    <option value="2">2%</option>
+                                    <option value="5" selected>5%</option>
+                                    <option value="10">10%</option>
+                                    <option value="0">No limit</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="settings-row">
+                            <div class="settings-row-info">
+                                <div class="settings-row-label">Kill Switch</div>
+                                <div class="settings-row-hint">Emergency: close all positions &amp; stop trading</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <label class="toggle-switch"><input type="checkbox" id="settKillSwitch"><span class="toggle-track"></span></label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- API KEYS -->
+                <div class="settings-panel" id="settingsPanel-apikeys">
+                    <div class="settings-panel-title">API Keys</div>
+                    <div class="settings-panel-desc">Connect exchange API keys for live trading</div>
+
+                    <div class="settings-group">
+                        <div class="settings-group-title">Connected Keys</div>
+                        <div id="settApiKeysList"></div>
+                        <div style="color:var(--text-muted);font-size:12px;padding-top:4px">No API keys connected yet.</div>
+                    </div>
+
+                    <div class="settings-group">
+                        <div class="settings-group-title">Add New Key</div>
+                        <div class="settings-row">
+                            <div class="settings-row-info">
+                                <div class="settings-row-label">Exchange</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <select id="settApiExchange" class="settings-select">
+                                    <option>Binance</option>
+                                    <option>Bybit</option>
+                                    <option>OKX</option>
+                                    <option>Coinbase</option>
+                                    <option>Kraken</option>
+                                    <option>KuCoin</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="settings-row">
+                            <div class="settings-row-info">
+                                <div class="settings-row-label">API Key</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <input type="password" id="settApiKey" placeholder="Enter API Key" class="settings-input" style="width:220px">
+                            </div>
+                        </div>
+                        <div class="settings-row">
+                            <div class="settings-row-info">
+                                <div class="settings-row-label">API Secret</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <input type="password" id="settApiSecret" placeholder="Enter API Secret" class="settings-input" style="width:220px">
+                            </div>
+                        </div>
+                        <div style="margin-top:12px;display:flex;align-items:center;gap:12px">
+                            <button class="btn btn-primary btn-sm" onclick="saveApiKey()">Save API Key</button>
+                            <span style="color:var(--text-muted);font-size:12px">Keys are encrypted. Use read-only keys for safety.</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- DATA & PRIVACY -->
+                <div class="settings-panel" id="settingsPanel-privacy">
+                    <div class="settings-panel-title">Data &amp; Privacy</div>
+                    <div class="settings-panel-desc">Control how your data is used</div>
+
+                    <div class="settings-group">
+                        <div class="settings-group-title">Data Sharing</div>
+                        <div class="settings-row">
+                            <div class="settings-row-info">
+                                <div class="settings-row-label">Share Trade History for AI</div>
+                                <div class="settings-row-hint">Help improve AI models with anonymized data</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <label class="toggle-switch"><input type="checkbox" id="settShareData" checked><span class="toggle-track"></span></label>
+                            </div>
+                        </div>
+                        <div class="settings-row">
+                            <div class="settings-row-info">
+                                <div class="settings-row-label">Analytics Cookies</div>
+                                <div class="settings-row-hint">Usage analytics to improve the platform</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <label class="toggle-switch"><input type="checkbox" id="settAnalytics" checked><span class="toggle-track"></span></label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Save / Reset -->
+                <div class="settings-footer">
+                    <button class="btn btn-primary" onclick="saveSettings()" style="flex:1">Save Settings</button>
+                    <button class="btn btn-outline" onclick="resetSettings()">Reset to Default</button>
+                </div>
             </div>
         </div>
+    </div>
 
-        <!-- Notifications -->
-        <div class="card" style="margin-top:16px">
-            <h3 style="margin-bottom:16px;font-size:16px">🔔 Notifications</h3>
-            <div style="display:flex;flex-direction:column;gap:12px">
-                <label style="display:flex;align-items:center;justify-content:space-between;cursor:pointer">
-                    <span style="color:var(--text-primary);font-size:14px">Price Alerts</span>
-                    <input type="checkbox" id="settPriceAlerts" checked
-                        style="accent-color:var(--primary);width:18px;height:18px">
-                </label>
-                <label style="display:flex;align-items:center;justify-content:space-between;cursor:pointer">
-                    <span style="color:var(--text-primary);font-size:14px">AI Recommendation Alerts</span>
-                    <input type="checkbox" id="settAIAlerts" checked
-                        style="accent-color:var(--primary);width:18px;height:18px">
-                </label>
-                <label style="display:flex;align-items:center;justify-content:space-between;cursor:pointer">
-                    <span style="color:var(--text-primary);font-size:14px">Trade Execution Alerts</span>
-                    <input type="checkbox" id="settTradeAlerts" checked
-                        style="accent-color:var(--primary);width:18px;height:18px">
-                </label>
-                <label style="display:flex;align-items:center;justify-content:space-between;cursor:pointer">
-                    <span style="color:var(--text-primary);font-size:14px">Whale Movement Alerts</span>
-                    <input type="checkbox" id="settWhaleAlerts"
-                        style="accent-color:var(--primary);width:18px;height:18px">
-                </label>
-                <label style="display:flex;align-items:center;justify-content:space-between;cursor:pointer">
-                    <span style="color:var(--text-primary);font-size:14px">Portfolio Daily Summary</span>
-                    <input type="checkbox" id="settDailySummary" checked
-                        style="accent-color:var(--primary);width:18px;height:18px">
-                </label>
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- CONTACT PAGE                                               -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <div class="page" id="page-contact">
+        <div class="contact-page-wrap">
+            <!-- Heading -->
+            <h1 class="contact-heading">Contact Us</h1>
+            <p class="contact-subtitle">Have a question or feedback? We typically respond within 24 hours.</p>
+
+            <!-- Send a Query Form -->
+            <form class="contact-form" id="contactForm" onsubmit="submitContactForm(event)">
+                <div class="contact-field">
+                    <label class="contact-label" for="contactName">Your Name</label>
+                    <input type="text" id="contactName" class="contact-input" placeholder="John Doe" required>
+                </div>
+                <div class="contact-field">
+                    <label class="contact-label" for="contactEmail">Your Email</label>
+                    <input type="email" id="contactEmail" class="contact-input" placeholder="john@example.com" required>
+                </div>
+                <div class="contact-field">
+                    <label class="contact-label" for="contactSubject">Subject</label>
+                    <select id="contactSubject" class="contact-input">
+                        <option value="general">General Inquiry</option>
+                        <option value="bug">Bug Report</option>
+                        <option value="feature">Feature Request</option>
+                        <option value="trading">Trading Support</option>
+                        <option value="billing">Billing</option>
+                        <option value="partnership">Partnership</option>
+                    </select>
+                </div>
+                <div class="contact-field">
+                    <label class="contact-label" for="contactMessage">Message</label>
+                    <textarea id="contactMessage" class="contact-input" placeholder="Tell us what's on your mind..." required></textarea>
+                </div>
+                <button type="submit" class="contact-submit-btn" id="contactSubmitBtn">
+                    <span id="contactBtnText">Send Message</span>
+                    <span id="contactBtnSpinner" class="contact-spinner" style="display:none"></span>
+                </button>
+            </form>
+            <div id="contactFormStatus" style="display:none"></div>
+
+            <!-- Divider -->
+            <div class="contact-divider">
+                <span class="contact-divider-text">or reach us directly</span>
             </div>
-        </div>
 
-        <!-- Trading Defaults -->
-        <div class="card" style="margin-top:16px">
-            <h3 style="margin-bottom:16px;font-size:16px">📈 Trading Defaults</h3>
-            <div class="settings-grid">
-                <div>
-                    <label style="color:var(--text-muted);font-size:13px;display:block;margin-bottom:6px">Default
-                        Exchange</label>
-                    <select id="settDefaultExchange"
-                        style="width:100%;padding:10px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-size:14px">
-                        <option value="binance">Binance</option>
-                        <option value="bybit">Bybit</option>
-                        <option value="okx">OKX</option>
-                        <option value="coinbase">Coinbase</option>
-                        <option value="kraken">Kraken</option>
-                        <option value="kucoin">KuCoin</option>
-                    </select>
-                </div>
-                <div>
-                    <label style="color:var(--text-muted);font-size:13px;display:block;margin-bottom:6px">Default
-                        Stablecoin</label>
-                    <select id="settDefaultStable"
-                        style="width:100%;padding:10px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-size:14px">
-                        <option value="USDT">USDT (Tether)</option>
-                        <option value="USDC">USDC (Circle)</option>
-                        <option value="BUSD">BUSD (Binance)</option>
-                    </select>
-                </div>
-                <div>
-                    <label style="color:var(--text-muted);font-size:13px;display:block;margin-bottom:6px">Default
-                        Leverage</label>
-                    <select id="settDefaultLeverage"
-                        style="width:100%;padding:10px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-size:14px">
-                        <option value="1">1x (No Leverage)</option>
-                        <option value="2">2x</option>
-                        <option value="5" selected>5x</option>
-                        <option value="10">10x</option>
-                        <option value="25">25x</option>
-                    </select>
-                </div>
-                <div>
-                    <label style="color:var(--text-muted);font-size:13px;display:block;margin-bottom:6px">Risk
-                        Level</label>
-                    <select id="settRiskLevel"
-                        style="width:100%;padding:10px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-size:14px">
-                        <option value="conservative">🟢 Conservative</option>
-                        <option value="moderate" selected>🟡 Moderate</option>
-                        <option value="aggressive">🔴 Aggressive</option>
-                    </select>
-                </div>
+            <!-- Contact Links -->
+            <div class="contact-links">
+                <a href="https://wa.me/917061001946" class="contact-link" target="_blank">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                    WhatsApp
+                </a>
+                <a href="https://linkedin.com/company/nexypher" class="contact-link" target="_blank">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+                    LinkedIn
+                </a>
+                <a href="https://twitter.com/nexypher" class="contact-link" target="_blank">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+                    X (Twitter)
+                </a>
             </div>
-        </div>
-
-        <!-- Data & Privacy -->
-        <div class="card" style="margin-top:16px">
-            <h3 style="margin-bottom:16px;font-size:16px">🔒 Data & Privacy</h3>
-            <div style="display:flex;flex-direction:column;gap:12px">
-                <label style="display:flex;align-items:center;justify-content:space-between;cursor:pointer">
-                    <span style="color:var(--text-primary);font-size:14px">Share trade history for AI training</span>
-                    <input type="checkbox" id="settShareData" checked
-                        style="accent-color:var(--primary);width:18px;height:18px">
-                </label>
-                <label style="display:flex;align-items:center;justify-content:space-between;cursor:pointer">
-                    <span style="color:var(--text-primary);font-size:14px">Enable analytics cookies</span>
-                    <input type="checkbox" id="settAnalytics" checked
-                        style="accent-color:var(--primary);width:18px;height:18px">
-                </label>
-            </div>
-        </div>
-
-        <!-- API Keys -->
-        <div class="card" style="margin-top:16px">
-            <h3 style="margin-bottom:16px;font-size:16px">🔑 API Keys</h3>
-            <div class="section-desc" style="margin-bottom:12px">Connect your exchange API keys for live trading</div>
-            <div id="settApiKeysList" style="margin-bottom:12px"></div>
-            <div class="settings-grid">
-                <div>
-                    <label
-                        style="color:var(--text-muted);font-size:13px;display:block;margin-bottom:6px">Exchange</label>
-                    <select id="settApiExchange"
-                        style="width:100%;padding:10px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-size:14px">
-                        <option>Binance</option>
-                        <option>Bybit</option>
-                        <option>OKX</option>
-                        <option>Coinbase</option>
-                        <option>Kraken</option>
-                        <option>KuCoin</option>
-                    </select>
-                </div>
-                <div>
-                    <label style="color:var(--text-muted);font-size:13px;display:block;margin-bottom:6px">API
-                        Key</label>
-                    <input type="password" id="settApiKey" placeholder="Enter API Key"
-                        style="width:100%;padding:10px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-size:14px">
-                </div>
-                <div>
-                    <label style="color:var(--text-muted);font-size:13px;display:block;margin-bottom:6px">API
-                        Secret</label>
-                    <input type="password" id="settApiSecret" placeholder="Enter API Secret"
-                        style="width:100%;padding:10px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-size:14px">
-                </div>
-                <div style="display:flex;align-items:flex-end">
-                    <button class="btn btn-primary" onclick="saveApiKey()" style="width:100%">Save API Key</button>
-                </div>
-            </div>
-            <div style="margin-top:8px;color:var(--text-muted);font-size:12px">⚠️ Keys are encrypted and stored
-                securely. Use read-only keys for safety.</div>
-        </div>
-
-        <!-- Save Button -->
-        <div style="margin-top:24px;display:flex;gap:12px">
-            <button class="btn btn-primary" onclick="saveSettings()" style="flex:1">💾 Save Settings</button>
-            <button class="btn btn-outline" onclick="resetSettings()">Reset to Default</button>
         </div>
     </div>
 
@@ -6156,62 +6496,116 @@
     <!-- PROFILE PAGE (visible when logged in)                      -->
     <!-- ═══════════════════════════════════════════════════════════ -->
     <div class="page" id="page-profile">
-        <div class="section-title" id="profileTitle">My Profile</div>
-        <div class="section-desc" id="profileEmail"></div>
-
-        <!-- Wallet Balance Card -->
-        <div class="balance-card" style="margin-top:20px">
-            <div class="balance-label">Wallet Balance</div>
-            <div class="balance-amount"><span class="currency">$</span><span id="walletBalanceDisplay">0.00</span></div>
-            <div class="balance-actions">
-                <button class="btn btn-primary" onclick="showDepositModal()">+ Add Money</button>
-                <button class="btn btn-outline" onclick="showWithdrawModal()">Withdraw</button>
-                <button class="btn btn-outline" onclick="showTransactionsModal()">History</button>
+        <div class="profile-wrap">
+            <!-- Section 1: User Header -->
+            <div class="profile-header">
+                <div class="profile-photo-wrap" id="profilePhotoWrap" onclick="document.getElementById('profilePhotoInput').click()">
+                    <div class="profile-avatar-lg" id="profileAvatarLarge"></div>
+                    <img class="profile-photo-img" id="profilePhotoImg" style="display:none" alt="Profile">
+                    <div class="profile-photo-overlay">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                    </div>
+                    <input type="file" id="profilePhotoInput" accept="image/jpeg,image/png,image/webp" style="display:none" onchange="handleProfilePhoto(event)">
+                </div>
+                <div class="profile-header-info">
+                    <div class="profile-name-row">
+                        <span class="profile-name" id="profileTitle">raj</span>
+                        <button class="profile-edit-btn" id="profileEditBtn" onclick="toggleProfileEdit()">Edit Profile</button>
+                    </div>
+                    <div class="profile-email" id="profileEmail"></div>
+                    <div class="profile-member-since" id="profileMemberSince">Member since Feb 2026</div>
+                    <!-- Inline edit form (hidden by default) -->
+                    <div class="profile-edit-form" id="profileEditForm" style="display:none">
+                        <input type="text" class="profile-edit-input" id="profileEditName" placeholder="Username">
+                        <div class="profile-edit-actions">
+                            <button class="profile-btn-primary" style="padding:6px 16px;height:auto;font-size:12px" onclick="saveProfileEdit()">Save</button>
+                            <button class="profile-btn-outline" style="padding:6px 16px;height:auto;font-size:12px" onclick="toggleProfileEdit()">Cancel</button>
+                        </div>
+                    </div>
+                </div>
             </div>
-        </div>
+            <div id="verifyBannerSlot"></div>
 
-        <!-- Bank Accounts -->
-        <div style="margin-top:24px">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-                <h3 style="font-size:18px">🏦 Linked Bank Accounts</h3>
-                <button class="btn btn-outline btn-sm" onclick="showBankModal()">+ Add Bank</button>
+            <!-- Section 2: Wallet Balance Card -->
+            <div class="profile-balance-card" style="border-color:rgba(108,99,255,0.2)">
+                <div class="profile-balance-label">Wallet Balance <span class="badge-paper">PAPER</span>
+                    <span style="position:relative;cursor:help;margin-left:4px" title="This is simulated paper trading balance. Not real money.">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                    </span>
+                </div>
+                <div class="profile-balance-amount" style="color:rgba(255,255,255,0.9)"><span class="profile-currency">$</span><span id="walletBalanceDisplay">0.00</span></div>
+                <div class="profile-balance-actions">
+                    <button class="profile-btn-primary" onclick="showDepositModal()">+ Add Money</button>
+                    <button class="profile-btn-outline" onclick="showWithdrawModal()">Withdraw</button>
+                    <button class="profile-btn-outline" onclick="showTransactionsModal()">History</button>
+                </div>
             </div>
-            <div id="bankList"></div>
-        </div>
 
-        <!-- Wallets -->
-        <div style="margin-top:24px">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-                <h3 style="font-size:18px">Connected Wallets</h3>
-                <button class="btn btn-outline btn-sm" onclick="showWalletModal()">+ Add Wallet</button>
+            <!-- Section 3: Stats Row -->
+            <div class="profile-stats-row">
+                <div class="profile-stat-card">
+                    <div class="profile-stat-label">Bank Accounts</div>
+                    <div class="profile-stat-value" id="profileBankCount">0</div>
+                </div>
+                <div class="profile-stat-card" style="position:relative">
+                    <span class="badge-live" style="position:absolute;top:10px;right:12px">LIVE</span>
+                    <div class="profile-stat-label">Connected Wallets</div>
+                    <div class="profile-stat-value" id="profileWalletCount">0</div>
+                </div>
+                <div class="profile-stat-card">
+                    <div class="profile-stat-label">Watchlist</div>
+                    <div class="profile-stat-value" id="profileWatchCount">0</div>
+                </div>
             </div>
-            <div id="walletList"></div>
-        </div>
 
-        <!-- Portfolio -->
-        <div style="margin-top:32px">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-                <h3 style="font-size:18px">Portfolio</h3>
-                <button class="btn btn-outline btn-sm" onclick="showPortfolioModal()">+ Add Position</button>
+            <!-- Section 4: Linked Bank Accounts -->
+            <div class="profile-section">
+                <div class="profile-section-header">
+                    <h3 class="profile-section-title">Linked Bank Accounts</h3>
+                    <button class="profile-add-btn" onclick="showBankModal()">+ Add Bank</button>
+                </div>
+                <div id="bankList"></div>
             </div>
-            <table class="portfolio-table">
-                <thead>
-                    <tr>
-                        <th>Coin</th>
-                        <th>Amount</th>
-                        <th>Avg Price</th>
-                        <th>Current</th>
-                        <th>PnL</th>
-                    </tr>
-                </thead>
-                <tbody id="portfolioBody"></tbody>
-            </table>
-        </div>
 
-        <!-- Watchlist -->
-        <div style="margin-top:32px">
-            <h3 style="font-size:18px;margin-bottom:12px">Watchlist</h3>
-            <div id="watchlistArea"></div>
+            <!-- Section 5: Connected Wallets -->
+            <div class="profile-section">
+                <div class="profile-section-header">
+                    <h3 class="profile-section-title">Connected Wallets</h3>
+                    <button class="profile-add-btn" onclick="showWalletModal()">+ Add Wallet</button>
+                </div>
+                <div id="walletList"></div>
+                <div id="walletTxSection"></div>
+            </div>
+
+            <!-- Section 6: Portfolio -->
+            <div class="profile-section">
+                <div class="profile-section-header">
+                    <h3 class="profile-section-title">Portfolio</h3>
+                    <div style="display:flex;gap:8px">
+                        <button class="profile-add-btn" id="syncWalletBtn" onclick="syncPortfolioFromWallet()" style="display:none">Sync from Wallet</button>
+                        <button class="profile-add-btn" onclick="showPortfolioModal()">+ Add Position</button>
+                    </div>
+                </div>
+                <div id="portfolioSyncStatus" style="display:none;font-size:11px;color:rgba(255,255,255,0.3);margin-bottom:8px;font-family:'Inter',sans-serif"></div>
+                <table class="profile-portfolio-table">
+                    <thead>
+                        <tr>
+                            <th>Coin</th>
+                            <th>Amount</th>
+                            <th>Avg Price</th>
+                            <th>Current</th>
+                            <th>PnL</th>
+                        </tr>
+                    </thead>
+                    <tbody id="portfolioBody"></tbody>
+                </table>
+            </div>
+
+            <!-- Section 7: Watchlist -->
+            <div class="profile-section">
+                <h3 class="profile-section-title">Watchlist</h3>
+                <div id="watchlistArea" class="profile-watchlist-chips"></div>
+            </div>
         </div>
     </div>
 
@@ -6826,7 +7220,14 @@
             else if (page === 'learning') { loadLearningStats(); loadStrategyAdjustments(); }
             else if (page === 'trader') { loadTraderDashboard(); }
             else if (page === 'settings') { loadSettings(); }
+            else if (page === 'contact') { /* static page */ }
             else if (page === 'profile') { loadProfile(); }
+
+            // Paper mode indicator
+            var paperNav = document.getElementById('nxPaperNav');
+            if (paperNav) paperNav.classList.toggle('visible', page === 'trader');
+            // Onboarding banner
+            if (page === 'trader' && typeof window._nxShowOnboarding === 'function') window._nxShowOnboarding();
         }
 
         // ── Auth ──────────────────────────────────────────────────────
@@ -6990,24 +7391,63 @@
             navigate('home');
         }
 
+        function getProfilePhoto() {
+            return localStorage.getItem('nexypher_profile_photo') || null;
+        }
+
         function updateAuthUI() {
             const area = document.getElementById('authArea');
-            const profileBtn = document.getElementById('headerProfileBtn');
             if (currentUser) {
                 const initials = (currentUser.username || currentUser.email).slice(0, 2).toUpperCase();
+                const displayName = currentUser.username || currentUser.email.split('@')[0];
+                const photo = getProfilePhoto();
+                const avatarContent = photo
+                    ? `<img src="${photo}" class="user-menu-avatar-img" alt="">`
+                    : `<div class="user-menu-avatar">${initials}</div>`;
                 area.innerHTML = `
-            <div class="user-badge" onclick="navigate('profile')">
-                <div class="user-avatar">${initials}</div>
-                <span>${currentUser.username || currentUser.email}</span>
-            </div>
-            <button class="btn btn-sm btn-outline" onclick="logout()">Logout</button>
-        `;
-                if (profileBtn) profileBtn.style.display = 'inline-block';
+            <div class="user-menu" id="userMenu">
+                <div class="user-menu-trigger" onclick="toggleUserMenu(event)">
+                    ${avatarContent}
+                    <span class="user-menu-name">${displayName}</span>
+                    <svg class="user-menu-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6l4 4 4-4"/></svg>
+                </div>
+                <div class="user-menu-dropdown">
+                    <button class="user-menu-item" onclick="navigate('profile'); closeUserMenu()">
+                        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3 2.7-5 6-5s6 2 6 5"/></svg>
+                        Profile
+                    </button>
+                    <button class="user-menu-item" onclick="openPnlHeatmap(); closeUserMenu()">
+                        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="4" height="4" rx="0.5"/><rect x="6" y="1" width="4" height="4" rx="0.5"/><rect x="11" y="1" width="4" height="4" rx="0.5"/><rect x="1" y="6" width="4" height="4" rx="0.5"/><rect x="6" y="6" width="4" height="4" rx="0.5"/><rect x="11" y="6" width="4" height="4" rx="0.5"/><rect x="1" y="11" width="4" height="4" rx="0.5"/><rect x="6" y="11" width="4" height="4" rx="0.5"/><rect x="11" y="11" width="4" height="4" rx="0.5"/></svg>
+                        P&amp;L Heatmap
+                    </button>
+                    <button class="user-menu-item" onclick="navigate('settings'); closeUserMenu()">
+                        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M2.9 2.9l1.4 1.4M11.7 11.7l1.4 1.4M13.1 2.9l-1.4 1.4M4.3 11.7l-1.4 1.4"/></svg>
+                        Settings
+                    </button>
+                    <div class="user-menu-divider"></div>
+                    <button class="user-menu-item danger" onclick="logout(); closeUserMenu()">
+                        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 2H3a1 1 0 00-1 1v10a1 1 0 001 1h3M11 11l3-3-3-3M14 8H6"/></svg>
+                        Log out
+                    </button>
+                </div>
+            </div>`;
             } else {
                 area.innerHTML = '<button class="btn btn-primary" onclick="showAuthModal(\'login\')">Login</button>';
-                if (profileBtn) profileBtn.style.display = 'none';
             }
         }
+
+        function toggleUserMenu(e) {
+            e.stopPropagation();
+            document.getElementById('userMenu').classList.toggle('open');
+        }
+        function closeUserMenu() {
+            const m = document.getElementById('userMenu');
+            if (m) m.classList.remove('open');
+        }
+        document.addEventListener('click', function(e) {
+            const m = document.getElementById('userMenu');
+            if (m && !m.contains(e.target)) m.classList.remove('open');
+        });
 
         async function checkAuth() {
             if (!authToken) return;
@@ -7461,33 +7901,109 @@
         }
 
         // ── Profile ───────────────────────────────────────────────────
+        function handleProfilePhoto(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            if (file.size > 2 * 1024 * 1024) { showToast('Image must be under 2MB', 'error'); return; }
+            const reader = new FileReader();
+            reader.onload = function(ev) {
+                const dataUrl = ev.target.result;
+                localStorage.setItem('nexypher_profile_photo', dataUrl);
+                applyProfilePhoto(dataUrl);
+                updateAuthUI(); // sync navbar avatar
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function applyProfilePhoto(dataUrl) {
+            const img = document.getElementById('profilePhotoImg');
+            const initials = document.getElementById('profileAvatarLarge');
+            if (dataUrl) {
+                img.src = dataUrl;
+                img.style.display = 'block';
+                if (initials) initials.style.display = 'none';
+            } else {
+                img.style.display = 'none';
+                if (initials) initials.style.display = 'flex';
+            }
+        }
+
+        function toggleProfileEdit() {
+            const form = document.getElementById('profileEditForm');
+            const nameEl = document.getElementById('profileTitle');
+            const editBtn = document.getElementById('profileEditBtn');
+            if (form.style.display === 'none') {
+                form.style.display = 'flex';
+                editBtn.style.display = 'none';
+                document.getElementById('profileEditName').value = nameEl.textContent;
+                document.getElementById('profileEditName').focus();
+            } else {
+                form.style.display = 'none';
+                editBtn.style.display = '';
+            }
+        }
+
+        async function saveProfileEdit() {
+            const newName = document.getElementById('profileEditName').value.trim();
+            if (!newName) { showToast('Name cannot be empty', 'error'); return; }
+            document.getElementById('profileTitle').textContent = newName;
+            localStorage.setItem('nexypher_display_name', newName);
+            toggleProfileEdit();
+            updateAuthUI();
+            showToast('Profile updated', 'success');
+        }
+
         async function loadProfile() {
             if (!currentUser) return;
-            document.getElementById('profileTitle').textContent = currentUser.username + "'s Profile";
+            const savedName = localStorage.getItem('nexypher_display_name');
+            const uname = savedName || currentUser.username || currentUser.email.split('@')[0];
+            document.getElementById('profileTitle').textContent = uname;
             document.getElementById('profileEmail').textContent = currentUser.email;
 
+            // Member since
+            const msEl = document.getElementById('profileMemberSince');
+            if (msEl) {
+                const created = currentUser.created_at ? new Date(currentUser.created_at) : new Date();
+                const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                msEl.textContent = 'Member since ' + months[created.getMonth()] + ' ' + created.getFullYear();
+            }
+
+            // Profile avatar / photo
+            const initials = (currentUser.username || currentUser.email).slice(0, 2).toUpperCase();
+            const avatarEl = document.getElementById('profileAvatarLarge');
+            if (avatarEl) avatarEl.textContent = initials;
+            const photo = getProfilePhoto();
+            applyProfilePhoto(photo);
+
             // Email verification banner
-            let verifyBanner = document.getElementById('verifyBanner');
-            if (!verifyBanner) {
-                verifyBanner = document.createElement('div');
-                verifyBanner.id = 'verifyBanner';
-                document.getElementById('profileEmail').after(verifyBanner);
+            const bannerSlot = document.getElementById('verifyBannerSlot');
+            if (bannerSlot) {
+                if (currentUser.email_verified) {
+                    bannerSlot.innerHTML = '<div style="margin-top:12px;font-size:13px;color:#00d4aa">Email verified</div>';
+                } else {
+                    bannerSlot.innerHTML = '<div class="profile-verify-banner">'
+                        + 'Email not verified &mdash; <a href="#" onclick="resendVerification()" style="color:#6c63ff;text-decoration:underline">Resend verification email</a></div>';
+                }
             }
-            if (currentUser.email_verified) {
-                verifyBanner.innerHTML = '<span style="color:#00d4aa;font-size:13px;">\u2705 Email verified</span>';
-            } else {
-                verifyBanner.innerHTML = '<div style="background:#2a1a00;border:1px solid #ff9900;border-radius:8px;padding:10px 16px;margin-top:8px;font-size:13px;color:#ffcc00;">'
-                    + '\u26A0\uFE0F Email not verified &mdash; <a href="#" style="color:#7c5cff;" onclick="resendVerification()">Resend verification email</a></div>';
-            }
+
+            // Quick stat counts
+            const banks = currentUser.bank_accounts || [];
+            const wallets = currentUser.wallets || [];
+            const wlist = currentUser.watchlist || [];
+            const bankCountEl = document.getElementById('profileBankCount');
+            const walletCountEl = document.getElementById('profileWalletCount');
+            const watchCountEl = document.getElementById('profileWatchCount');
+            if (bankCountEl) bankCountEl.textContent = banks.length;
+            if (walletCountEl) walletCountEl.textContent = wallets.length;
+            if (watchCountEl) watchCountEl.textContent = wlist.length;
 
             // Wallet Balance
             document.getElementById('walletBalanceDisplay').textContent = formatUSD(currentUser.wallet_balance || 0);
 
             // Bank Accounts
-            const banks = currentUser.bank_accounts || [];
             const bl = document.getElementById('bankList');
             if (banks.length === 0) {
-                bl.innerHTML = '<div class="empty-state" style="padding:20px"><p>No bank accounts linked yet</p><p style="font-size:12px;margin-top:4px">Link a bank account to add money to your wallet</p></div>';
+                bl.innerHTML = '<div class="profile-empty-state">No bank accounts linked yet</div>';
             } else {
                 bl.innerHTML = banks.map(b => `
             <div class="bank-card">
@@ -7496,7 +8012,7 @@
                     <div>
                         <div class="bank-name">${b.bank_name}</div>
                         <div class="bank-detail">${b.account_holder} &bull; ****${b.account_last4} &bull; ${b.ifsc_code}</div>
-                        <span class="bank-verified">${b.verified ? '\u2705 Verified' : '\u23f3 Pending'}</span>
+                        <span class="bank-verified">${b.verified ? 'Verified' : 'Pending'}</span>
                     </div>
                 </div>
                 <button class="btn btn-sm btn-danger" onclick="removeBank(${b.id})">Remove</button>
@@ -7505,10 +8021,12 @@
             }
 
             // Wallets
-            const wallets = currentUser.wallets || [];
             const wl = document.getElementById('walletList');
-            if (wallets.length === 0) {
-                wl.innerHTML = '<div class="empty-state"><p>No wallets connected yet</p></div>';
+            if (window._nxWalletEngine) {
+                window._nxWalletEngine.renderWallets(wallets);
+                if (wallets.length > 0) window._nxWalletEngine.startRefresh();
+            } else if (wallets.length === 0) {
+                wl.innerHTML = '<div class="profile-empty-state">No wallets connected yet</div>';
             } else {
                 wl.innerHTML = wallets.map(w => `
             <div class="wallet-card">
@@ -7527,7 +8045,7 @@
                 const portfolio = await api('/api/portfolio');
                 const pb = document.getElementById('portfolioBody');
                 if (portfolio.length === 0) {
-                    pb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px">No positions yet</td></tr>';
+                    pb.innerHTML = '<tr><td colspan="5" class="profile-empty-state" style="border:none">No positions added yet — click + Add Position to start</td></tr>';
                 } else {
                     pb.innerHTML = portfolio.map(p => `
                 <tr>
@@ -7545,12 +8063,14 @@
 
             // Watchlist
             const wlArea = document.getElementById('watchlistArea');
-            const wlist = currentUser.watchlist || [];
             if (wlist.length === 0) {
-                wlArea.innerHTML = '<div class="empty-state"><p>Watchlist empty — click ★ on any token to add</p></div>';
+                wlArea.innerHTML = '<div class="profile-empty-state">Watchlist empty — click the star on any token to add</div>';
             } else {
                 wlArea.innerHTML = wlist.map(c => `
-            <span class="filter-pill" style="cursor:pointer" onclick="openToken('${c}','${c}')">${c}</span>
+            <span class="profile-chip" onclick="openToken('${c}','${c}')">
+                ${c}
+                <span class="profile-chip-remove" onclick="event.stopPropagation();removeFromWatchlist('${c}')">&times;</span>
+            </span>
         `).join(' ');
             }
         }
@@ -9029,11 +9549,11 @@
                         if (cycle.status === 'no_funds') {
                             showToast('⚠️ Wallet is empty — deposit funds to start auto-trading', 'warning');
                         } else if (cycle.actions?.length) {
-                            showToast(`🤖 Auto Trader active! ${cycle.actions.length} trade(s) executed`, 'success');
+                            showToast(`Auto Trader active! ${cycle.actions.length} trade(s) executed`, 'success');
                         } else if (cycle.new_trades === 0 && cycle.positions_updated >= 0) {
-                            showToast('🤖 Auto Trader active! Monitoring markets for opportunities...', 'success');
+                            showToast('Auto Trader active! Monitoring markets for opportunities...', 'success');
                         } else {
-                            showToast('🤖 Auto Trader is now running!', 'success');
+                            showToast('Auto Trader is now running!', 'success');
                         }
                     }
 
@@ -9307,12 +9827,13 @@
                 const trades = await api('/api/trader/history?limit=25');
                 const el = document.getElementById('traderHistoryArea');
                 if (!trades.length) { el.innerHTML = '<div class="empty-state"><p>No trades yet</p></div>'; return; }
-                el.innerHTML = `<table class="feed-table"><thead><tr><th>Time</th><th>Action</th><th>Coin</th><th>Price</th><th>Amount</th><th>Score</th><th>TX Hash</th></tr></thead><tbody>` +
+                el.innerHTML = `<table class="feed-table"><thead><tr><th></th><th>Time</th><th>Action</th><th>Coin</th><th>Price</th><th>Amount</th><th>Score</th><th>TX Hash</th></tr></thead><tbody>` +
                     trades.map(t => {
                         const actionCls = t.action === 'BUY' ? 'color:var(--green)' : 'color:var(--red)';
                         const hash = t.tx_hash || '';
                         const shortHash = hash ? hash.slice(0, 8) + '…' + hash.slice(-6) : 'N/A';
-                        return `<tr>
+                        return `<tr style="background:rgba(108,99,255,0.03)">
+                    <td><span class="badge-paper">PAPER</span></td>
                     <td style="font-size:12px">${new Date(t.created_at).toLocaleString()}</td>
                     <td style="${actionCls};font-weight:600">${t.action}</td>
                     <td>${t.symbol}</td>
@@ -9358,9 +9879,10 @@
                     const sideColor = side === 'SHORT' ? 'var(--red)' : 'var(--green)';
                     const sideIcon = side === 'SHORT' ? '▼' : '▲';
                     return `
-            <div class="position-card" style="border-left:3px solid ${sideColor}">
+            <div class="position-card" style="border-left:3px solid ${sideColor};background:rgba(108,99,255,0.03)">
                 <div class="position-header">
                     <div class="position-coin">
+                        <span class="badge-paper" style="margin-right:6px">PAPER</span>
                         <span style="display:inline-block;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;color:#fff;background:${sideColor};margin-right:4px">${sideIcon} ${side}</span>
                         ${p.symbol} <span style="color:var(--text-muted);font-weight:400;font-size:13px">${p.coin_name}</span>
                     </div>
@@ -9382,8 +9904,82 @@
         }
 
         // ══════════════════════════════════════════════════════════════
+        // CONTACT FORM
+        // ══════════════════════════════════════════════════════════════
+
+        function submitContactForm(e) {
+            if (e) e.preventDefault();
+            const name = document.getElementById('contactName').value.trim();
+            const email = document.getElementById('contactEmail').value.trim();
+            const subject = document.getElementById('contactSubject').value;
+            const message = document.getElementById('contactMessage').value.trim();
+
+            if (!name || !email || !message) {
+                showToast('Please fill in all required fields', 'error');
+                return;
+            }
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                showToast('Please enter a valid email', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('contactSubmitBtn');
+            const btnText = document.getElementById('contactBtnText');
+            const spinner = document.getElementById('contactBtnSpinner');
+            const statusEl = document.getElementById('contactFormStatus');
+
+            // Loading state
+            btn.disabled = true;
+            btnText.textContent = 'Sending...';
+            spinner.style.display = 'inline-block';
+            statusEl.style.display = 'none';
+
+            const subjectMap = { general: 'General Inquiry', bug: 'Bug Report', feature: 'Feature Request', trading: 'Trading Support', billing: 'Billing', partnership: 'Partnership' };
+
+            fetch(API + '/api/contact', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: name,
+                    email: email,
+                    subject: subjectMap[subject] || subject,
+                    message: message
+                })
+            }).then(function(res) {
+                if (!res.ok) throw new Error('Server error');
+                return res.json();
+            }).then(function() {
+                btn.disabled = false;
+                btnText.textContent = 'Send Message';
+                spinner.style.display = 'none';
+                statusEl.className = 'contact-status contact-status-success';
+                statusEl.innerHTML = '&#10003; Message sent successfully! We\'ll get back to you soon.';
+                statusEl.style.display = 'block';
+                document.getElementById('contactForm').reset();
+                setTimeout(function() { statusEl.style.display = 'none'; }, 5000);
+            }).catch(function(err) {
+                btn.disabled = false;
+                btnText.textContent = 'Send Message';
+                spinner.style.display = 'none';
+                statusEl.className = 'contact-status contact-status-error';
+                statusEl.innerHTML = '&#10007; Something went wrong. Please try again.';
+                statusEl.style.display = 'block';
+                console.error('Contact form error:', err);
+                setTimeout(function() { statusEl.style.display = 'none'; }, 5000);
+            });
+        }
+
+        // ══════════════════════════════════════════════════════════════
         // SETTINGS FUNCTIONS
         // ══════════════════════════════════════════════════════════════
+
+        function switchSettingsTab(tab, el) {
+            document.querySelectorAll('.settings-nav-item').forEach(n => n.classList.remove('active'));
+            document.querySelectorAll('.settings-panel').forEach(p => p.classList.remove('active'));
+            el.classList.add('active');
+            const panel = document.getElementById('settingsPanel-' + tab);
+            if (panel) panel.classList.add('active');
+        }
 
         async function loadSettings() {
             // Load local settings (theme, accent)
@@ -10151,6 +10747,878 @@
             <button class="bot-send" id="botSendBtn" onclick="sendBotMessage()">➤</button>
         </div>
     </div>
+
+    <!-- ═══ P&L HEATMAP MODAL ═══ -->
+    <div class="hm-overlay" id="hmOverlay" onclick="closePnlHeatmap(event)">
+        <div class="hm-modal" onclick="event.stopPropagation()">
+            <div class="hm-header">
+                <div>
+                    <div class="hm-title" id="hmTitle">Paper Trading P&amp;L Heatmap <span class="badge-paper">PAPER</span></div>
+                    <div class="hm-subtitle" id="hmSubtitle">Your simulated profit &amp; loss activity over the past year</div>
+                </div>
+                <button class="hm-close" onclick="closePnlHeatmap()">&times;</button>
+            </div>
+            <div class="hm-view-toggle" id="hmViewToggle">
+                <button class="hm-view-btn active" data-view="paper" onclick="window._hmSwitchView('paper')">Paper Trading</button>
+                <button class="hm-view-btn" data-view="real" onclick="window._hmSwitchView('real')">Real Wallet</button>
+            </div>
+            <div class="hm-stats" id="hmStats"></div>
+            <div class="hm-year-tabs" id="hmYearTabs"></div>
+            <div class="hm-grid-wrap" id="hmGridWrap"></div>
+            <div class="hm-legend" id="hmLegend">
+                <span class="hm-legend-label">Loss</span>
+                <span class="hm-legend-sq" style="background:rgba(255,71,87,0.15)"></span>
+                <span class="hm-legend-sq" style="background:rgba(255,71,87,0.35)"></span>
+                <span class="hm-legend-sq" style="background:rgba(255,71,87,0.55)"></span>
+                <span class="hm-legend-sq" style="background:rgba(255,71,87,0.75)"></span>
+                <span class="hm-legend-sq" style="background:#ff4757"></span>
+                <span class="hm-legend-gap"></span>
+                <span class="hm-legend-sq" style="background:rgba(0,211,149,0.15)"></span>
+                <span class="hm-legend-sq" style="background:rgba(0,211,149,0.35)"></span>
+                <span class="hm-legend-sq" style="background:rgba(0,211,149,0.55)"></span>
+                <span class="hm-legend-sq" style="background:rgba(0,211,149,0.75)"></span>
+                <span class="hm-legend-sq" style="background:#00d395"></span>
+                <span class="hm-legend-label">Profit</span>
+            </div>
+        </div>
+    </div>
+    <div class="hm-tooltip" id="hmTooltip" style="display:none"></div>
+
+    <script>
+    // ══════════════════════════════════════════════════════════════
+    // P&L HEATMAP — Pure JS + CSS Grid
+    // ══════════════════════════════════════════════════════════════
+    (function() {
+        let hmData = {};
+        let hmYear = new Date().getFullYear();
+        let pinnedCell = null;
+        const DAY_LABELS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+        const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        const MONTH_SHORT = ['J','F','M','A','M','J','J','A','S','O','N','D'];
+
+        function pnlColor(val) {
+            if (val === null || val === undefined) return 'rgba(255,255,255,0.05)';
+            const a = Math.abs(val);
+            if (val >= 0) {
+                if (a === 0) return 'rgba(255,255,255,0.05)';
+                if (a <= 100) return 'rgba(0,211,149,0.25)';
+                if (a <= 500) return 'rgba(0,211,149,0.5)';
+                if (a <= 1000) return 'rgba(0,211,149,0.75)';
+                return '#00d395';
+            } else {
+                if (a <= 100) return 'rgba(255,71,87,0.25)';
+                if (a <= 500) return 'rgba(255,71,87,0.5)';
+                if (a <= 1000) return 'rgba(255,71,87,0.75)';
+                return '#ff4757';
+            }
+        }
+        function pnlShadow(val) {
+            if (val === null || val === undefined) return '';
+            const a = Math.abs(val);
+            if (a > 1000) {
+                return val >= 0 ? '0 0 6px rgba(0,211,149,0.4)' : '0 0 6px rgba(255,71,87,0.4)';
+            }
+            return '';
+        }
+
+        function formatPnl(v) {
+            if (v === null || v === undefined) return '$0.00';
+            const sign = v >= 0 ? '+' : '-';
+            return sign + '$' + Math.abs(v).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+        }
+
+        function dateFmt(dateStr) {
+            const d = new Date(dateStr + 'T00:00:00');
+            const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+            const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            return days[d.getDay()] + ', ' + months[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
+        }
+
+        function getWeeksForYear(year) {
+            const jan1 = new Date(year, 0, 1);
+            const dec31 = new Date(year, 11, 31);
+            // Start from the Monday of the week containing Jan 1
+            let startDay = jan1.getDay(); // 0=Sun
+            let mondayOffset = startDay === 0 ? -6 : 1 - startDay;
+            const gridStart = new Date(year, 0, 1 + mondayOffset);
+            const cells = [];
+            const current = new Date(gridStart);
+            // Generate cells until we pass Dec 31
+            while (current <= dec31 || cells.length % 7 !== 0) {
+                const iso = current.toISOString().slice(0, 10);
+                const inYear = current.getFullYear() === year;
+                cells.push({ date: iso, inYear, dayOfWeek: current.getDay(), month: current.getMonth(), jsDate: new Date(current) });
+                current.setDate(current.getDate() + 1);
+                if (cells.length > 380) break; // safety
+            }
+            return cells;
+        }
+
+        function renderStats(data) {
+            let profitDays = 0, lossDays = 0, best = 0, worst = 0;
+            for (const d of data) {
+                if (d.pnl > 0) { profitDays++; if (d.pnl > best) best = d.pnl; }
+                if (d.pnl < 0) { lossDays++; if (d.pnl < worst) worst = d.pnl; }
+            }
+            document.getElementById('hmStats').innerHTML = `
+                <div class="hm-stat"><div class="hm-stat-label">Total Profit Days</div><div class="hm-stat-value" style="color:#00d395">${profitDays}</div></div>
+                <div class="hm-stat"><div class="hm-stat-label">Total Loss Days</div><div class="hm-stat-value" style="color:#ff4757">${lossDays}</div></div>
+                <div class="hm-stat"><div class="hm-stat-label">Best Day</div><div class="hm-stat-value" style="color:#00d395">${formatPnl(best)}</div></div>
+                <div class="hm-stat"><div class="hm-stat-label">Worst Day</div><div class="hm-stat-value" style="color:#ff4757">${formatPnl(worst)}</div></div>
+            `;
+        }
+
+        function renderYearTabs() {
+            const years = [2024, 2025, 2026];
+            document.getElementById('hmYearTabs').innerHTML = years.map(y =>
+                `<button class="hm-year-btn${y === hmYear ? ' active' : ''}" onclick="window._hmSelectYear(${y})">${y}</button>`
+            ).join('');
+        }
+
+        function renderGrid(data) {
+            const lookup = {};
+            for (const d of data) lookup[d.date] = d;
+            const cells = getWeeksForYear(hmYear);
+
+            if (!data.length) {
+                document.getElementById('hmGridWrap').innerHTML = '<div class="hm-empty">No trading data yet — start trading to see your P&amp;L heatmap</div>';
+                return;
+            }
+
+            // Re-order cells: Mon=0 ... Sun=6
+            // JS getDay: 0=Sun,1=Mon...6=Sat → we want Mon=0,Tue=1,...Sun=6
+            function weekRow(jsDay) { return jsDay === 0 ? 6 : jsDay - 1; }
+
+            // Compute month label positions
+            const numWeeks = Math.ceil(cells.length / 7);
+            const monthStarts = [];
+            let lastMonth = -1;
+            for (let i = 0; i < cells.length; i++) {
+                const c = cells[i];
+                if (c.inYear && c.month !== lastMonth) {
+                    const weekIdx = Math.floor(i / 7);
+                    monthStarts.push({ month: c.month, week: weekIdx });
+                    lastMonth = c.month;
+                }
+            }
+
+            const isMobile = window.innerWidth < 640;
+            const mLabels = isMobile ? MONTH_SHORT : MONTH_LABELS;
+
+            // Build month labels row
+            let monthRow = '<div class="hm-month-row" style="grid-template-columns: 28px repeat(' + numWeeks + ', 1fr)">';
+            monthRow += '<div></div>'; // spacer for day labels
+            let mIdx = 0;
+            for (let w = 0; w < numWeeks; w++) {
+                if (mIdx < monthStarts.length && monthStarts[mIdx].week === w) {
+                    monthRow += '<div class="hm-month-label">' + mLabels[monthStarts[mIdx].month] + '</div>';
+                    mIdx++;
+                } else {
+                    monthRow += '<div></div>';
+                }
+            }
+            monthRow += '</div>';
+
+            // Build grid: 7 rows × numWeeks cols, with day labels on left
+            let grid = '<div class="hm-grid" style="grid-template-columns: 28px repeat(' + numWeeks + ', 1fr)">';
+            for (let row = 0; row < 7; row++) {
+                // Day label: show Mon, Wed, Fri
+                const showLabel = (row === 0 || row === 2 || row === 4);
+                grid += '<div class="hm-day-label">' + (showLabel ? DAY_LABELS[row] : '') + '</div>';
+                for (let w = 0; w < numWeeks; w++) {
+                    const cellIdx = w * 7 + row;
+                    if (cellIdx < cells.length) {
+                        const c = cells[cellIdx];
+                        // Re-map: cells are ordered Sun-Sat, but we stored them sequentially from Monday
+                        // Actually we iterated day by day, so cells[0] is the start Monday
+                        // We need cells by (week, dayOfWeekMon-indexed)
+                        // Let me recalculate:
+                        const actualIdx = w * 7 + row; // row=0 is first day of that week chunk
+                        if (actualIdx < cells.length && cells[actualIdx].inYear) {
+                            const cell = cells[actualIdx];
+                            const d = lookup[cell.date];
+                            const val = d ? d.pnl : null;
+                            const bg = pnlColor(val);
+                            const shadow = pnlShadow(val);
+                            grid += `<div class="hm-cell" data-date="${cell.date}" data-pnl="${val !== null ? val : ''}" data-trades="${d ? d.trades : 0}" data-wr="${d ? d.win_rate : 0}" style="background:${bg};${shadow ? 'box-shadow:' + shadow : ''}" onmouseenter="window._hmShowTip(event, this)" onmouseleave="window._hmHideTip(event)" onclick="window._hmPinTip(event, this)"></div>`;
+                        } else {
+                            grid += '<div class="hm-cell hm-cell-outside"></div>';
+                        }
+                    } else {
+                        grid += '<div class="hm-cell hm-cell-outside"></div>';
+                    }
+                }
+            }
+            grid += '</div>';
+
+            document.getElementById('hmGridWrap').innerHTML = monthRow + grid;
+        }
+
+        // Tooltip
+        window._hmShowTip = function(e, el) {
+            if (pinnedCell) return;
+            showTip(e, el);
+        };
+        window._hmHideTip = function(e) {
+            if (pinnedCell) return;
+            document.getElementById('hmTooltip').style.display = 'none';
+        };
+        window._hmPinTip = function(e, el) {
+            e.stopPropagation();
+            if (pinnedCell === el) {
+                unpinTip();
+                return;
+            }
+            if (pinnedCell) pinnedCell.style.outline = '';
+            pinnedCell = el;
+            el.style.outline = '2px solid rgba(255,255,255,0.4)';
+            showTip(e, el, true);
+        };
+        function unpinTip() {
+            if (pinnedCell) pinnedCell.style.outline = '';
+            pinnedCell = null;
+            document.getElementById('hmTooltip').style.display = 'none';
+        }
+        function showTip(e, el, pinned) {
+            const date = el.dataset.date;
+            const pnl = el.dataset.pnl;
+            const trades = parseInt(el.dataset.trades) || 0;
+            const wr = parseInt(el.dataset.wr) || 0;
+            if (!date) return;
+            const hasPnl = pnl !== '' && pnl !== undefined;
+            const pnlVal = hasPnl ? parseFloat(pnl) : null;
+            const pnlColor = pnlVal !== null ? (pnlVal >= 0 ? '#00d395' : '#ff4757') : 'rgba(255,255,255,0.35)';
+            const tip = document.getElementById('hmTooltip');
+            tip.innerHTML = `
+                <div class="hm-tip-date">${dateFmt(date)}</div>
+                <div class="hm-tip-pnl" style="color:${pnlColor}">\u{1F4CB} Paper P&L: ${hasPnl ? formatPnl(pnlVal) : 'No data'}</div>
+                ${trades > 0 ? `<div class="hm-tip-meta">${trades} trade${trades !== 1 ? 's' : ''} (simulated)</div><div class="hm-tip-meta">Win rate: ${wr}%</div>` : ''}
+                <div style="font-size:10px;color:rgba(108,99,255,0.7);margin-top:4px">Simulated trades \u2014 not real money</div>
+                ${pinned ? '<button class="hm-tip-close" onclick="window._hmUnpin()">&times;</button>' : ''}
+            `;
+            // Position near the cell
+            const rect = el.getBoundingClientRect();
+            let left = rect.left + rect.width / 2;
+            let top = rect.top - 8;
+            tip.style.display = 'block';
+            const tw = tip.offsetWidth;
+            const th = tip.offsetHeight;
+            left = Math.max(8, Math.min(left - tw / 2, window.innerWidth - tw - 8));
+            top = top - th;
+            if (top < 8) top = rect.bottom + 8;
+            tip.style.left = left + 'px';
+            tip.style.top = top + 'px';
+        }
+        window._hmUnpin = function() { unpinTip(); };
+
+        // Year select
+        window._hmSelectYear = function(y) {
+            hmYear = y;
+            renderYearTabs();
+            loadHeatmapData();
+        };
+        window._hmGetYear = function() { return hmYear; };
+
+        async function loadHeatmapData() {
+            try {
+                const data = await api('/api/trader/heatmap?year=' + hmYear);
+                hmData = data || [];
+                renderStats(hmData);
+                renderGrid(hmData);
+            } catch(err) {
+                console.error('Heatmap load error:', err, err.message);
+                document.getElementById('hmGridWrap').innerHTML = '<div class="hm-empty">Failed to load data — check console for details</div>';
+                renderStats([]);
+            }
+        }
+
+        // Open / Close
+        window.openPnlHeatmap = function() {
+            unpinTip();
+            hmYear = new Date().getFullYear();
+            document.getElementById('hmOverlay').classList.add('open');
+            document.body.style.overflow = 'hidden';
+            renderYearTabs();
+            loadHeatmapData();
+        };
+        window.closePnlHeatmap = function(e) {
+            if (e && e.target !== e.currentTarget) return;
+            document.getElementById('hmOverlay').classList.remove('open');
+            document.body.style.overflow = '';
+            unpinTip();
+        };
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && document.getElementById('hmOverlay').classList.contains('open')) {
+                closePnlHeatmap();
+            }
+        });
+    })();
+    </script>
+
+    <!-- Confirmation Dialog -->
+    <div class="nx-confirm-overlay" id="nxConfirmOverlay">
+        <div class="nx-confirm-box">
+            <div class="nx-confirm-title" id="nxConfirmTitle">Remove Wallet?</div>
+            <div class="nx-confirm-msg" id="nxConfirmMsg">This won't affect your actual funds.</div>
+            <div class="nx-confirm-actions">
+                <button class="nx-confirm-cancel" onclick="nxConfirmClose()">Cancel</button>
+                <button class="nx-confirm-remove" id="nxConfirmAction" onclick="nxConfirmExec()">Remove</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════
+         WALLET ENGINE + PAPER/LIVE DIFFERENTIATION
+         ══════════════════════════════════════════════════════════════ -->
+    <script>
+    (function() {
+        'use strict';
+
+        // ── State ──
+        let connectedWallets = []; // from DB
+        let liveWalletState = {}; // { address: { balance, usdValue, network, chainId, tokens, txs, connected } }
+        let walletRefreshTimer = null;
+        let _nxConfirmCb = null;
+
+        const METAMASK_ICON = '<svg class="nx-wallet-provider-icon" viewBox="0 0 35 33" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M32.96 1l-13.14 9.72 2.45-5.73z" fill="#E2761B" stroke="#E2761B" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.66 1l13.02 9.82L13.35 4.99zM28.23 23.53l-3.5 5.36 7.49 2.06 2.15-7.3zM.64 23.65l2.13 7.3 7.49-2.06-3.5-5.36z" fill="#E4761B" stroke="#E4761B" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.93 14.51l-2.09 3.15 7.44.34-.26-8-5.09 4.51zM25.07 14.51l-5.17-4.58-.17 8.07 7.43-.34-2.09-3.15zM10.26 28.89l4.49-2.16-3.88-3.03zM20.25 26.73l4.49 2.16-.61-5.19z" fill="#E4761B" stroke="#E4761B" stroke-linecap="round" stroke-linejoin="round"/><path d="M24.74 28.89l-4.49-2.16.36 2.93-.04 1.23zM10.26 28.89l4.17 2 -.04-1.23.36-2.93z" fill="#D7C1B3" stroke="#D7C1B3" stroke-linecap="round" stroke-linejoin="round"/><path d="M14.52 21.86l-3.75-1.1 2.65-1.21zM20.48 21.86l1.1-2.31 2.65 1.21z" fill="#233447" stroke="#233447" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+        const NETWORK_MAP = {
+            '0x1':   { name: 'Ethereum Mainnet', cls: 'ethereum',  explorer: 'https://etherscan.io' },
+            '0x89':  { name: 'Polygon',          cls: 'polygon',   explorer: 'https://polygonscan.com' },
+            '0x38':  { name: 'BSC',              cls: 'bsc',       explorer: 'https://bscscan.com' },
+            '0xa4b1':{ name: 'Arbitrum',          cls: 'arbitrum',  explorer: 'https://arbiscan.io' },
+            '0x2105':{ name: 'Base',              cls: 'base',      explorer: 'https://basescan.org' },
+        };
+
+        function getNetwork(chainId) {
+            const hex = typeof chainId === 'number' ? '0x' + chainId.toString(16) : chainId;
+            if (NETWORK_MAP[hex]) return NETWORK_MAP[hex];
+            // Testnets
+            const testNets = ['0x5', '0xaa36a7', '0x13881', '0x61', '0x66eed', '0x14a33', '0x7a69'];
+            if (testNets.includes(hex)) return { name: 'Testnet', cls: 'testnet', explorer: 'https://etherscan.io' };
+            return { name: 'Unknown (' + hex + ')', cls: 'ethereum', explorer: 'https://etherscan.io' };
+        }
+
+        function truncAddr(addr) {
+            if (!addr) return '';
+            const isMobile = window.innerWidth < 640;
+            return addr.slice(0, 6) + '...' + addr.slice(isMobile ? -4 : -5);
+        }
+
+        // ── Confirmation dialog ──
+        window.nxConfirmClose = function() {
+            document.getElementById('nxConfirmOverlay').classList.remove('open');
+            _nxConfirmCb = null;
+        };
+        window.nxConfirmExec = function() {
+            if (_nxConfirmCb) _nxConfirmCb();
+            nxConfirmClose();
+        };
+        function showConfirm(title, msg, btnLabel, cb) {
+            document.getElementById('nxConfirmTitle').textContent = title;
+            document.getElementById('nxConfirmMsg').textContent = msg;
+            document.getElementById('nxConfirmAction').textContent = btnLabel;
+            _nxConfirmCb = cb;
+            document.getElementById('nxConfirmOverlay').classList.add('open');
+        }
+
+        // ── Copy address ──
+        window.nxCopyAddr = function(addr, btnEl) {
+            navigator.clipboard.writeText(addr).then(() => {
+                const tip = btnEl.querySelector('.copied-tip');
+                if (tip) { tip.classList.add('show'); setTimeout(() => tip.classList.remove('show'), 2000); }
+            });
+        };
+
+        // ── Wallet balance reading via ethers.js ──
+        async function readWalletBalance(address) {
+            if (typeof ethers === 'undefined' || !window.ethereum) return null;
+            try {
+                const provider = new ethers.BrowserProvider(window.ethereum);
+                const balance = await provider.getBalance(address);
+                const ethBal = parseFloat(ethers.formatEther(balance));
+                // Get ETH price from CoinGecko
+                let usdVal = 0;
+                try {
+                    const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd');
+                    const data = await res.json();
+                    usdVal = ethBal * (data.ethereum?.usd || 0);
+                } catch(e) { /* ignore price fetch failure */ }
+                return { ethBalance: ethBal, usdValue: usdVal };
+            } catch(e) {
+                console.warn('Wallet balance read error:', e);
+                return null;
+            }
+        }
+
+        async function detectNetwork() {
+            if (!window.ethereum) return null;
+            try {
+                const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+                return getNetwork(chainId);
+            } catch(e) { return null; }
+        }
+
+        // ── Fetch transactions from Etherscan ──
+        async function fetchWalletTransactions(address, network) {
+            const explorer = network?.explorer || 'https://etherscan.io';
+            // Use public Etherscan API (rate-limited)
+            const apiBase = explorer.replace('https://', 'https://api.');
+            try {
+                const res = await fetch(`${apiBase}/api?module=account&action=txlist&address=${address}&startblock=0&endblock=99999999&page=1&offset=10&sort=desc`);
+                const data = await res.json();
+                if (data.status === '1' && data.result) return data.result;
+                return [];
+            } catch(e) {
+                console.warn('Tx fetch error:', e);
+                return [];
+            }
+        }
+
+        // ── Fetch ERC-20 tokens (using public Etherscan tokentx) ──
+        async function fetchTokenBalances(address, network) {
+            const explorer = network?.explorer || 'https://etherscan.io';
+            const apiBase = explorer.replace('https://', 'https://api.');
+            try {
+                const res = await fetch(`${apiBase}/api?module=account&action=tokentx&address=${address}&startblock=0&endblock=99999999&page=1&offset=50&sort=desc`);
+                const data = await res.json();
+                if (data.status === '1' && data.result) {
+                    // Aggregate unique tokens
+                    const tokens = {};
+                    for (const tx of data.result) {
+                        const sym = tx.tokenSymbol || 'UNKNOWN';
+                        if (!tokens[sym]) tokens[sym] = { symbol: sym, name: tx.tokenName, decimals: parseInt(tx.tokenDecimal) || 18 };
+                    }
+                    return Object.values(tokens);
+                }
+                return [];
+            } catch(e) { return []; }
+        }
+
+        // ── Render wallet card ──
+        function renderEnhancedWalletCard(wallet, state) {
+            const addr = wallet.address;
+            const net = state?.network || getNetwork('0x1');
+            const connected = state?.connected !== false;
+            const isTestnet = net.cls === 'testnet';
+
+            if (!connected) {
+                return `
+                <div class="nx-wallet-card">
+                    <div class="nx-wallet-disconnected">
+                        <div style="font-size:14px;color:rgba(255,255,255,0.5);margin-bottom:6px">Wallet disconnected</div>
+                        <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:rgba(255,255,255,0.25)">${truncAddr(addr)}</div>
+                        <button class="nx-wallet-reconnect-btn" onclick="reconnectWallet('${addr}')">Reconnect</button>
+                    </div>
+                </div>`;
+            }
+
+            const ethBal = state?.ethBalance != null ? state.ethBalance.toFixed(4) : '—';
+            const usdVal = state?.usdValue != null ? '$' + state.usdValue.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) : '—';
+            const tokenCount = state?.tokens?.length || 0;
+
+            return `
+            <div class="nx-wallet-card">
+                ${isTestnet ? '<div class="nx-wallet-testnet-warn">\u26A0 You are on a testnet \u2014 balances are not real</div>' : ''}
+                <div class="nx-wallet-top">
+                    <div class="nx-wallet-provider">
+                        ${METAMASK_ICON}
+                        MetaMask
+                    </div>
+                    <div class="nx-wallet-status-row">
+                        <span class="nx-wallet-network-badge ${net.cls}">${net.name}</span>
+                        <span class="${connected ? 'nx-wallet-connected-dot' : 'nx-wallet-disconnected-dot'}"></span>
+                    </div>
+                </div>
+                <div class="nx-wallet-addr-row">
+                    <span class="nx-wallet-addr">${truncAddr(addr)}</span>
+                    <span class="badge-live">LIVE</span>
+                    <button class="nx-wallet-addr-btn" onclick="nxCopyAddr('${addr}', this)">Copy <span class="copied-tip">Copied!</span></button>
+                    <a class="nx-wallet-addr-btn" href="${net.explorer}/address/${addr}" target="_blank" rel="noopener" style="text-decoration:none">View</a>
+                </div>
+                <div class="nx-wallet-info-grid">
+                    <div class="nx-wallet-info-item">
+                        <span class="nx-wallet-info-label">ETH Balance</span>
+                        <span class="nx-wallet-info-value teal">${ethBal} ETH</span>
+                    </div>
+                    <div class="nx-wallet-info-item">
+                        <span class="nx-wallet-info-label" style="color:rgba(0,211,149,0.5)">REAL BALANCE</span>
+                        <span class="nx-wallet-info-value">\u2248 ${usdVal}</span>
+                    </div>
+                    <div class="nx-wallet-info-item">
+                        <span class="nx-wallet-info-label">Tokens</span>
+                        <span class="nx-wallet-info-value">${tokenCount} asset${tokenCount !== 1 ? 's' : ''}</span>
+                    </div>
+                </div>
+                <div class="nx-wallet-actions">
+                    <button class="nx-wallet-sync-btn" onclick="syncPortfolioFromWallet()">Sync Portfolio</button>
+                    <button class="nx-wallet-remove-btn" onclick="confirmRemoveWallet('${addr}','${wallet.chain}')">Remove</button>
+                </div>
+            </div>`;
+        }
+
+        // ── Render transaction history ──
+        function renderTransactions(txs, address, network) {
+            if (!txs || !txs.length) return '<div class="nx-tx-loading">No transactions found</div>';
+            const explorer = network?.explorer || 'https://etherscan.io';
+            let html = '';
+            for (const tx of txs.slice(0, 10)) {
+                const isIn = tx.to && tx.to.toLowerCase() === address.toLowerCase();
+                const icon = isIn ? '\u2193 IN' : '\u2191 OUT';
+                const iconCls = isIn ? 'tx-in' : 'tx-out';
+                const amtCls = isIn ? 'tx-in' : 'tx-out';
+                const ethAmt = tx.value ? (parseFloat(tx.value) / 1e18).toFixed(4) : '0';
+                const sign = isIn ? '+' : '-';
+                const date = tx.timeStamp ? new Date(parseInt(tx.timeStamp) * 1000).toLocaleDateString() : '';
+                const success = tx.isError === '0' || tx.txreceipt_status === '1';
+                const hash = tx.hash || '';
+                const shortHash = hash ? hash.slice(0, 10) + '...' + hash.slice(-6) : '';
+                html += `
+                <div class="nx-tx-row">
+                    <div class="nx-tx-icon ${iconCls}">${icon}</div>
+                    <div class="nx-tx-details">
+                        <a class="nx-tx-hash" href="${explorer}/tx/${hash}" target="_blank" rel="noopener">${shortHash}</a>
+                        <div class="nx-tx-date">${date}</div>
+                    </div>
+                    <div class="nx-tx-amount ${amtCls}">${sign}${ethAmt} ETH</div>
+                    <span class="nx-tx-status ${success ? 'success' : 'failed'}">${success ? '\u2713 Success' : '\u2717 Failed'}</span>
+                </div>`;
+            }
+            html += `<a class="nx-tx-view-all" href="${explorer}/address/${address}" target="_blank" rel="noopener">View all on Etherscan \u2192</a>`;
+            return html;
+        }
+
+        // ── Update wallet list rendering ──
+        window._nxRenderWallets = function(wallets) {
+            connectedWallets = wallets || [];
+            const wl = document.getElementById('walletList');
+            const txSection = document.getElementById('walletTxSection');
+
+            if (connectedWallets.length === 0) {
+                wl.innerHTML = '<div class="profile-empty-state">No wallets connected yet</div>';
+                if (txSection) txSection.innerHTML = '';
+                return;
+            }
+
+            let cardsHtml = '';
+            for (const w of connectedWallets) {
+                const state = liveWalletState[w.address.toLowerCase()] || {};
+                cardsHtml += renderEnhancedWalletCard(w, state);
+            }
+            wl.innerHTML = cardsHtml;
+
+            // Show sync button if wallets exist
+            const syncBtn = document.getElementById('syncWalletBtn');
+            if (syncBtn) syncBtn.style.display = connectedWallets.length > 0 ? 'inline-block' : 'none';
+
+            // Render transactions for first wallet
+            if (txSection && connectedWallets.length > 0) {
+                const firstAddr = connectedWallets[0].address.toLowerCase();
+                const state = liveWalletState[firstAddr] || {};
+                if (state.txs && state.txs.length) {
+                    txSection.innerHTML = `
+                    <div class="nx-tx-section">
+                        <div class="nx-tx-header">
+                            <span class="nx-tx-title">Wallet Transactions <span class="badge-live">LIVE</span></span>
+                        </div>
+                        ${renderTransactions(state.txs, connectedWallets[0].address, state.network)}
+                    </div>`;
+                } else {
+                    txSection.innerHTML = '';
+                }
+            }
+        };
+
+        // ── Refresh live wallet data ──
+        async function refreshLiveWalletData() {
+            if (!connectedWallets.length || typeof ethers === 'undefined') return;
+            const network = await detectNetwork();
+
+            for (const w of connectedWallets) {
+                const addr = w.address.toLowerCase();
+                const balData = await readWalletBalance(w.address);
+                const tokens = await fetchTokenBalances(w.address, network);
+                const txs = await fetchWalletTransactions(w.address, network);
+
+                liveWalletState[addr] = {
+                    ...(liveWalletState[addr] || {}),
+                    ethBalance: balData?.ethBalance ?? null,
+                    usdValue: balData?.usdValue ?? null,
+                    network: network,
+                    tokens: tokens,
+                    txs: txs,
+                    connected: true,
+                    lastRefresh: Date.now()
+                };
+            }
+            // Re-render
+            window._nxRenderWallets(connectedWallets);
+        }
+
+        // ── Start auto-refresh every 30s ──
+        function startWalletRefresh() {
+            if (walletRefreshTimer) clearInterval(walletRefreshTimer);
+            refreshLiveWalletData();
+            walletRefreshTimer = setInterval(refreshLiveWalletData, 30000);
+        }
+
+        // ── Listen for MetaMask events ──
+        if (window.ethereum) {
+            window.ethereum.on('accountsChanged', function(accounts) {
+                if (!accounts.length) {
+                    // Wallet disconnected
+                    for (const key of Object.keys(liveWalletState)) {
+                        liveWalletState[key].connected = false;
+                    }
+                    window._nxRenderWallets(connectedWallets);
+                } else {
+                    refreshLiveWalletData();
+                }
+            });
+            window.ethereum.on('chainChanged', function() {
+                refreshLiveWalletData();
+            });
+        }
+
+        // ── Reconnect wallet ──
+        window.reconnectWallet = async function(addr) {
+            if (!window.ethereum) { showToast('MetaMask not detected', 'error'); return; }
+            try {
+                await window.ethereum.request({ method: 'eth_requestAccounts' });
+                const lk = addr.toLowerCase();
+                if (liveWalletState[lk]) liveWalletState[lk].connected = true;
+                refreshLiveWalletData();
+                showToast('Wallet reconnected', 'success');
+            } catch(e) {
+                showToast('Connection rejected', 'error');
+            }
+        };
+
+        // ── Confirm remove wallet ──
+        window.confirmRemoveWallet = function(addr, chain) {
+            showConfirm(
+                'Remove this wallet?',
+                "This won\u2019t affect your actual funds. Your wallet and its contents remain safe.",
+                'Remove',
+                function() { removeWallet(addr, chain); }
+            );
+        };
+
+        // ── Sync portfolio from wallet ──
+        window.syncPortfolioFromWallet = async function() {
+            if (!connectedWallets.length) { showToast('Connect a wallet first', 'error'); return; }
+            const statusEl = document.getElementById('portfolioSyncStatus');
+            if (statusEl) { statusEl.style.display = 'block'; statusEl.textContent = 'Syncing from wallet...'; }
+
+            const addr = connectedWallets[0].address;
+            const lk = addr.toLowerCase();
+            const state = liveWalletState[lk] || {};
+
+            // Refresh data if stale
+            if (!state.lastRefresh || Date.now() - state.lastRefresh > 60000) {
+                await refreshLiveWalletData();
+            }
+
+            const tokens = state.tokens || [];
+            if (!tokens.length && !state.ethBalance) {
+                if (statusEl) statusEl.textContent = 'No tokens found in wallet';
+                return;
+            }
+
+            // Show synced info
+            const relTime = state.lastRefresh ? getRelativeTime(state.lastRefresh) : 'just now';
+            if (statusEl) { statusEl.style.display = 'block'; statusEl.textContent = 'Last synced: ' + relTime; }
+            showToast('Portfolio synced from wallet — ' + (tokens.length || 0) + ' token(s) found', 'success');
+        };
+
+        function getRelativeTime(ts) {
+            const diff = Math.floor((Date.now() - ts) / 1000);
+            if (diff < 60) return 'just now';
+            if (diff < 3600) return Math.floor(diff / 60) + ' min' + (Math.floor(diff/60) > 1 ? 's' : '') + ' ago';
+            return Math.floor(diff / 3600) + ' hour' + (Math.floor(diff/3600) > 1 ? 's' : '') + ' ago';
+        }
+
+        // ── Trade history view switching ──
+        window.switchHistoryView = function(view) {
+            const tabs = document.querySelectorAll('#tradeHistoryMainTabs .nx-history-tab');
+            tabs.forEach(t => t.classList.remove('active'));
+            if (view === 'paper') {
+                tabs[0].classList.add('active');
+                document.getElementById('tradeHistoryPaperView').style.display = 'block';
+                document.getElementById('tradeHistoryWalletView').style.display = 'none';
+            } else {
+                tabs[1].classList.add('active');
+                document.getElementById('tradeHistoryPaperView').style.display = 'none';
+                document.getElementById('tradeHistoryWalletView').style.display = 'block';
+                // Load wallet txs
+                loadWalletHistoryForTrader();
+            }
+        };
+
+        async function loadWalletHistoryForTrader() {
+            const el = document.getElementById('walletHistoryArea');
+            if (!connectedWallets.length) {
+                el.innerHTML = '<div class="empty-state"><p>Connect a wallet to see on-chain transactions</p></div>';
+                return;
+            }
+            el.innerHTML = '<div class="nx-tx-loading">Loading wallet transactions...</div>';
+            const addr = connectedWallets[0].address;
+            const lk = addr.toLowerCase();
+            const state = liveWalletState[lk] || {};
+            if (!state.txs) {
+                const network = await detectNetwork();
+                state.txs = await fetchWalletTransactions(addr, network);
+                state.network = network;
+                liveWalletState[lk] = state;
+            }
+            el.innerHTML = renderTransactions(state.txs, addr, state.network);
+        }
+
+        // ── Navbar paper mode indicator ──
+        window._nxUpdatePaperNav = function(page) {
+            const el = document.getElementById('nxPaperNav');
+            if (el) {
+                el.classList.toggle('visible', page === 'trader');
+            }
+        };
+
+        // ── Onboarding banner ──
+        window.dismissOnboarding = function() {
+            localStorage.setItem('paper_mode_banner_dismissed', 'true');
+            const el = document.getElementById('nxOnboardingBanner');
+            if (el) el.style.display = 'none';
+        };
+        window._nxShowOnboarding = function() {
+            if (localStorage.getItem('paper_mode_banner_dismissed') === 'true') return;
+            const el = document.getElementById('nxOnboardingBanner');
+            if (!el) return;
+            // Add wallet info if available
+            if (connectedWallets.length) {
+                const wSpan = document.getElementById('nxOnboardingWallet');
+                if (wSpan) wSpan.textContent = 'Your connected wallet (' + truncAddr(connectedWallets[0].address) + ') is completely separate and safe.';
+            }
+            el.style.display = 'flex';
+        };
+
+        // ── Hook into page navigation ──
+        const origNavigate = window.navigate;
+        if (typeof origNavigate === 'function') {
+            window.navigate = function(page) {
+                origNavigate(page);
+                window._nxUpdatePaperNav(page);
+                if (page === 'trader') window._nxShowOnboarding();
+            };
+        }
+
+        // ── Heatmap view switching ──
+        let hmCurrentView = 'paper';
+        window._hmSwitchView = function(view) {
+            hmCurrentView = view;
+            const btns = document.querySelectorAll('#hmViewToggle .hm-view-btn');
+            btns.forEach(b => b.classList.toggle('active', b.dataset.view === view));
+            const titleEl = document.getElementById('hmTitle');
+            const subEl = document.getElementById('hmSubtitle');
+            const legendEl = document.getElementById('hmLegend');
+
+            if (view === 'paper') {
+                titleEl.innerHTML = 'Paper Trading P&L Heatmap <span class="badge-paper">PAPER</span>';
+                subEl.textContent = 'Your simulated profit & loss activity over the past year';
+                legendEl.innerHTML = `
+                    <span class="hm-legend-label">Loss</span>
+                    <span class="hm-legend-sq" style="background:rgba(255,71,87,0.15)"></span>
+                    <span class="hm-legend-sq" style="background:rgba(255,71,87,0.35)"></span>
+                    <span class="hm-legend-sq" style="background:rgba(255,71,87,0.55)"></span>
+                    <span class="hm-legend-sq" style="background:rgba(255,71,87,0.75)"></span>
+                    <span class="hm-legend-sq" style="background:#ff4757"></span>
+                    <span class="hm-legend-gap"></span>
+                    <span class="hm-legend-sq" style="background:rgba(0,211,149,0.15)"></span>
+                    <span class="hm-legend-sq" style="background:rgba(0,211,149,0.35)"></span>
+                    <span class="hm-legend-sq" style="background:rgba(0,211,149,0.55)"></span>
+                    <span class="hm-legend-sq" style="background:rgba(0,211,149,0.75)"></span>
+                    <span class="hm-legend-sq" style="background:#00d395"></span>
+                    <span class="hm-legend-label">Profit</span>`;
+                window._hmSelectYear(window._hmGetYear ? window._hmGetYear() : new Date().getFullYear());
+            } else {
+                titleEl.innerHTML = 'Real Wallet Transaction Heatmap <span class="badge-live">LIVE</span>';
+                subEl.textContent = 'On-chain transaction activity from your connected wallet';
+                legendEl.innerHTML = `
+                    <span class="hm-legend-label">Outgoing</span>
+                    <span class="hm-legend-sq" style="background:rgba(255,152,0,0.15)"></span>
+                    <span class="hm-legend-sq" style="background:rgba(255,152,0,0.35)"></span>
+                    <span class="hm-legend-sq" style="background:rgba(255,152,0,0.55)"></span>
+                    <span class="hm-legend-sq" style="background:rgba(255,152,0,0.75)"></span>
+                    <span class="hm-legend-sq" style="background:#ff9800"></span>
+                    <span class="hm-legend-gap"></span>
+                    <span class="hm-legend-sq" style="background:rgba(0,188,212,0.15)"></span>
+                    <span class="hm-legend-sq" style="background:rgba(0,188,212,0.35)"></span>
+                    <span class="hm-legend-sq" style="background:rgba(0,188,212,0.55)"></span>
+                    <span class="hm-legend-sq" style="background:rgba(0,188,212,0.75)"></span>
+                    <span class="hm-legend-sq" style="background:#00bcd4"></span>
+                    <span class="hm-legend-label">Incoming</span>`;
+                loadRealWalletHeatmap();
+            }
+        };
+
+        async function loadRealWalletHeatmap() {
+            const statsEl = document.getElementById('hmStats');
+            const gridEl = document.getElementById('hmGridWrap');
+            if (!connectedWallets.length) {
+                statsEl.innerHTML = '';
+                gridEl.innerHTML = '<div class="hm-empty">Connect a wallet to see real transaction heatmap</div>';
+                return;
+            }
+            gridEl.innerHTML = '<div class="hm-empty">Loading on-chain data...</div>';
+            const addr = connectedWallets[0].address;
+            const lk = addr.toLowerCase();
+            const state = liveWalletState[lk] || {};
+            if (!state.txs) {
+                const network = await detectNetwork();
+                state.txs = await fetchWalletTransactions(addr, network);
+                state.network = network;
+                liveWalletState[lk] = state;
+            }
+            if (!state.txs || !state.txs.length) {
+                statsEl.innerHTML = '';
+                gridEl.innerHTML = '<div class="hm-empty">No on-chain transactions found</div>';
+                return;
+            }
+            // Aggregate by date
+            const daily = {};
+            for (const tx of state.txs) {
+                if (!tx.timeStamp) continue;
+                const d = new Date(parseInt(tx.timeStamp) * 1000);
+                const key = d.toISOString().slice(0, 10);
+                if (!daily[key]) daily[key] = { incoming: 0, outgoing: 0, count: 0 };
+                const ethVal = parseFloat(tx.value || '0') / 1e18;
+                const isIn = tx.to && tx.to.toLowerCase() === addr;
+                if (isIn) daily[key].incoming += ethVal;
+                else daily[key].outgoing += ethVal;
+                daily[key].count++;
+            }
+            // Show stats
+            let inDays = 0, outDays = 0, totalIn = 0, totalOut = 0;
+            for (const [, v] of Object.entries(daily)) {
+                if (v.incoming > 0) { inDays++; totalIn += v.incoming; }
+                if (v.outgoing > 0) { outDays++; totalOut += v.outgoing; }
+            }
+            statsEl.innerHTML = `
+                <div class="hm-stat"><div class="hm-stat-label">Incoming Days</div><div class="hm-stat-value" style="color:#00bcd4">${inDays}</div></div>
+                <div class="hm-stat"><div class="hm-stat-label">Outgoing Days</div><div class="hm-stat-value" style="color:#ff9800">${outDays}</div></div>
+                <div class="hm-stat"><div class="hm-stat-label">Total Received</div><div class="hm-stat-value" style="color:#00bcd4">${totalIn.toFixed(3)} ETH</div></div>
+                <div class="hm-stat"><div class="hm-stat-label">Total Sent</div><div class="hm-stat-value" style="color:#ff9800">${totalOut.toFixed(3)} ETH</div></div>`;
+            gridEl.innerHTML = '<div class="hm-empty" style="color:rgba(0,188,212,0.5)">Real wallet heatmap grid \u2014 ' + Object.keys(daily).length + ' day(s) with activity</div>';
+        }
+
+        // ── Expose for profile loading ──
+        window._nxWalletEngine = {
+            startRefresh: startWalletRefresh,
+            renderWallets: function(w) { window._nxRenderWallets(w); },
+            getConnected: function() { return connectedWallets; },
+            getLiveState: function() { return liveWalletState; }
+        };
+
+    })();
+    </script>
 
 </body>
 

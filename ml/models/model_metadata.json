@@ -1,7 +1,11 @@
 {
-  "version": "20260222_134059",
+  "version": "20260226_021448",
   "timeframe": "1d",
-  "trained_at": "2026-02-22T13:41:00.176322",
+  "trained_at": "2026-02-26T02:14:48.810573",
+  "training_mode": "feedback_retrain",
+  "feedback_samples": 0,
+  "reinforced_samples": 0,
+  "penalized_samples": 0,
   "feature_columns": [
     "rsi_7",
     "rsi_14",
@@ -59,15 +63,10 @@
     "tree_method": "hist"
   },
   "model_24h": {
-    "path": "D:\\NexYpher\\ml\\models\\model_24h_1d_20260222_134059.pkl",
-    "cv_mean": 0.5907,
-    "cv_scores": [
-      0.6267,
-      0.5675,
-      0.5796,
-      0.6049,
-      0.575
-    ],
+    "path": "D:\\NexYpher\\ml\\models\\model_24h_1d_20260226_021448.pkl",
+    "cv_mean": 0.951,
+    "previous_cv_mean": 0.951,
+    "improvement": 0.0,
     "passes_threshold": true,
     "top_features": [
       [
@@ -113,15 +112,10 @@
     ]
   },
   "model_7d": {
-    "path": "D:\\NexYpher\\ml\\models\\model_7d_1d_20260222_134059.pkl",
-    "cv_mean": 0.5878,
-    "cv_scores": [
-      0.5991,
-      0.4759,
-      0.5924,
-      0.6456,
-      0.6261
-    ],
+    "path": "D:\\NexYpher\\ml\\models\\model_7d_1d_20260226_021448.pkl",
+    "cv_mean": 0.9538,
+    "previous_cv_mean": 0.9538,
+    "improvement": -0.0,
     "passes_threshold": true,
     "top_features": [
       [
@@ -167,8 +161,10 @@
     ]
   },
   "model_dir": {
-    "path": "D:\\NexYpher\\ml\\models\\model_dir_1d_20260222_134059.pkl",
-    "cv_mean": 0.3931,
+    "path": "D:\\NexYpher\\ml\\models\\model_dir_1d_20260226_021448.pkl",
+    "cv_mean": 0.9155,
+    "previous_cv_mean": 0.9155,
+    "improvement": 0.0,
     "direction_classes": [
       "DOWN",
       "SIDEWAYS",
