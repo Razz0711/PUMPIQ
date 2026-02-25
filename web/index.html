@@ -18,26 +18,30 @@
     <meta name="twitter:title" content="NexYpher — AI-Powered Crypto Intelligence">
     <meta name="twitter:description" content="Real-time AI crypto analysis, trading signals, and market insights.">
     <link rel="canonical" href="https://nexypher.vercel.app">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/design-system.css">
     <style>
         /* ── CSS Reset & Variables ────────────────────────────────── */
         :root {
-            --bg-primary: #0a0e17;
-            --bg-secondary: #111827;
-            --bg-card: #1a1f2e;
-            --bg-card-hover: #212738;
-            --border: #2a3042;
-            --text-primary: #e5e7eb;
-            --text-secondary: #9ca3af;
-            --text-muted: #6b7280;
+            --bg-primary: #0a0b0f;
+            --bg-secondary: #111318;
+            --bg-card: #111318;
+            --bg-card-hover: #181c24;
+            --border: rgba(255, 255, 255, 0.06);
+            --text-primary: #e8eaed;
+            --text-secondary: #9aa0ab;
+            --text-muted: #5f6672;
             --accent: #3b82f6;
             --accent-glow: rgba(59, 130, 246, 0.15);
-            --green: #10b981;
-            --green-bg: rgba(16, 185, 129, 0.1);
-            --red: #ef4444;
-            --red-bg: rgba(239, 68, 68, 0.1);
-            --yellow: #f59e0b;
+            --green: #00d395;
+            --green-bg: rgba(0, 211, 149, 0.1);
+            --red: #ff4757;
+            --red-bg: rgba(255, 71, 87, 0.1);
+            --yellow: #f5a623;
             --purple: #8b5cf6;
-            --cyan: #06b6d4;
+            --cyan: #06d6dd;
             --gradient: linear-gradient(135deg, #3b82f6, #8b5cf6);
             --radius: 12px;
             --radius-sm: 8px;
@@ -51,11 +55,16 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: var(--bg-primary);
             color: var(--text-primary);
             min-height: 100vh;
             overflow-x: hidden;
+            font-size: 14px;
+            line-height: 1.6;
+            letter-spacing: 0.01em;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
         }
 
         a {
@@ -86,9 +95,10 @@
             position: sticky;
             top: 0;
             z-index: 100;
-            background: rgba(10, 14, 23, 0.95);
+            background: rgba(10, 11, 15, 0.92);
             backdrop-filter: blur(12px);
-            border-bottom: 1px solid var(--border);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
             padding: 0 24px;
             height: 60px;
             display: flex;
@@ -111,25 +121,38 @@
         }
 
         .nav-tab {
-            padding: 8px 16px;
-            border-radius: var(--radius-sm);
+            padding: 8px 16px 12px;
+            border-radius: 0;
             color: var(--text-secondary);
             cursor: pointer;
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 500;
+            letter-spacing: 0.03em;
             transition: all 0.2s;
             border: none;
             background: none;
+            position: relative;
         }
 
         .nav-tab:hover {
             color: var(--text-primary);
-            background: var(--bg-card);
+            background: transparent;
         }
 
         .nav-tab.active {
             color: var(--accent);
-            background: var(--accent-glow);
+            background: transparent;
+        }
+
+        .nav-tab.active::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 8px;
+            right: 8px;
+            height: 2px;
+            background: var(--accent);
+            border-radius: 2px;
         }
 
         .header-right {
@@ -156,7 +179,7 @@
 
         .btn {
             padding: 8px 18px;
-            border-radius: var(--radius-sm);
+            border-radius: 8px;
             font-size: 13px;
             font-weight: 600;
             cursor: pointer;
@@ -167,10 +190,12 @@
         .btn-primary {
             background: var(--gradient);
             color: #fff;
+            box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15);
         }
 
         .btn-primary:hover {
-            opacity: 0.9;
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+            filter: brightness(1.1);
         }
 
         .btn-outline {
@@ -181,15 +206,18 @@
 
         .btn-outline:hover {
             background: var(--accent-glow);
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.2);
         }
 
         .btn-green {
-            background: var(--green);
+            background: linear-gradient(135deg, #00d395, #00b37a);
             color: #fff;
+            box-shadow: 0 2px 8px rgba(0, 211, 149, 0.15);
         }
 
         .btn-green:hover {
-            opacity: 0.9;
+            box-shadow: 0 0 20px rgba(0, 211, 149, 0.3);
+            filter: brightness(1.1);
         }
 
         .btn-sm {
@@ -198,8 +226,14 @@
         }
 
         .btn-danger {
-            background: var(--red);
+            background: linear-gradient(135deg, #ff4757, #e03546);
             color: #fff;
+            box-shadow: 0 2px 8px rgba(255, 71, 87, 0.15);
+        }
+
+        .btn-danger:hover {
+            box-shadow: 0 0 20px rgba(255, 71, 87, 0.3);
+            filter: brightness(1.1);
         }
 
         .btn:disabled {
@@ -286,15 +320,17 @@
 
         .step-card {
             background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
             padding: 24px;
             text-align: left;
             transition: border 0.2s;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
         }
 
         .step-card:hover {
-            border-color: var(--accent);
+            border-color: rgba(255, 255, 255, 0.12);
         }
 
         .step-num {
@@ -338,16 +374,18 @@
 
         .card {
             background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
             padding: 20px;
             cursor: pointer;
             transition: all 0.2s;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
         }
 
         .card:hover {
             background: var(--bg-card-hover);
-            border-color: var(--accent);
+            border-color: rgba(255, 255, 255, 0.12);
         }
 
         /* ── Filter Tabs ──────────────────────────────────────────── */
@@ -361,10 +399,10 @@
 
         .filter-pill {
             padding: 6px 16px;
-            border-radius: 20px;
+            border-radius: 999px;
             font-size: 13px;
             background: var(--bg-card);
-            border: 1px solid var(--border);
+            border: 1px solid rgba(255, 255, 255, 0.06);
             color: var(--text-secondary);
             cursor: pointer;
             transition: all 0.2s;
@@ -372,7 +410,7 @@
 
         .filter-pill:hover {
             color: var(--text-primary);
-            border-color: var(--text-muted);
+            border-color: rgba(255, 255, 255, 0.12);
         }
 
         .filter-pill.active {
@@ -389,23 +427,24 @@
 
         .feed-table th {
             text-align: left;
-            padding: 12px 16px;
-            font-size: 12px;
+            padding: 10px 16px;
+            font-size: 11px;
             color: var(--text-muted);
             text-transform: uppercase;
-            letter-spacing: 0.5px;
-            border-bottom: 1px solid var(--border);
+            letter-spacing: 0.05em;
+            font-weight: 500;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
         }
 
         .feed-table td {
-            padding: 14px 16px;
-            border-bottom: 1px solid var(--border);
-            font-size: 14px;
+            padding: 10px 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+            font-size: 13px;
             vertical-align: middle;
         }
 
         .feed-table tr:hover {
-            background: var(--bg-card);
+            background: rgba(255, 255, 255, 0.03);
         }
 
         .token-info {
@@ -439,19 +478,25 @@
 
         .price-positive {
             color: var(--green);
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 700;
         }
 
         .price-negative {
             color: var(--red);
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 700;
         }
 
         /* ── AI Recs ──────────────────────────────────────────────── */
         .market-summary-box {
             background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
             padding: 20px;
             margin-bottom: 20px;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
         }
 
         .market-summary-box h4 {
@@ -477,10 +522,12 @@
             align-items: center;
             gap: 10px;
             background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
             padding: 14px 20px;
             flex: 1;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
         }
 
         .simple-toggle {
@@ -529,10 +576,12 @@
 
         .score-card {
             background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
             padding: 20px;
             position: relative;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
         }
 
         .score-circle {
@@ -544,6 +593,7 @@
             justify-content: center;
             font-weight: 800;
             font-size: 18px;
+            font-family: 'JetBrains Mono', monospace;
             color: #fff;
             position: absolute;
             top: 16px;
@@ -551,19 +601,23 @@
         }
 
         .score-green {
-            background: var(--green);
+            background: linear-gradient(135deg, #00d395, #00b37a);
+            box-shadow: 0 4px 16px rgba(0, 211, 149, 0.35);
         }
 
         .score-yellow {
-            background: var(--yellow);
+            background: linear-gradient(135deg, #f5a623, #e09515);
+            box-shadow: 0 4px 16px rgba(245, 166, 35, 0.35);
         }
 
         .score-red {
-            background: var(--red);
+            background: linear-gradient(135deg, #ff4757, #e03546);
+            box-shadow: 0 4px 16px rgba(255, 71, 87, 0.35);
         }
 
         .score-purple {
-            background: var(--purple);
+            background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+            box-shadow: 0 4px 16px rgba(139, 92, 246, 0.35);
         }
 
         .score-card-name {
@@ -586,30 +640,32 @@
 
         .verdict-badge {
             display: inline-block;
-            padding: 4px 10px;
-            border-radius: 4px;
-            font-size: 12px;
-            font-weight: 700;
+            padding: 4px 12px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
         }
 
         .verdict-STRONG_BUY,
         .verdict-BUY {
-            background: var(--green-bg);
+            background: rgba(0, 211, 149, 0.1);
             color: var(--green);
         }
 
         .verdict-HOLD {
-            background: rgba(245, 158, 11, 0.1);
+            background: rgba(245, 166, 35, 0.1);
             color: var(--yellow);
         }
 
         .verdict-CAUTION {
-            background: var(--red-bg);
+            background: rgba(255, 71, 87, 0.1);
             color: var(--red);
         }
 
         .verdict-AVOID {
-            background: var(--red-bg);
+            background: rgba(255, 71, 87, 0.1);
             color: var(--red);
         }
 
@@ -664,13 +720,15 @@
 
         .modal {
             background: var(--bg-secondary);
-            border: 1px solid var(--border);
+            border: 1px solid rgba(255, 255, 255, 0.06);
             border-radius: 16px;
             width: 100%;
             max-width: 500px;
             padding: 32px;
             position: relative;
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
         }
 
         .modal-close {
@@ -794,6 +852,7 @@
         .detail-price {
             font-size: 28px;
             font-weight: 800;
+            font-family: 'JetBrains Mono', monospace;
         }
 
         .metrics-grid {
@@ -813,11 +872,15 @@
             font-size: 11px;
             color: var(--text-muted);
             margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-weight: 500;
         }
 
         .metric-value {
             font-size: 15px;
             font-weight: 600;
+            font-family: 'JetBrains Mono', monospace;
         }
 
         .analysis-section {
@@ -926,13 +989,15 @@
 
         /* ── Wallet Balance Card ──────────────────────────────────── */
         .balance-card {
-            background: linear-gradient(135deg, #1a1040 0%, #0d2137 50%, #0a2a1a 100%);
-            border: 1px solid #2a2a4a;
+            background: linear-gradient(135deg, #0d0e14 0%, #0f1520 50%, #0a1510 100%);
+            border: 1px solid rgba(255, 255, 255, 0.06);
             border-radius: 16px;
             padding: 28px;
             margin-bottom: 24px;
             position: relative;
             overflow: hidden;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
         }
 
         .balance-card::before {
@@ -947,16 +1012,18 @@
         }
 
         .balance-label {
-            font-size: 13px;
-            color: #888;
+            font-size: 11px;
+            color: var(--text-muted);
             text-transform: uppercase;
-            letter-spacing: 1px;
+            letter-spacing: 0.05em;
+            font-weight: 500;
             margin-bottom: 6px;
         }
 
         .balance-amount {
             font-size: 36px;
             font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
             color: #fff;
             margin-bottom: 16px;
         }
@@ -965,6 +1032,7 @@
             font-size: 20px;
             color: #7c5cff;
             margin-right: 4px;
+            font-family: 'JetBrains Mono', monospace;
         }
 
         .balance-actions {
@@ -1097,15 +1165,17 @@
         .portfolio-table th {
             text-align: left;
             padding: 10px 14px;
-            font-size: 12px;
+            font-size: 11px;
             color: var(--text-muted);
             text-transform: uppercase;
-            border-bottom: 1px solid var(--border);
+            letter-spacing: 0.05em;
+            font-weight: 500;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
         }
 
         .portfolio-table td {
             padding: 12px 14px;
-            border-bottom: 1px solid var(--border);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
             font-size: 14px;
         }
 
@@ -1125,21 +1195,25 @@
 
         .trader-stat-card {
             background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
             padding: 20px;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
         }
 
         .trader-stat-label {
-            font-size: 12px;
+            font-size: 11px;
             color: var(--text-muted);
             text-transform: uppercase;
-            letter-spacing: 1px;
+            letter-spacing: 0.05em;
+            font-weight: 500;
         }
 
         .trader-stat-value {
             font-size: 28px;
             font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
             margin-top: 4px;
         }
 
@@ -1150,8 +1224,8 @@
         }
 
         .trader-header {
-            background: linear-gradient(135deg, #0d1a2d 0%, #1a0d2e 50%, #0d2a1a 100%);
-            border: 1px solid #2a2a4a;
+            background: linear-gradient(135deg, #0d1118 0%, #100d18 50%, #0d1510 100%);
+            border: 1px solid rgba(255, 255, 255, 0.06);
             border-radius: 16px;
             padding: 24px;
             display: flex;
@@ -1159,6 +1233,8 @@
             align-items: center;
             flex-wrap: wrap;
             gap: 16px;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
         }
 
         .trader-title {
@@ -1184,15 +1260,15 @@
         }
 
         .trader-status.active {
-            background: rgba(16, 185, 129, 0.15);
+            background: rgba(0, 211, 149, 0.12);
             color: var(--green);
-            border: 1px solid rgba(16, 185, 129, 0.3);
+            border: 1px solid rgba(0, 211, 149, 0.25);
         }
 
         .trader-status.inactive {
-            background: rgba(239, 68, 68, 0.1);
+            background: rgba(255, 71, 87, 0.1);
             color: var(--red);
-            border: 1px solid rgba(239, 68, 68, 0.2);
+            border: 1px solid rgba(255, 71, 87, 0.2);
         }
 
         .toggle-switch {
@@ -1260,19 +1336,22 @@
         }
 
         .position-badge {
-            padding: 3px 10px;
-            border-radius: 12px;
+            padding: 4px 12px;
+            border-radius: 999px;
             font-size: 11px;
             font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            font-family: 'JetBrains Mono', monospace;
         }
 
         .position-badge.profit {
-            background: var(--green-bg);
+            background: rgba(0, 211, 149, 0.1);
             color: var(--green);
         }
 
         .position-badge.loss {
-            background: var(--red-bg);
+            background: rgba(255, 71, 87, 0.1);
             color: var(--red);
         }
 
@@ -2160,19 +2239,21 @@
         }
 
         .strat-status-badge {
-            padding: 3px 12px;
-            border-radius: 12px;
+            padding: 4px 12px;
+            border-radius: 999px;
             font-size: 11px;
             font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
         }
 
         .strat-status-badge.active {
-            background: rgba(16, 185, 129, 0.15);
+            background: rgba(0, 211, 149, 0.12);
             color: var(--green);
         }
 
         .strat-status-badge.paused {
-            background: rgba(245, 158, 11, 0.15);
+            background: rgba(245, 166, 35, 0.12);
             color: var(--yellow);
         }
 
@@ -2794,16 +2875,18 @@
 
         .live-stat-card {
             background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            padding: 18px 20px;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
+            padding: 20px;
             position: relative;
             overflow: hidden;
             transition: border-color 0.3s, transform 0.2s;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
         }
 
         .live-stat-card:hover {
-            border-color: var(--accent);
+            border-color: rgba(255, 255, 255, 0.12);
             transform: translateY(-2px);
         }
 
@@ -2825,8 +2908,9 @@
         }
 
         .live-stat-value {
-            font-size: 24px;
+            font-size: 28px;
             font-weight: 800;
+            font-family: 'JetBrains Mono', monospace;
             color: var(--text-primary);
             font-variant-numeric: tabular-nums;
         }
@@ -2835,7 +2919,8 @@
             font-size: 11px;
             color: var(--text-muted);
             text-transform: uppercase;
-            letter-spacing: 1px;
+            letter-spacing: 0.05em;
+            font-weight: 500;
             margin-top: 4px;
         }
 
@@ -2867,17 +2952,19 @@
 
         .module-card {
             background: var(--bg-card);
-            border: 1px solid var(--border);
+            border: 1px solid rgba(255, 255, 255, 0.06);
             border-radius: 16px;
             padding: 24px;
             cursor: pointer;
             position: relative;
             overflow: hidden;
             transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
         }
 
         .module-card:hover {
-            border-color: var(--accent);
+            border-color: rgba(255, 255, 255, 0.12);
             transform: translateY(-4px);
             box-shadow: 0 12px 40px rgba(59, 130, 246, 0.15);
         }
@@ -3406,12 +3493,14 @@
 
         .accuracy-gauge-card {
             background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
             padding: 28px;
             text-align: center;
             position: relative;
             overflow: hidden;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
         }
 
         .accuracy-gauge-card::before {
@@ -3434,8 +3523,9 @@
             align-items: center;
             justify-content: center;
             position: relative;
-            box-shadow: 0 0 30px rgba(16, 185, 129, 0.1);
+            box-shadow: 0 0 40px rgba(0, 211, 149, 0.2), 0 0 80px rgba(0, 211, 149, 0.08);
             transition: all 0.6s ease;
+            filter: drop-shadow(0 0 12px rgba(0, 211, 149, 0.25));
         }
 
         .accuracy-ring::after {
@@ -3452,6 +3542,7 @@
             z-index: 1;
             font-size: 28px;
             font-weight: 800;
+            font-family: 'JetBrains Mono', monospace;
             color: var(--text-primary);
         }
 
@@ -3476,15 +3567,17 @@
 
         .regime-card {
             background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
             padding: 16px;
             text-align: center;
             transition: all 0.25s ease;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
         }
 
         .regime-card:hover {
-            border-color: var(--accent);
+            border-color: rgba(255, 255, 255, 0.12);
             transform: translateY(-1px);
         }
 
@@ -3499,6 +3592,7 @@
         .regime-pct {
             font-size: 26px;
             font-weight: 800;
+            font-family: 'JetBrains Mono', monospace;
             margin-bottom: 4px;
         }
 

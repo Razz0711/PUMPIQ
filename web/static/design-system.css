@@ -1,0 +1,693 @@
+/* ══════════════════════════════════════════════════════════════════════════════
+   NEXYPHER DESIGN SYSTEM v2.0 — Premium Fintech Typography & Visual Tokens
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Google Fonts Import ──────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   DESIGN TOKENS (CSS Custom Properties)
+   ══════════════════════════════════════════════════════════════════════════════ */
+:root {
+    /* ── Typography ─────────────────────────────────────────────────────────── */
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+
+    --font-size-base: 14px;
+    --line-height-base: 1.6;
+    --letter-spacing-body: 0.01em;
+    --letter-spacing-label: 0.05em;
+    --letter-spacing-nav: 0.03em;
+    --letter-spacing-badge: 0.08em;
+
+    --font-weight-regular: 400;
+    --font-weight-medium: 500;
+    --font-weight-semibold: 600;
+    --font-weight-bold: 700;
+
+    /* ── Colors — Dark Theme ────────────────────────────────────────────────── */
+    --nx-bg-primary: #0a0b0f;
+    --nx-bg-panel: #111318;
+    --nx-bg-card: #111318;
+    --nx-bg-card-hover: #181c24;
+    --nx-bg-elevated: #1a1e28;
+
+    --nx-border: rgba(255, 255, 255, 0.06);
+    --nx-border-hover: rgba(255, 255, 255, 0.12);
+    --nx-border-active: rgba(255, 255, 255, 0.18);
+
+    --nx-text-primary: #e8eaed;
+    --nx-text-secondary: #9aa0ab;
+    --nx-text-muted: #5f6672;
+
+    /* ── Accent Colors ──────────────────────────────────────────────────────── */
+    --nx-green: #00d395;
+    --nx-green-bg: rgba(0, 211, 149, 0.10);
+    --nx-green-border: rgba(0, 211, 149, 0.25);
+    --nx-green-glow: rgba(0, 211, 149, 0.30);
+
+    --nx-red: #ff4757;
+    --nx-red-bg: rgba(255, 71, 87, 0.10);
+    --nx-red-border: rgba(255, 71, 87, 0.25);
+    --nx-red-glow: rgba(255, 71, 87, 0.30);
+
+    --nx-yellow: #f5a623;
+    --nx-yellow-bg: rgba(245, 166, 35, 0.10);
+    --nx-yellow-border: rgba(245, 166, 35, 0.25);
+
+    --nx-blue: #3b82f6;
+    --nx-blue-bg: rgba(59, 130, 246, 0.10);
+
+    --nx-purple: #8b5cf6;
+    --nx-purple-bg: rgba(139, 92, 246, 0.10);
+
+    --nx-cyan: #06d6dd;
+
+    --nx-accent: #3b82f6;
+    --nx-accent-glow: rgba(59, 130, 246, 0.15);
+
+    --nx-gradient: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    --nx-gradient-green: linear-gradient(135deg, #00d395, #00b37a);
+    --nx-gradient-red: linear-gradient(135deg, #ff4757, #e03546);
+    --nx-gradient-yellow: linear-gradient(135deg, #f5a623, #e09515);
+
+    /* ── Spacing ────────────────────────────────────────────────────────────── */
+    --nx-space-xs: 4px;
+    --nx-space-sm: 8px;
+    --nx-space-md: 16px;
+    --nx-space-lg: 20px;
+    --nx-space-xl: 24px;
+    --nx-space-section: 24px;
+    --nx-card-padding: 20px;
+
+    /* ── Radii ──────────────────────────────────────────────────────────────── */
+    --nx-radius-card: 12px;
+    --nx-radius-btn: 8px;
+    --nx-radius-badge: 999px;
+    --nx-radius-sm: 8px;
+
+    /* ── Shadows ────────────────────────────────────────────────────────────── */
+    --nx-shadow-card: 0 2px 12px rgba(0, 0, 0, 0.25);
+    --nx-shadow-elevated: 0 8px 32px rgba(0, 0, 0, 0.4);
+    --nx-shadow-glow-green: 0 0 20px rgba(0, 211, 149, 0.3);
+    --nx-shadow-glow-red: 0 0 20px rgba(255, 71, 87, 0.3);
+    --nx-shadow-glow-blue: 0 0 20px rgba(59, 130, 246, 0.3);
+
+    /* ── Backdrop ───────────────────────────────────────────────────────────── */
+    --nx-backdrop: blur(10px);
+
+    /* ── Transitions ───────────────────────────────────────────────────────── */
+    --nx-transition: all 0.2s ease;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   GLOBAL BASE STYLES
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Body Typography ────────────────────────────────────────────────────────── */
+body {
+    font-family: var(--font-sans) !important;
+    font-size: var(--font-size-base) !important;
+    line-height: var(--line-height-base) !important;
+    letter-spacing: var(--letter-spacing-body) !important;
+    font-weight: var(--font-weight-regular);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+}
+
+/* ── Headings ───────────────────────────────────────────────────────────────── */
+h1, h2, h3, h4, h5, h6,
+.section-title, .section-heading, .hero-title,
+.card-title, .modal h2, .modal h3 {
+    font-family: var(--font-sans);
+    font-weight: var(--font-weight-bold);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   MONOSPACE NUMERIC TYPOGRAPHY (JetBrains Mono)
+   Applied to all numerical data, prices, percentages, P&L, metrics
+   ══════════════════════════════════════════════════════════════════════════════ */
+.mono, .font-mono,
+.price-positive, .price-negative,
+.detail-price, .metric-value,
+.balance-amount, .balance-amount .currency,
+.trader-stat-value,
+.deploy-stat-num,
+.pstat-value,
+.bt-stat-value,
+.report-stat-value,
+.score-circle,
+.opp-score,
+.position-badge,
+.txn-amount,
+.bot-msg .metric-value,
+.bot-msg .price-up,
+.bot-msg .price-down,
+.live-stat-value,
+.feed-table td:nth-child(3),
+.feed-table td:nth-child(4),
+.feed-table td:nth-child(5),
+.portfolio-table td:nth-child(2),
+.portfolio-table td:nth-child(3),
+.portfolio-table td:nth-child(4),
+.portfolio-table td:nth-child(5) {
+    font-family: var(--font-mono) !important;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   UPPERCASE LABELS & COLUMN HEADERS
+   ══════════════════════════════════════════════════════════════════════════════ */
+.feed-table th,
+.portfolio-table th,
+.report-table th,
+.metric-label,
+.bar-label,
+.trader-stat-label,
+.balance-label,
+.setting-label,
+.deploy-stat-lbl,
+.pstat-label,
+.bt-stat-label,
+.report-stat-label,
+.live-stat-label,
+.hero-tag,
+.step-num,
+.section-divider,
+.sb-field label,
+.sb-leg-field label,
+.leg-field label,
+.leg-section-divider,
+.form-label,
+.report-filter-group .form-label {
+    text-transform: uppercase !important;
+    letter-spacing: var(--letter-spacing-label) !important;
+    font-weight: var(--font-weight-medium) !important;
+    font-size: 11px !important;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   NAVIGATION TYPOGRAPHY
+   ══════════════════════════════════════════════════════════════════════════════ */
+.nav-tab, .nav-item {
+    font-size: 13px !important;
+    font-weight: var(--font-weight-medium) !important;
+    letter-spacing: var(--letter-spacing-nav) !important;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   BADGE / PILL TYPOGRAPHY  — BUY, SELL, HOLD, STRONG BUY, LONG, SHORT
+   ══════════════════════════════════════════════════════════════════════════════ */
+.verdict-badge,
+.position-badge,
+.sb-leg-tag,
+.sb-leg-badge,
+.strat-status-badge,
+.exchange-status,
+.strat-status,
+.leg-badge,
+.topbar-badge,
+.wallet-chain,
+.cycle-badge,
+.log-severity,
+.txn-type {
+    border-radius: var(--nx-radius-badge) !important;
+    font-size: 11px !important;
+    font-weight: var(--font-weight-semibold) !important;
+    letter-spacing: var(--letter-spacing-badge) !important;
+    text-transform: uppercase !important;
+    padding: 4px 12px !important;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   COLOR SYSTEM OVERRIDES (GREEN / RED ACCENTS)
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* Green accents — #00d395 */
+.price-positive,
+.verdict-STRONG_BUY, .verdict-BUY,
+.opp-score.high,
+.position-badge.profit,
+.bt-stat-value.positive,
+.strat-status.running,
+.exchange-status.connected,
+.cycle-badge.ok,
+.log-severity.trade,
+.txn-deposit,
+.bank-verified,
+.bot-msg .price-up {
+    color: var(--nx-green) !important;
+}
+
+/* Red accents — #ff4757 */
+.price-negative,
+.verdict-CAUTION, .verdict-AVOID,
+.opp-score.low,
+.position-badge.loss,
+.bt-stat-value.negative,
+.strat-status.stopped,
+.exchange-status.disconnected,
+.log-severity.error,
+.txn-withdraw,
+.bot-msg .price-down {
+    color: var(--nx-red) !important;
+}
+
+/* Green backgrounds */
+.verdict-STRONG_BUY, .verdict-BUY {
+    background: var(--nx-green-bg) !important;
+}
+.position-badge.profit {
+    background: var(--nx-green-bg) !important;
+}
+.strat-status.running, .exchange-status.connected, .cycle-badge.ok, .log-severity.trade {
+    background: var(--nx-green-bg) !important;
+}
+.txn-deposit {
+    background: var(--nx-green-bg) !important;
+}
+
+/* Red backgrounds */
+.verdict-CAUTION, .verdict-AVOID {
+    background: var(--nx-red-bg) !important;
+}
+.position-badge.loss {
+    background: var(--nx-red-bg) !important;
+}
+.strat-status.stopped, .exchange-status.disconnected, .log-severity.error {
+    background: var(--nx-red-bg) !important;
+}
+.txn-withdraw {
+    background: var(--nx-red-bg) !important;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   CARD SYSTEM — Borders, Backdrop, Radius, Spacing
+   ══════════════════════════════════════════════════════════════════════════════ */
+.card, .score-card, .opp-card, .position-card, .wallet-card,
+.bank-card, .balance-card, .market-summary-box,
+.analysis-section, .ai-box, .setting-item,
+.sb-card, .strat-card, .template-card, .exchange-card,
+.pricing-card, .faq-item,
+.trader-stat-card, .trader-header,
+.live-stat-card, .module-card,
+.step-card, .toggle-item,
+.bt-stat, .report-stat-card,
+.bt-chart-placeholder, .bt-credit,
+.portfolio-summary-card,
+.sim-chart, .sim-order-book,
+.support-card, .dash-connect, .dash-deploy,
+.leg-card, .sb-leg {
+    border: 1px solid var(--nx-border) !important;
+    border-radius: var(--nx-radius-card) !important;
+    backdrop-filter: var(--nx-backdrop);
+    -webkit-backdrop-filter: var(--nx-backdrop);
+    padding: var(--nx-card-padding) !important;
+}
+
+/* ── Positive metric cards — left accent border ─────────────────────────── */
+.trader-stat-card:has(.price-positive),
+.report-stat-card.green,
+.live-stat-card:has([style*="color:var(--green)"]),
+.live-stat-card:has([style*="color: var(--green)"]) {
+    border-left: 3px solid var(--nx-green) !important;
+}
+
+/* Fallback positive border for stat cards with green values */
+.metric-positive-border {
+    border-left: 3px solid var(--nx-green) !important;
+}
+.metric-negative-border {
+    border-left: 3px solid var(--nx-red) !important;
+}
+
+/* ── Card hover states ──────────────────────────────────────────────────── */
+.card:hover, .score-card:hover, .opp-card:hover,
+.step-card:hover, .module-card:hover,
+.template-card:hover, .exchange-card:hover,
+.pricing-card:hover, .strat-card:hover {
+    border-color: var(--nx-border-hover) !important;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   TABLE ROW HOVER EFFECT
+   ══════════════════════════════════════════════════════════════════════════════ */
+.feed-table tr:hover,
+.portfolio-table tr:hover,
+.report-table tr:hover,
+.bot-msg.bot tbody tr:hover,
+.engine-log-entry:hover {
+    background: rgba(255, 255, 255, 0.03) !important;
+}
+
+/* ── Table header styling ───────────────────────────────────────────────── */
+.feed-table th, .portfolio-table th, .report-table th {
+    font-family: var(--font-sans);
+    color: var(--nx-text-muted) !important;
+    font-size: 11px !important;
+    padding: 10px 16px !important;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   BUTTON SYSTEM — Gradients, Glow, Radius
+   ══════════════════════════════════════════════════════════════════════════════ */
+.btn {
+    border-radius: var(--nx-radius-btn) !important;
+    font-family: var(--font-sans);
+    font-weight: var(--font-weight-semibold);
+    transition: var(--nx-transition);
+    position: relative;
+}
+
+.btn-primary {
+    background: var(--nx-gradient) !important;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15);
+}
+.btn-primary:hover {
+    box-shadow: var(--nx-shadow-glow-blue) !important;
+    opacity: 1 !important;
+    filter: brightness(1.1);
+}
+
+.btn-green {
+    background: var(--nx-gradient-green) !important;
+    box-shadow: 0 2px 8px rgba(0, 211, 149, 0.15);
+}
+.btn-green:hover {
+    box-shadow: var(--nx-shadow-glow-green) !important;
+    opacity: 1 !important;
+    filter: brightness(1.1);
+}
+
+.btn-danger, .btn-red {
+    background: var(--nx-gradient-red) !important;
+    box-shadow: 0 2px 8px rgba(255, 71, 87, 0.15);
+}
+.btn-danger:hover, .btn-red:hover {
+    box-shadow: var(--nx-shadow-glow-red) !important;
+    opacity: 1 !important;
+    filter: brightness(1.1);
+}
+
+.btn-outline {
+    border-radius: var(--nx-radius-btn) !important;
+}
+.btn-outline:hover {
+    box-shadow: var(--nx-shadow-glow-blue);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   NAVIGATION — Active State with Bottom Border
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* index.html header nav tabs */
+.nav-tab.active {
+    background: transparent !important;
+    color: var(--nx-accent, var(--accent)) !important;
+    position: relative;
+}
+.nav-tab.active::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 8px;
+    right: 8px;
+    height: 2px;
+    background: var(--nx-accent, var(--accent));
+    border-radius: 2px;
+}
+.nav-tab {
+    position: relative;
+    border-radius: 0 !important;
+    background: none !important;
+}
+.nav-tab:hover {
+    background: transparent !important;
+    color: var(--nx-text-primary, var(--text-primary)) !important;
+}
+
+/* algo.html sidebar active state */
+.sidebar .nav-item.active {
+    background: transparent !important;
+    color: var(--nx-accent, var(--accent)) !important;
+    border-left: 3px solid var(--nx-accent, var(--accent));
+    border-radius: 0 var(--nx-radius-sm) var(--nx-radius-sm) 0 !important;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   STAT CARDS — Larger Numbers, Muted Labels
+   ══════════════════════════════════════════════════════════════════════════════ */
+.trader-stat-value,
+.deploy-stat-num,
+.pstat-value,
+.bt-stat-value,
+.report-stat-value,
+.live-stat-value {
+    font-family: var(--font-mono) !important;
+    font-size: 28px !important;
+    font-weight: var(--font-weight-bold) !important;
+    line-height: 1.2;
+}
+
+.trader-stat-label,
+.deploy-stat-lbl,
+.pstat-label,
+.bt-stat-label,
+.report-stat-label,
+.live-stat-label {
+    font-size: 11px !important;
+    text-transform: uppercase !important;
+    letter-spacing: var(--letter-spacing-label) !important;
+    color: var(--nx-text-muted) !important;
+    font-weight: var(--font-weight-medium) !important;
+    margin-bottom: 4px;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   SCORE BADGES — Gradient Backgrounds
+   ══════════════════════════════════════════════════════════════════════════════ */
+.score-circle {
+    font-family: var(--font-mono) !important;
+    font-weight: var(--font-weight-bold) !important;
+    border: none !important;
+}
+
+/* Green gradient for scores > 70 */
+.score-green, .score-circle.score-green {
+    background: linear-gradient(135deg, #00d395, #00b87a) !important;
+    box-shadow: 0 4px 16px rgba(0, 211, 149, 0.35);
+}
+
+/* Yellow gradient for scores 40-70 */
+.score-yellow, .score-circle.score-yellow {
+    background: linear-gradient(135deg, #f5a623, #e09515) !important;
+    box-shadow: 0 4px 16px rgba(245, 166, 35, 0.35);
+}
+
+/* Red gradient for scores < 40 */
+.score-red, .score-circle.score-red {
+    background: linear-gradient(135deg, #ff4757, #e03546) !important;
+    box-shadow: 0 4px 16px rgba(255, 71, 87, 0.35);
+}
+
+.score-purple, .score-circle.score-purple {
+    background: linear-gradient(135deg, #8b5cf6, #7c3aed) !important;
+    box-shadow: 0 4px 16px rgba(139, 92, 246, 0.35);
+}
+
+/* ── Opportunity Score Badges (opp-score) ───────────────────────────────── */
+.opp-score.high {
+    background: var(--nx-green-bg) !important;
+    color: var(--nx-green) !important;
+    border: 2px solid var(--nx-green) !important;
+    font-family: var(--font-mono) !important;
+    font-weight: var(--font-weight-bold) !important;
+}
+.opp-score.mid {
+    background: var(--nx-yellow-bg) !important;
+    color: var(--nx-yellow) !important;
+    border: 2px solid var(--nx-yellow) !important;
+    font-family: var(--font-mono) !important;
+    font-weight: var(--font-weight-bold) !important;
+}
+.opp-score.low {
+    background: var(--nx-red-bg) !important;
+    color: var(--nx-red) !important;
+    border: 2px solid var(--nx-red) !important;
+    font-family: var(--font-mono) !important;
+    font-weight: var(--font-weight-bold) !important;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   CIRCULAR PROGRESS / ACCURACY CHARTS — Glow Effect
+   ══════════════════════════════════════════════════════════════════════════════ */
+.accuracy-ring, .progress-ring,
+svg.circular-chart,
+.circular-progress {
+    filter: drop-shadow(0 0 8px var(--nx-green-glow));
+}
+
+.accuracy-ring.warn, .progress-ring.warn {
+    filter: drop-shadow(0 0 8px var(--nx-yellow-border));
+}
+
+.accuracy-ring.bad, .progress-ring.bad {
+    filter: drop-shadow(0 0 8px var(--nx-red-glow));
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   SECTION / GAP SPACING
+   ══════════════════════════════════════════════════════════════════════════════ */
+.cards-grid, .trader-grid, .settings-grid,
+.sb-row, .template-grid, .exchange-grid,
+.module-showcase, .hero-steps, .live-stats-banner,
+.pricing-grid, .toggle-row, .portfolio-stats,
+.metrics-grid, .deploy-stats-row, .dash-grid,
+.dash-bottom, .bt-stats, .report-stats-grid,
+.report-chart-row, .strat-list {
+    gap: var(--nx-space-section) !important;
+}
+
+.page {
+    padding: var(--nx-space-xl) !important;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   LIVE TRADE FEED — Tighter Padding, Monospace Prices, Colored Badges
+   ══════════════════════════════════════════════════════════════════════════════ */
+.feed-table td {
+    padding: 10px 16px !important;
+    font-size: 13px !important;
+}
+
+.log-item {
+    padding: 6px 0 !important;
+    font-size: 12px !important;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   SCROLLBAR REFINEMENT
+   ══════════════════════════════════════════════════════════════════════════════ */
+::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.14);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   FILTER PILLS / PILL SELECTORS — Capsule Shape
+   ══════════════════════════════════════════════════════════════════════════════ */
+.filter-pill, .pill, .sb-pill, .day-pill, .sb-day,
+.sb-regime, .sb-indicator, .bot-chip {
+    border-radius: var(--nx-radius-badge) !important;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   FORM INPUTS — Consistent with design system
+   ══════════════════════════════════════════════════════════════════════════════ */
+.form-input, .form-select, .search-box,
+.setting-input, .risk-input, .strat-search,
+.bt-select, .instrument-dropdown-search {
+    font-family: var(--font-sans);
+    border-radius: var(--nx-radius-btn) !important;
+    border: 1px solid var(--nx-border) !important;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.form-input:focus, .form-select:focus, .search-box:focus,
+.setting-input:focus, .risk-input:focus, .strat-search:focus,
+.bt-select:focus {
+    border-color: var(--nx-accent) !important;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    outline: none;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   MODAL REFINEMENT
+   ══════════════════════════════════════════════════════════════════════════════ */
+.modal {
+    border: 1px solid var(--nx-border) !important;
+    border-radius: 16px !important;
+    backdrop-filter: var(--nx-backdrop);
+    -webkit-backdrop-filter: var(--nx-backdrop);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   SELECTION COLOR
+   ══════════════════════════════════════════════════════════════════════════════ */
+::selection {
+    background: rgba(59, 130, 246, 0.3);
+    color: #fff;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   PERCENTAGE VALUES — Always monospace, bold, colored
+   ══════════════════════════════════════════════════════════════════════════════ */
+[data-pct], .pct-value {
+    font-family: var(--font-mono) !important;
+    font-weight: var(--font-weight-bold) !important;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   ENGINE LOG CONTAINER — Monospace
+   ══════════════════════════════════════════════════════════════════════════════ */
+.engine-log-container {
+    font-family: var(--font-mono) !important;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   LOADING / SKELETON REFINEMENT
+   ══════════════════════════════════════════════════════════════════════════════ */
+.skeleton {
+    border-radius: var(--nx-radius-sm) !important;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   TOAST REFINEMENT
+   ══════════════════════════════════════════════════════════════════════════════ */
+.toast {
+    font-family: var(--font-sans);
+    border-radius: var(--nx-radius-card) !important;
+    backdrop-filter: var(--nx-backdrop);
+    -webkit-backdrop-filter: var(--nx-backdrop);
+}
+.toast.success {
+    background: rgba(0, 211, 149, 0.92) !important;
+}
+.toast.error {
+    background: rgba(255, 71, 87, 0.92) !important;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   BOT WIDGET / CHAT — Font Consistency
+   ══════════════════════════════════════════════════════════════════════════════ */
+.bot-msg {
+    font-family: var(--font-sans);
+}
+.bot-input-area input {
+    font-family: var(--font-sans);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   UTILITY CLASSES
+   ══════════════════════════════════════════════════════════════════════════════ */
+.font-mono { font-family: var(--font-mono) !important; }
+.font-sans { font-family: var(--font-sans) !important; }
+.text-green { color: var(--nx-green) !important; }
+.text-red { color: var(--nx-red) !important; }
+.text-yellow { color: var(--nx-yellow) !important; }
+.text-muted { color: var(--nx-text-muted) !important; }
+.fw-500 { font-weight: 500 !important; }
+.fw-600 { font-weight: 600 !important; }
+.fw-700 { font-weight: 700 !important; }
+.uppercase { text-transform: uppercase !important; }
+.tracking-wide { letter-spacing: 0.05em !important; }
