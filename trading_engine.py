@@ -172,8 +172,9 @@ def _get_learning_adjustments() -> Dict[str, Any]:
         # ── HARD CAP: prevent stacked adjustments from blocking ALL trades ──
         # Without this cap, 27+ global_confidence_reduction records stack to +415,
         # making effective_min_score = 40 + 415 = 455 (impossible to reach).
-        # Cap at +15 means: worst case min_score goes from 40 -> 55 (aggressive).
-        adjustments["global_score_offset"] = min(adjustments["global_score_offset"], 15)
+        # Cap at +5 means: worst case min_score goes from 40 -> 45 (aggressive).
+        # Combined with quality floor (35) this still maintains risk control.
+        adjustments["global_score_offset"] = min(adjustments["global_score_offset"], 5)
         adjustments["sl_modifier"] = min(adjustments["sl_modifier"], 3.0)
 
         # Additionally: penalize tokens in worst predictions
@@ -620,14 +621,16 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
                     ml_coin_count += 1
             except Exception:
                 pass
-        if ml_predictions:
+        ml_available = bool(ml_predictions)
+        if ml_available:
             logger.info(
                 "ML predictions loaded for %d coins: %s",
                 len(ml_predictions),
                 {k: f"{v['buy_probability']:.2f} ({v['model_accuracy']*100:.0f}%acc)"
                  for k, v in ml_predictions.items()},
             )
-            logger.info("ML predictions loaded for %d coins", len(ml_predictions))
+        else:
+            logger.info("ML (XGBoost) not available — skipping ML score penalties")
 
         # ── Pretrained 38-feature model predictions ──
         pt_predictions = {}  # coin_id -> {verdict, direction, prob_up_24h, prob_up_7d, confidence, ...}
@@ -644,13 +647,16 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
                     pt_coin_count += 1
             except Exception:
                 pass
-        if pt_predictions:
+        pt_available = bool(pt_predictions)
+        if pt_available:
             logger.info(
                 "Pretrained predictions loaded for %d coins: %s",
                 len(pt_predictions),
                 {k: f"{v['verdict']} ({v['prob_up_7d']:.0f}% 7d)"
                  for k, v in pt_predictions.items()},
             )
+        else:
+            logger.info("Pretrained model not available — skipping PT score penalties")
 
         for coin in top_coins:
             if coin.coin_id in STABLECOINS:
@@ -797,10 +803,15 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
             # Pretrained model boost for LONG (PRIMARY signal)
             if pt_long_boost:
                 long_score += pt_long_boost; long_reasons.append(pt_reason)
-            # PENALTY: No ML confirmation = risky trade → halve score
+            # PENALTY: No ML confirmation = risky trade → apply penalty
+            # BUT only if ML is actually available on this server.
+            # If ML packages aren't installed (e.g. Render), skip penalty entirely.
             if ml_long_boost == 0 and pt_long_boost == 0:
-                long_score = int(long_score * 0.5)
-                long_reasons.append("⚠️ No ML confirmation — score halved")
+                if ml_available or pt_available:
+                    # ML is working but didn't confirm THIS coin → halve
+                    long_score = int(long_score * 0.5)
+                    long_reasons.append("⚠️ No ML confirmation — score halved")
+                # else: ML not installed — no penalty (heuristics are enough)
 
             long_score = max(0, min(100, long_score))
 
@@ -859,8 +870,14 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
             # PENALTY: Shorts REQUIRE ML direction model confirmation
             # Without it, "low prob_up" could just mean sideways, not bearish.
             if ml_short_boost == 0 and pt_short_boost == 0:
-                short_score = int(short_score * 0.3)  # 70% penalty — shorts need ML backing
-                short_reasons.append("⚠️ No ML SHORT confirmation — score reduced 70%")
+                if ml_available or pt_available:
+                    # ML available but no SHORT signal → heavy penalty
+                    short_score = int(short_score * 0.3)
+                    short_reasons.append("⚠️ No ML SHORT confirmation — score reduced 70%")
+                else:
+                    # ML not installed — moderate penalty (shorts are riskier without ML)
+                    short_score = int(short_score * 0.5)
+                    short_reasons.append("ℹ️ ML unavailable — moderate SHORT penalty")
 
             short_score = max(0, min(100, short_score))
 
@@ -1064,7 +1081,7 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
         "conservative": {"max_trade_pct_mult": 0.5, "min_score": 70, "stop_loss_add": 2},
         "moderate":     {"max_trade_pct_mult": 1.0, "min_score": 55, "stop_loss_add": 0},
         "balanced":     {"max_trade_pct_mult": 1.0, "min_score": 55, "stop_loss_add": 0},
-        "aggressive":   {"max_trade_pct_mult": 1.5, "min_score": 50, "stop_loss_add": 0},
+        "aggressive":   {"max_trade_pct_mult": 1.5, "min_score": 40, "stop_loss_add": 0},
     }
     mods = risk_modifiers.get(risk_profile, risk_modifiers["aggressive"])
 
@@ -1377,11 +1394,13 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
                     effective_sl = max(base_sl, 4.0); effective_tp = 6.0; max_alloc_pct = 10.0
                 elif score >= 60:
                     effective_sl = max(base_sl, 3.0); effective_tp = 5.0; max_alloc_pct = 7.0
-                elif score >= 50:
+                elif score >= 45:
                     effective_sl = max(base_sl, 2.5); effective_tp = 4.0; max_alloc_pct = 5.0
+                elif score >= 35:
+                    effective_sl = max(base_sl, 2.0); effective_tp = 3.5; max_alloc_pct = 3.0
                 else:
-                    logger.info("Skipping %s (score %d < 50) — below quality floor", opp["symbol"], score)
-                    continue  # Raised floor: don't trade on weak signals
+                    logger.info("Skipping %s (score %d < 35) — below quality floor", opp["symbol"], score)
+                    continue  # Quality floor: don't trade on very weak signals
 
                 # Reduce size if learning loop recommends caution
                 if learning_mods.get("reduce_position_size"):
