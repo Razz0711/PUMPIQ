@@ -428,143 +428,420 @@ def send_login_alert_email(to_email: str, username: str, ip_address: str, user_a
 
 # ── Trade Notification Emails ───────────────────────────────────
 
+
+def _row(label: str, value: str, color: str = "#fff", bold: bool = False) -> str:
+    """Helper: generate a single table row for trade email."""
+    weight = "700" if bold else "400"
+    return f"""
+        <tr>
+            <td style="color: #888; padding: 10px 0; font-size: 14px; border-top: 1px solid #2a2a3a;">{label}</td>
+            <td style="color: {color}; padding: 10px 0; font-size: 14px; font-weight: {weight}; text-align: right; border-top: 1px solid #2a2a3a;">
+                {value}
+            </td>
+        </tr>"""
+
+
+def _format_market_cap(mc: float) -> str:
+    if mc >= 1e12: return f"${mc/1e12:.2f}T"
+    if mc >= 1e9:  return f"${mc/1e9:.2f}B"
+    if mc >= 1e6:  return f"${mc/1e6:.1f}M"
+    return f"${mc:,.0f}"
+
+
+def _score_bar(score: int) -> str:
+    """Visual score bar 0-100."""
+    fill_pct = max(0, min(100, score))
+    bar_color = "#10b981" if score >= 60 else "#f59e0b" if score >= 35 else "#ef4444"
+    return (
+        f'<div style="background:#1e1e2e;border-radius:6px;height:10px;width:100%;margin:4px 0;">'
+        f'<div style="background:{bar_color};border-radius:6px;height:10px;width:{fill_pct}%;"></div>'
+        f'</div>'
+        f'<span style="color:{bar_color};font-weight:700;font-size:16px;">{score}/100</span>'
+    )
+
+
+def _signal_section(title: str, items: list, icon: str = "📊") -> str:
+    """Build a styled signal section with bullet items."""
+    if not items:
+        return ""
+    bullets = "".join(
+        f'<li style="color: #ccc; padding: 3px 0; font-size: 13px; line-height: 1.5;">{item}</li>'
+        for item in items if item
+    )
+    return f"""
+    <div style="background: #1a1a2e; border-radius: 10px; padding: 16px 20px; margin: 12px 0; border: 1px solid #2a2a3a;">
+        <p style="color: #7c5cff; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 10px;">
+            {icon} {title}
+        </p>
+        <ul style="margin: 0; padding-left: 18px;">{bullets}</ul>
+    </div>
+    """
+
+
 def send_trade_email(
     to_email: str,
     username: str,
-    action: str,
+    action: str,          # BUY, SHORT, SELL, COVER
     symbol: str,
     coin_name: str,
     price: float,
     quantity: float,
     amount: float,
-    ai_reasoning: str,
+    ai_reasoning: str = "",
     pnl: float = 0.0,
     pnl_pct: float = 0.0,
     stop_loss: float = 0.0,
     take_profit: float = 0.0,
     wallet_balance: float = 0.0,
+    # ── Enhanced fields (all optional for backward compat) ──
+    trade_metadata: dict = None,
+    # Close-specific fields
+    entry_price: float = 0.0,
+    close_reason: str = "",
+    hold_duration: str = "",
+    side: str = "",
 ) -> bool:
-    """Send a detailed trade notification email for every BUY or SELL."""
+    """Send a comprehensive trade notification email with full analysis.
+
+    For BUY/SHORT: includes strategy, ML signals, backtest, risk params, reasoning.
+    For SELL/COVER: includes close reason, hold duration, entry→exit, P&L breakdown.
+    """
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc).strftime("%B %d, %Y at %I:%M %p UTC")
     base_url = _cfg("APP_BASE_URL", "https://NEXYPHER.vercel.app")
+    meta = trade_metadata or {}
 
-    is_buy = action.upper() == "BUY"
-    action_label = "BUY" if is_buy else "SELL"
-    action_color = "#10b981" if is_buy else "#ef4444"
-    action_emoji = "\U0001f7e2" if is_buy else "\U0001f534"
-    action_icon = "\U0001f4c8" if is_buy else "\U0001f4c9"
+    # Determine action type
+    action_upper = action.upper()
+    is_entry = action_upper in ("BUY", "SHORT")
+    is_short = action_upper in ("SHORT", "COVER")
+    if not side:
+        side = "short" if is_short else "long"
 
-    # Build trade details rows
+    if is_entry:
+        action_label = "SHORT" if is_short else "BUY (LONG)"
+        action_color = "#f59e0b" if is_short else "#10b981"
+        action_emoji = "🟡" if is_short else "🟢"
+        action_icon = "📉" if is_short else "📈"
+        header_title = f"Trade Opened — {action_label}"
+    else:
+        action_label = "COVER (Close Short)" if is_short else "SELL (Close Long)"
+        action_color = "#ef4444" if pnl < 0 else "#10b981"
+        action_emoji = "🔴" if pnl < 0 else "🟢"
+        action_icon = "📉" if pnl < 0 else "📈"
+        header_title = f"Trade Closed — {'COVER' if is_short else 'SELL'}"
+
+    # ═══════════════════════════════════════════
+    # SECTION 1: Core Trade Details
+    # ═══════════════════════════════════════════
+    direction_str = meta.get("direction", side.upper())
     details_rows = f"""
         <tr>
-            <td style="color: #888; padding: 10px 0; font-size: 14px;">Action</td>
-            <td style="color: {action_color}; padding: 10px 0; font-size: 14px; font-weight: 700; text-align: right;">
+            <td style="color: #888; padding: 12px 0; font-size: 14px;">Action</td>
+            <td style="color: {action_color}; padding: 12px 0; font-size: 15px; font-weight: 700; text-align: right;">
                 {action_emoji} {action_label}
             </td>
-        </tr>
-        <tr>
-            <td style="color: #888; padding: 10px 0; font-size: 14px; border-top: 1px solid #2a2a3a;">Coin</td>
-            <td style="color: #fff; padding: 10px 0; font-size: 14px; font-weight: 600; text-align: right; border-top: 1px solid #2a2a3a;">
-                {symbol.upper()} <span style="color:#888;font-weight:400">({coin_name})</span>
-            </td>
-        </tr>
-        <tr>
-            <td style="color: #888; padding: 10px 0; font-size: 14px; border-top: 1px solid #2a2a3a;">Price</td>
-            <td style="color: #fff; padding: 10px 0; font-size: 14px; font-weight: 600; text-align: right; border-top: 1px solid #2a2a3a;">
-                ${price:,.6f}
-            </td>
-        </tr>
-        <tr>
-            <td style="color: #888; padding: 10px 0; font-size: 14px; border-top: 1px solid #2a2a3a;">Quantity</td>
-            <td style="color: #fff; padding: 10px 0; font-size: 14px; text-align: right; border-top: 1px solid #2a2a3a;">
-                {quantity:,.6f}
-            </td>
-        </tr>
-        <tr>
-            <td style="color: #888; padding: 10px 0; font-size: 14px; border-top: 1px solid #2a2a3a;">Total Amount</td>
-            <td style="color: #fff; padding: 10px 0; font-size: 16px; font-weight: 700; text-align: right; border-top: 1px solid #2a2a3a;">
-                ${amount:,.2f}
-            </td>
-        </tr>
-    """
+        </tr>"""
 
-    # For SELL, add P&L row
-    if not is_buy:
+    details_rows += _row("Coin", f"{symbol.upper()} <span style='color:#888'>({coin_name})</span>", "#fff", True)
+    details_rows += _row("Direction", f"{'🐻 SHORT' if side == 'short' else '🐂 LONG'}", "#f59e0b" if side == "short" else "#10b981", True)
+    details_rows += _row("Entry Price" if is_entry else "Exit Price", f"${price:,.6f}", "#fff", True)
+    details_rows += _row("Quantity", f"{quantity:,.6f}")
+    details_rows += _row("Amount", f"${amount:,.2f}", "#fff", True)
+
+    # ═══════════════════════════════════════════
+    # SECTION: Entry-specific (BUY/SHORT)
+    # ═══════════════════════════════════════════
+    if is_entry:
+        # 24h change
+        change_24h = meta.get("change_24h", 0)
+        if change_24h:
+            ch_color = "#10b981" if change_24h >= 0 else "#ef4444"
+            details_rows += _row("24h Change", f"{change_24h:+.1f}%", ch_color, True)
+
+        # SL & TP with percentages
+        sl_pct = meta.get("stop_loss_pct", 0)
+        tp_pct = meta.get("take_profit_pct", 0)
+        if stop_loss > 0:
+            details_rows += _row("Stop Loss", f"${stop_loss:,.6f} <span style='color:#888'>(-{sl_pct:.1f}%)</span>", "#ef4444", True)
+        if take_profit > 0:
+            details_rows += _row("Take Profit", f"${take_profit:,.6f} <span style='color:#888'>(+{tp_pct:.1f}%)</span>", "#10b981", True)
+
+        # Max hold & auto-exit
+        max_hold = meta.get("max_hold_hours", 0)
+        if max_hold:
+            details_rows += _row("Max Hold Time", f"{max_hold}h (auto-exit)", "#f59e0b")
+
+        # Portfolio allocation
+        max_alloc = meta.get("max_alloc_pct", 0)
+        slots_used = meta.get("portfolio_slots_used", 0)
+        slots_max = meta.get("portfolio_slots_max", 0)
+        if slots_max:
+            details_rows += _row("Portfolio Slot", f"{slots_used}/{slots_max}", "#7c5cff")
+        if max_alloc:
+            details_rows += _row("Max Allocation", f"{max_alloc:.0f}% of portfolio", "#7c5cff")
+
+    # ═══════════════════════════════════════════
+    # SECTION: Close-specific (SELL/COVER)
+    # ═══════════════════════════════════════════
+    if not is_entry:
+        # Entry → Exit comparison
+        if entry_price > 0:
+            price_change = ((price - entry_price) / entry_price) * 100 if entry_price > 0 else 0
+            ch_color = "#10b981" if price_change >= 0 else "#ef4444"
+            details_rows += _row("Entry Price", f"${entry_price:,.6f}")
+            details_rows += _row("Price Change", f"{price_change:+.1f}%", ch_color, True)
+
+        # P&L
         pnl_color = "#10b981" if pnl >= 0 else "#ef4444"
         pnl_sign = "+" if pnl >= 0 else ""
+        pnl_label = "PROFIT" if pnl >= 0 else "LOSS"
         details_rows += f"""
         <tr>
-            <td style="color: #888; padding: 10px 0; font-size: 14px; border-top: 1px solid #2a2a3a;">Profit / Loss</td>
-            <td style="color: {pnl_color}; padding: 10px 0; font-size: 16px; font-weight: 700; text-align: right; border-top: 1px solid #2a2a3a;">
+            <td style="color: #888; padding: 12px 0; font-size: 14px; border-top: 1px solid #2a2a3a;">{pnl_label}</td>
+            <td style="color: {pnl_color}; padding: 12px 0; font-size: 18px; font-weight: 700; text-align: right; border-top: 1px solid #2a2a3a;">
                 {pnl_sign}${pnl:,.2f} ({pnl_sign}{pnl_pct:.1f}%)
             </td>
-        </tr>
-        """
+        </tr>"""
 
-    # For BUY, add stop-loss & take-profit
-    if is_buy and stop_loss > 0:
-        details_rows += f"""
-        <tr>
-            <td style="color: #888; padding: 10px 0; font-size: 14px; border-top: 1px solid #2a2a3a;">Stop Loss</td>
-            <td style="color: #ef4444; padding: 10px 0; font-size: 14px; text-align: right; border-top: 1px solid #2a2a3a;">
-                ${stop_loss:,.6f}
-            </td>
-        </tr>
-        """
-    if is_buy and take_profit > 0:
-        details_rows += f"""
-        <tr>
-            <td style="color: #888; padding: 10px 0; font-size: 14px; border-top: 1px solid #2a2a3a;">Take Profit</td>
-            <td style="color: #10b981; padding: 10px 0; font-size: 14px; text-align: right; border-top: 1px solid #2a2a3a;">
-                ${take_profit:,.6f}
-            </td>
-        </tr>
-        """
+        # Close reason
+        if close_reason:
+            # Clean up the reason for display
+            reason_display = close_reason
+            reason_color = "#f59e0b"
+            cr_upper = close_reason.upper()
+            if "STOP-LOSS" in cr_upper or "STOP_LOSS" in cr_upper:
+                reason_display = "🛑 Stop-Loss Hit"
+                reason_color = "#ef4444"
+            elif "TAKE-PROFIT" in cr_upper or "TAKE_PROFIT" in cr_upper:
+                reason_display = "🎯 Take-Profit Hit"
+                reason_color = "#10b981"
+            elif "AUTO-EXIT" in cr_upper or "AUTO_EXIT" in cr_upper:
+                reason_display = "⏰ Auto-Exit (Max Hold Time)"
+                reason_color = "#f59e0b"
+            elif "MANUAL" in cr_upper:
+                reason_display = "👤 Manual Close"
+                reason_color = "#7c5cff"
+            details_rows += _row("Close Reason", reason_display, reason_color, True)
 
-    # Wallet balance row
-    details_rows += f"""
-        <tr>
-            <td style="color: #888; padding: 10px 0; font-size: 14px; border-top: 1px solid #2a2a3a;">Wallet Balance</td>
-            <td style="color: #7c5cff; padding: 10px 0; font-size: 14px; font-weight: 600; text-align: right; border-top: 1px solid #2a2a3a;">
-                ${wallet_balance:,.2f}
-            </td>
-        </tr>
-    """
+        # Hold duration
+        if hold_duration:
+            details_rows += _row("Hold Duration", hold_duration, "#ccc")
 
-    # Date row
-    details_rows += f"""
-        <tr>
-            <td style="color: #888; padding: 10px 0; font-size: 14px; border-top: 1px solid #2a2a3a;">Date &amp; Time</td>
-            <td style="color: #ccc; padding: 10px 0; font-size: 13px; text-align: right; border-top: 1px solid #2a2a3a;">{now}</td>
-        </tr>
-    """
+    # Common bottom rows
+    details_rows += _row("Wallet Balance", f"${wallet_balance:,.2f}", "#7c5cff", True)
+    details_rows += _row("Date & Time", now, "#999")
+
+    # ═══════════════════════════════════════════
+    # BUILD EMAIL BODY
+    # ═══════════════════════════════════════════
+    intro = f"Your NEXYPHER Auto Trader has opened a new <strong style='color:{action_color}'>{direction_str}</strong> position." if is_entry else f"Your NEXYPHER Auto Trader has closed a <strong style='color:{action_color}'>{side.upper()}</strong> position."
 
     content = f"""
     <p style="color: #ccc; line-height: 1.6;">
         Hey <strong>{username}</strong>,<br><br>
-        Your NEXYPHER Auto Trader has executed a <strong style="color:{action_color}">{action_label}</strong> order.
-        Here are the details:
+        {intro}
     </p>
 
+    <!-- Trade Details Table -->
     <div style="background: #1a1a2e; border-radius: 12px; padding: 24px; margin: 24px 0; border: 1px solid #2a2a3a;">
         <p style="color: {action_color}; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 16px;">
-            {action_icon} Trade Executed &mdash; {action_label}
+            {action_icon} {header_title}
         </p>
         <table style="width: 100%; border-collapse: collapse;">
             {details_rows}
         </table>
     </div>
+    """
 
-    <div style="background: #1a1a2e; border-radius: 12px; padding: 20px; margin: 20px 0; border: 1px solid #2a2a3a;">
-        <p style="color: #7c5cff; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 12px;">
-            \U0001f916 AI Analysis &amp; Reasoning
+    # ═══════════════════════════════════════════
+    # SECTION 2: AI Confidence Score (entry only)
+    # ═══════════════════════════════════════════
+    ai_score = meta.get("ai_score", 0)
+    if is_entry and ai_score:
+        content += f"""
+    <div style="background: #1a1a2e; border-radius: 12px; padding: 20px; margin: 16px 0; border: 1px solid #2a2a3a;">
+        <p style="color: #7c5cff; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 10px;">
+            🎯 AI Confidence Score
         </p>
-        <p style="color: #ccc; font-size: 14px; line-height: 1.7; margin: 0;">
+        {_score_bar(ai_score)}
+        <p style="color: #888; font-size: 12px; margin: 6px 0 0;">
+            Market Regime: <strong style="color:#ccc">{meta.get('market_regime', 'N/A')}</strong>
+        </p>
+    </div>
+    """
+
+    # ═══════════════════════════════════════════
+    # SECTION 3: Why This Trade (entry only)
+    # ═══════════════════════════════════════════
+    if is_entry:
+        # Collect the reasons/signals
+        direction_reasons = meta.get("reasons", [])
+        if direction_reasons:
+            content += _signal_section(
+                f"Why {direction_str}? — Scoring Breakdown",
+                direction_reasons,
+                "🐻" if side == "short" else "🐂"
+            )
+
+    # ═══════════════════════════════════════════
+    # SECTION 4: ML & AI Model Signals (entry only)
+    # ═══════════════════════════════════════════
+    if is_entry:
+        model_signals = []
+
+        # XGBoost ML signal
+        ml_signal = meta.get("ml_signal", "")
+        ml_prob = meta.get("ml_buy_probability")
+        ml_acc = meta.get("ml_model_accuracy")
+        if ml_signal:
+            model_signals.append(ml_signal)
+        elif ml_prob is not None:
+            model_signals.append(f"🤖 XGBoost ML: {ml_prob*100:.0f}% up-probability (model accuracy: {ml_acc*100:.0f}%)" if ml_acc else f"🤖 XGBoost ML: {ml_prob*100:.0f}% up-probability")
+
+        # Pretrained 38-feature model
+        pt_signal = meta.get("pt_signal", "")
+        pt_verdict = meta.get("pt_verdict", "")
+        pt_prob = meta.get("pt_prob_7d")
+        pt_conf = meta.get("pt_confidence")
+        if pt_signal:
+            model_signals.append(pt_signal)
+        elif pt_verdict:
+            extra = f" — {pt_prob:.0f}% 7d up-prob, confidence {pt_conf}" if pt_prob else ""
+            model_signals.append(f"🧠 Pretrained Model: {pt_verdict}{extra}")
+
+        # Gemini AI analysis
+        ai_analysis = meta.get("ai_analysis", "")
+        if ai_analysis:
+            model_signals.append(f"💬 Gemini AI: {ai_analysis[:200]}")
+
+        if model_signals:
+            content += _signal_section("AI & ML Model Signals", model_signals, "🤖")
+
+    # ═══════════════════════════════════════════
+    # SECTION 5: Backtest Verification (entry only)
+    # ═══════════════════════════════════════════
+    if is_entry:
+        bt_verified = meta.get("backtest_verified", False)
+        bt_stats = meta.get("backtest_stats", {})
+        bt_status = meta.get("backtest_status", "none")
+        if bt_stats or bt_status != "none":
+            bt_color = "#10b981" if bt_verified else "#ef4444"
+            bt_icon = "✅" if bt_verified else "⚠️"
+            bt_items = [
+                f"{bt_icon} Status: <strong style='color:{bt_color}'>{bt_status.upper()}</strong>"
+            ]
+
+            bt_dir = meta.get("backtest_strategy_direction", "")
+            bt_trend = meta.get("backtest_detected_trend", "")
+            if bt_dir:
+                bt_items.append(f"Strategy Direction: {bt_dir}")
+            if bt_trend:
+                bt_items.append(f"Detected Trend: {bt_trend}")
+
+            if bt_stats:
+                wr = bt_stats.get("win_rate", 0)
+                tr = bt_stats.get("total_return", 0)
+                sr = bt_stats.get("sharpe_ratio", 0)
+                md = bt_stats.get("max_drawdown", 0)
+                tt = bt_stats.get("total_trades", 0)
+                period = bt_stats.get("period", "")
+                wr_color = "#10b981" if wr >= 50 else "#ef4444"
+                bt_items.append(f"Win Rate: <strong style='color:{wr_color}'>{wr:.1f}%</strong> ({tt} trades)")
+                bt_items.append(f"Total Return: {tr:+.1f}%")
+                bt_items.append(f"Sharpe Ratio: {sr:.2f}")
+                bt_items.append(f"Max Drawdown: {md:.1f}%")
+                if period:
+                    bt_items.append(f"Period: {period}")
+
+            strategies = meta.get("backtest_strategies_tested", [])
+            if strategies:
+                bt_items.append(f"Strategies Tested: {', '.join(strategies)}")
+
+            bt_rec = meta.get("backtest_recommendation", "")
+            if bt_rec:
+                bt_items.append(f"Recommendation: {bt_rec}")
+
+            content += _signal_section("Backtest Verification", bt_items, "📊")
+
+    # ═══════════════════════════════════════════
+    # SECTION 6: Market Context (entry only)
+    # ═══════════════════════════════════════════
+    if is_entry:
+        market_items = []
+        mc = meta.get("market_cap", 0)
+        vol = meta.get("volume_24h", 0)
+        cap_tier = meta.get("cap_tier") or meta.get("cap_label", "")
+        is_trending = meta.get("is_trending", False)
+
+        if cap_tier:
+            market_items.append(f"Market Cap Tier: {cap_tier}" + (f" ({_format_market_cap(mc)})" if mc else ""))
+        elif mc:
+            market_items.append(f"Market Cap: {_format_market_cap(mc)}")
+        if vol:
+            market_items.append(f"24h Volume: {_format_market_cap(vol)}")
+        if is_trending:
+            market_items.append("🔥 Trending on CoinGecko")
+
+        regime = meta.get("market_regime", "")
+        if regime:
+            market_items.append(f"Market Regime: {regime}")
+
+        if market_items:
+            content += _signal_section("Market Context", market_items, "🌍")
+
+    # ═══════════════════════════════════════════
+    # SECTION 7: Risk Parameters (entry only)
+    # ═══════════════════════════════════════════
+    if is_entry:
+        risk_items = []
+        sl_pct = meta.get("stop_loss_pct", 0)
+        tp_pct = meta.get("take_profit_pct", 0)
+        max_alloc = meta.get("max_alloc_pct", 0)
+        max_hold = meta.get("max_hold_hours", 0)
+        if sl_pct:
+            risk_items.append(f"Stop Loss: -{sl_pct:.1f}% from entry")
+        if tp_pct:
+            risk_items.append(f"Take Profit: +{tp_pct:.1f}% from entry")
+        if max_alloc:
+            risk_items.append(f"Max Position Size: {max_alloc:.0f}% of portfolio")
+        if max_hold:
+            risk_items.append(f"Auto-Exit After: {max_hold}h (trailing stop active)")
+        risk_items.append("Trailing stop adjusts as price moves in your favor")
+        content += _signal_section("Risk Management", risk_items, "🛡️")
+
+    # ═══════════════════════════════════════════
+    # SECTION 8: AI Reasoning (always)
+    # ═══════════════════════════════════════════
+    if ai_reasoning:
+        content += f"""
+    <div style="background: #1a1a2e; border-radius: 12px; padding: 20px; margin: 16px 0; border: 1px solid #2a2a3a;">
+        <p style="color: #7c5cff; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 12px;">
+            🤖 AI Reasoning
+        </p>
+        <p style="color: #ccc; font-size: 13px; line-height: 1.7; margin: 0;">
             {ai_reasoning}
         </p>
     </div>
+    """
 
+    # ═══════════════════════════════════════════
+    # SECTION: Close details (SELL/COVER only)
+    # ═══════════════════════════════════════════
+    if not is_entry and close_reason and not any(k in close_reason.upper() for k in ["MANUAL"]):
+        content += f"""
+    <div style="background: #1a1a2e; border-radius: 12px; padding: 20px; margin: 16px 0; border: 1px solid #2a2a3a;">
+        <p style="color: #f59e0b; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 12px;">
+            📋 Close Details
+        </p>
+        <p style="color: #ccc; font-size: 13px; line-height: 1.7; margin: 0;">
+            {close_reason}
+        </p>
+    </div>
+    """
+
+    # CTA button + footer
+    content += f"""
     <div style="text-align: center; margin: 28px 0;">
         <a href="{base_url}"
            style="display: inline-block; background: linear-gradient(135deg, #7c5cff, #00d4aa);
@@ -580,10 +857,15 @@ def send_trade_email(
     </p>
     """
 
-    pnl_str = f" | P&L: {'+' if pnl >= 0 else ''}{pnl_pct:.1f}%" if not is_buy else ""
-    subject = f"{action_emoji} NEXYPHER Auto Trade: {action_label} {symbol.upper()} @ ${price:,.4f}{pnl_str}"
+    # Subject line
+    if is_entry:
+        subject = f"{action_emoji} NEXYPHER: {direction_str} {symbol.upper()} @ ${price:,.4f} | Score: {ai_score}/100"
+    else:
+        pnl_sign = "+" if pnl >= 0 else ""
+        result_word = "PROFIT" if pnl >= 0 else "LOSS"
+        subject = f"{action_emoji} NEXYPHER: Closed {symbol.upper()} ({side.upper()}) | {result_word}: {pnl_sign}${pnl:,.2f} ({pnl_sign}{pnl_pct:.1f}%)"
 
-    return _send_email(to_email, subject, _base_template(f"Trade Executed — {action_label} {symbol.upper()}", content))
+    return _send_email(to_email, subject, _base_template(header_title, content))
 
 
 # ── Contact Form Email ─────────────────────────────────────────────

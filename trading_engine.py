@@ -432,7 +432,7 @@ def _send_trade_sms(user_id: int, message: str):
         logger.warning("SMS send failed for user %d: %s", user_id, e)
 
 
-def execute_buy(user_id, coin_id, coin_name, symbol, price, amount, ai_score, ai_reasoning, stop_loss_pct=1.5, take_profit_pct=2.0, side="long"):
+def execute_buy(user_id, coin_id, coin_name, symbol, price, amount, ai_score, ai_reasoning, stop_loss_pct=1.5, take_profit_pct=2.0, side="long", trade_metadata=None):
     """Execute a buy (LONG) or short-sell (SHORT) order."""
     sb = get_supabase()
     try:
@@ -509,7 +509,13 @@ def execute_buy(user_id, coin_id, coin_name, symbol, price, amount, ai_score, ai
         # Record on blockchain (async, non-blocking)
         blockchain.record_transaction_async(tx_hash, action_label, symbol.upper(), amount)
 
-        return {"success": True, "position_id": position_id, "quantity": quantity, "amount": amount, "tx_hash": tx_hash, "side": side}
+        return {
+            "success": True, "position_id": position_id, "quantity": quantity,
+            "amount": amount, "tx_hash": tx_hash, "side": side,
+            "stop_loss": stop_loss, "take_profit": take_profit,
+            "stop_loss_pct": stop_loss_pct, "take_profit_pct": take_profit_pct,
+            "trade_metadata": trade_metadata or {},
+        }
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -613,7 +619,33 @@ def execute_sell(user_id, position_id, current_price, reason="manual"):
             except Exception:
                 pass
 
-        return {"success": True, "pnl": round(pnl, 2), "pnl_pct": round(pnl_pct, 2), "amount": round(max(0, current_value), 2), "tx_hash": tx_hash, "side": side}
+        # Compute hold duration for result
+        hold_duration_str = ""
+        hold_minutes = 0.0
+        _sell_opened_at = pos.get("opened_at") or pos.get("created_at", "")
+        if _sell_opened_at:
+            try:
+                _ot2 = datetime.fromisoformat(_sell_opened_at.replace("Z", "+00:00"))
+                if _ot2.tzinfo is None:
+                    _ot2 = _ot2.replace(tzinfo=timezone.utc)
+                hold_minutes = (datetime.now(timezone.utc) - _ot2).total_seconds() / 60
+                if hold_minutes >= 60:
+                    hold_duration_str = f"{hold_minutes / 60:.1f}h"
+                else:
+                    hold_duration_str = f"{hold_minutes:.0f}m"
+            except Exception:
+                pass
+
+        return {
+            "success": True, "pnl": round(pnl, 2), "pnl_pct": round(pnl_pct, 2),
+            "amount": round(max(0, current_value), 2), "tx_hash": tx_hash, "side": side,
+            "entry_price": pos["entry_price"], "close_reason": reason,
+            "hold_duration": hold_duration_str, "hold_minutes": round(hold_minutes, 1),
+            "coin_name": pos.get("coin_name", pos["symbol"]),
+            "symbol": pos["symbol"], "quantity": pos["quantity"],
+            "invested_amount": pos["invested_amount"],
+            "ai_reasoning": pos.get("ai_reasoning", ""),
+        }
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -859,6 +891,14 @@ async def research_opportunities(cg_collector, gemini_client=None):
                     "market_cap": coin.market_cap, "volume_24h": coin.total_volume_24h,
                     "score": long_score, "reasons": long_reasons, "reasoning": " | ".join(long_reasons),
                     "source": "coingecko", "side": "long",
+                    # ML/PT signals for email metadata
+                    "ml_reason": ml_reason, "ml_buy_probability": ml_pred.get("buy_probability") if ml_pred else None,
+                    "ml_model_accuracy": ml_pred.get("model_accuracy") if ml_pred else None,
+                    "pt_reason": pt_reason, "pt_verdict": pt_pred.get("verdict") if pt_pred else None,
+                    "pt_prob_7d": pt_pred.get("prob_up_7d") if pt_pred else None,
+                    "pt_confidence": pt_pred.get("confidence") if pt_pred else None,
+                    "cap_label": cap_label, "is_trending": is_trending,
+                    "vol_label": vol_label,
                 })
 
             # ══════════════════════════════════════════════════════
@@ -927,6 +967,14 @@ async def research_opportunities(cg_collector, gemini_client=None):
                     "market_cap": coin.market_cap, "volume_24h": coin.total_volume_24h,
                     "score": short_score, "reasons": short_reasons, "reasoning": " | ".join(short_reasons),
                     "source": "coingecko", "side": "short",
+                    # ML/PT signals for email metadata
+                    "ml_reason": ml_reason, "ml_buy_probability": ml_pred.get("buy_probability") if ml_pred else None,
+                    "ml_model_accuracy": ml_pred.get("model_accuracy") if ml_pred else None,
+                    "pt_reason": pt_reason, "pt_verdict": pt_pred.get("verdict") if pt_pred else None,
+                    "pt_prob_7d": pt_pred.get("prob_up_7d") if pt_pred else None,
+                    "pt_confidence": pt_pred.get("confidence") if pt_pred else None,
+                    "cap_label": cap_label, "is_trending": is_trending,
+                    "vol_label": vol_label,
                 })
     except Exception as e:
         logger.warning("CoinGecko research failed: %s", e)
@@ -1070,7 +1118,7 @@ async def fast_position_check(user_id, cg_collector):
     """
     settings = get_trade_settings(user_id)
     sb = get_supabase()
-    results = {"actions": [], "positions_updated": 0, "positions_closed": 0}
+    results = {"actions": [], "positions_updated": 0, "positions_closed": 0, "trade_details": []}
 
     open_positions = get_open_positions(user_id)
     if not open_positions:
@@ -1155,6 +1203,16 @@ async def fast_position_check(user_id, cg_collector):
                         f"Stop-loss: {side_verb} {pos['symbol']} ({side.upper()}) at ${current_price:,.4f} (P&L: {pnl_pct:+.1f}%)"
                     )
                     results["positions_closed"] += 1
+                    results["trade_details"].append({
+                        "type": "sell", "action": "COVER" if side == "short" else "SELL",
+                        "symbol": pos["symbol"], "coin_name": pos.get("coin_name", pos["symbol"]),
+                        "price": current_price, "quantity": pos["quantity"],
+                        "amount": sell_result["amount"], "side": side,
+                        "pnl": sell_result["pnl"], "pnl_pct": sell_result["pnl_pct"],
+                        "entry_price": pos["entry_price"], "close_reason": sell_reason,
+                        "hold_duration": sell_result.get("hold_duration", ""),
+                        "ai_reasoning": pos.get("ai_reasoning", ""),
+                    })
                     ll = _get_learning_loop()
                     if ll:
                         try: ll.evaluate_trade_close(pos["coin_id"], current_price, pnl_pct, hold_duration_minutes=_hold_minutes, exit_reason="stop_loss")
@@ -1189,6 +1247,16 @@ async def fast_position_check(user_id, cg_collector):
                         f"Take-profit: {side_verb} {pos['symbol']} ({side.upper()}) at ${current_price:,.4f} (P&L: {pnl_pct:+.1f}%)"
                     )
                     results["positions_closed"] += 1
+                    results["trade_details"].append({
+                        "type": "sell", "action": "COVER" if side == "short" else "SELL",
+                        "symbol": pos["symbol"], "coin_name": pos.get("coin_name", pos["symbol"]),
+                        "price": current_price, "quantity": pos["quantity"],
+                        "amount": sell_result["amount"], "side": side,
+                        "pnl": sell_result["pnl"], "pnl_pct": sell_result["pnl_pct"],
+                        "entry_price": pos["entry_price"], "close_reason": sell_reason,
+                        "hold_duration": sell_result.get("hold_duration", ""),
+                        "ai_reasoning": pos.get("ai_reasoning", ""),
+                    })
                     ll = _get_learning_loop()
                     if ll:
                         try: ll.evaluate_trade_close(pos["coin_id"], current_price, pnl_pct, hold_duration_minutes=_hold_minutes, exit_reason="take_profit")
@@ -1233,6 +1301,16 @@ async def fast_position_check(user_id, cg_collector):
                                 f"Auto-exit: {side_verb} {pos['symbol']} ({side.upper()}) after {hours_held:.1f}h (P&L: {pnl_pct:+.1f}%)"
                             )
                             results["positions_closed"] += 1
+                            results["trade_details"].append({
+                                "type": "sell", "action": "COVER" if side == "short" else "SELL",
+                                "symbol": pos["symbol"], "coin_name": pos.get("coin_name", pos["symbol"]),
+                                "price": current_price, "quantity": pos["quantity"],
+                                "amount": sell_result["amount"], "side": side,
+                                "pnl": sell_result["pnl"], "pnl_pct": sell_result["pnl_pct"],
+                                "entry_price": pos["entry_price"], "close_reason": sell_reason,
+                                "hold_duration": sell_result.get("hold_duration", ""),
+                                "ai_reasoning": pos.get("ai_reasoning", ""),
+                            })
                             _send_trade_sms(
                                 user_id,
                                 f"🔴 AUTO-CLOSED {pos['symbol']} ({side.upper()}) after {hours_held:.1f}h | "
@@ -1299,7 +1377,7 @@ async def auto_trade_cycle(user_id, cg_collector, gemini_client=None):
     balance = _get_wallet_balance(user_id)
     stats = _get_trade_stats(user_id)
     total_pnl = stats.get("total_pnl", 0)
-    results = {"actions": [], "positions_updated": 0, "new_trades": 0}
+    results = {"actions": [], "positions_updated": 0, "new_trades": 0, "trade_details": []}
 
     sb = get_supabase()
 
@@ -1542,12 +1620,52 @@ async def auto_trade_cycle(user_id, cg_collector, gemini_client=None):
                 if opp.get("ai_analysis"):
                     detailed_reasoning += f" {opp['ai_analysis'][:150]}"
 
+                # ── Build comprehensive trade metadata for email ──
+                trade_metadata = {
+                    "direction": trade_side.upper(),
+                    "direction_reason": opp.get("reasoning", ""),
+                    "ai_score": opp["score"],
+                    "market_regime": market_regime,
+                    "change_24h": opp.get("change_24h", 0),
+                    "market_cap": opp.get("market_cap", 0),
+                    "volume_24h": opp.get("volume_24h", 0),
+                    "cap_tier": opp.get("cap_label", ""),
+                    "is_trending": opp.get("is_trending", False),
+                    "stop_loss_pct": effective_sl,
+                    "take_profit_pct": effective_tp,
+                    "max_alloc_pct": max_alloc_pct,
+                    "max_hold_hours": MAX_HOLD_HOURS,
+                    "reasons": opp.get("reasons", []),
+                    "ai_analysis": opp.get("ai_analysis", ""),
+                    # Backtest data
+                    "backtest_verified": opp.get("backtest_verified", False),
+                    "backtest_status": opp.get("backtest_status", "none"),
+                    "backtest_stats": bt_stats,
+                    "backtest_strategy_direction": bt_direction,
+                    "backtest_detected_trend": bt_trend,
+                    "backtest_strategies_tested": opp.get("backtest_strategies_tested", []),
+                    "backtest_recommendation": opp.get("backtest_recommendation", ""),
+                    # ML XGBoost signal
+                    "ml_signal": opp.get("ml_reason", ""),
+                    "ml_buy_probability": opp.get("ml_buy_probability", None),
+                    "ml_model_accuracy": opp.get("ml_model_accuracy", None),
+                    # Pretrained 38-feature model
+                    "pt_signal": opp.get("pt_reason", ""),
+                    "pt_verdict": opp.get("pt_verdict", ""),
+                    "pt_prob_7d": opp.get("pt_prob_7d", None),
+                    "pt_confidence": opp.get("pt_confidence", None),
+                    # Portfolio context
+                    "portfolio_slots_used": len(open_positions) + slots_used_this_cycle,
+                    "portfolio_slots_max": MAX_PORTFOLIO_SLOTS,
+                    "wallet_balance": balance,
+                }
+
                 buy_result = execute_buy(
                     user_id=user_id, coin_id=opp["coin_id"], coin_name=opp["name"],
                     symbol=opp["symbol"], price=opp["price"], amount=trade_amount,
                     ai_score=opp["score"], ai_reasoning=detailed_reasoning,
                     stop_loss_pct=effective_sl, take_profit_pct=effective_tp,
-                    side=trade_side,
+                    side=trade_side, trade_metadata=trade_metadata,
                 )
                 if buy_result["success"]:
                     results["new_trades"] += 1
@@ -1558,6 +1676,23 @@ async def auto_trade_cycle(user_id, cg_collector, gemini_client=None):
                         f"{action_verb} {opp['symbol']} ({trade_side.upper()}) at ${opp['price']:,.4f} (${trade_amount:,.0f}) "
                         f"| Score: {opp['score']}/100 | TX: {buy_result['tx_hash'][:16]}..."
                     )
+                    # Store full trade details for email notifications
+                    results["trade_details"].append({
+                        "type": "buy",
+                        "action": side_label,
+                        "symbol": opp["symbol"],
+                        "coin_name": opp["name"],
+                        "coin_id": opp["coin_id"],
+                        "price": opp["price"],
+                        "quantity": buy_result["quantity"],
+                        "amount": trade_amount,
+                        "side": trade_side,
+                        "stop_loss": buy_result["stop_loss"],
+                        "take_profit": buy_result["take_profit"],
+                        "ai_reasoning": detailed_reasoning,
+                        "tx_hash": buy_result["tx_hash"],
+                        "trade_metadata": trade_metadata,
+                    })
                     # Record in learning loop
                     ll = _get_learning_loop()
                     if ll:
@@ -1955,7 +2090,7 @@ def ensure_system_wallet():
         logger.error("Failed to ensure system wallet: %s", e)
 
 
-async def continuous_trading_loop(cg_collector, gemini_client=None):
+async def continuous_trading_loop(cg_collector, gemini_client=None, email_callback=None):
     """
     Always-on background trading loop — two-tier architecture.
 
@@ -1967,6 +2102,7 @@ async def continuous_trading_loop(cg_collector, gemini_client=None):
       - Full auto_trade_cycle() — research, ML, backtests, new trades
       - Learning loop evaluation & strategy adjustments
 
+    email_callback: Optional callable(user_id, cycle_result) to send trade emails.
     Never crashes — catches all exceptions.
     """
     global _autotrader_running
@@ -2022,6 +2158,17 @@ async def continuous_trading_loop(cg_collector, gemini_client=None):
                     "portfolio": result.get("portfolio_summary", {}),
                     "type": "research",
                 })
+
+                # Send trade email notifications in background thread
+                if email_callback and (result.get("trade_details") or actions):
+                    try:
+                        threading.Thread(
+                            target=email_callback,
+                            args=(SYSTEM_USER_ID, result),
+                            daemon=True,
+                        ).start()
+                    except Exception as e:
+                        logger.warning("Email callback failed: %s", e)
 
                 # Learning loop: evaluate past predictions
                 ll = _get_learning_loop()
@@ -2085,6 +2232,17 @@ async def continuous_trading_loop(cg_collector, gemini_client=None):
                         "type": "fast_check",
                     })
 
+                    # Send close-trade email notifications in background thread
+                    if email_callback and pos_result.get("trade_details"):
+                        try:
+                            threading.Thread(
+                                target=email_callback,
+                                args=(SYSTEM_USER_ID, pos_result),
+                                daemon=True,
+                            ).start()
+                        except Exception as e:
+                            logger.warning("Email callback failed: %s", e)
+
         except Exception as e:
             logger.error("Auto-trade cycle #%d FAILED: %s", cycle_count, e, exc_info=True)
 
@@ -2095,10 +2253,13 @@ async def continuous_trading_loop(cg_collector, gemini_client=None):
     logger.info("=== NEXYPHER AUTO-TRADER STOPPED after %d cycles ===", cycle_count)
 
 
-def start_autotrader(cg_collector, gemini_client=None):
+def start_autotrader(cg_collector, gemini_client=None, email_callback=None):
     """
     Start the always-on auto-trader as a background asyncio task.
     Safe to call multiple times — will not create duplicate tasks.
+
+    email_callback: Optional callable(user_id, cycle_result) — called in a
+                    background thread whenever trades are executed.
     """
     global _autotrader_task, _autotrader_running
 
@@ -2111,7 +2272,7 @@ def start_autotrader(cg_collector, gemini_client=None):
 
     _autotrader_running = True
     _autotrader_task = asyncio.create_task(
-        continuous_trading_loop(cg_collector, gemini_client)
+        continuous_trading_loop(cg_collector, gemini_client, email_callback=email_callback)
     )
     logger.info("Auto-trader background task created")
 

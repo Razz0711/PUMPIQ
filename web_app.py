@@ -289,8 +289,8 @@ async def startup():
 
     # Start always-on auto-trade background loop (skip on Vercel serverless)
     if not os.getenv("VERCEL"):
-        trading_engine.start_autotrader(cg, gemini_client)
-        logger.info("Always-on auto-trader started (system user, ₹1Cr balance)")
+        trading_engine.start_autotrader(cg, gemini_client, email_callback=_send_trade_cycle_emails)
+        logger.info("Always-on auto-trader started (system user, ₹1Cr balance, email notifications ON)")
 
         # Start learning evaluation loop (evaluates predictions for ALL users)
         import asyncio as _aio
@@ -1651,7 +1651,7 @@ async def health():
 # ══════════════════════════════════════════════════════════════════
 
 def _send_trade_cycle_emails(user_id: int, cycle_result: dict):
-    """Send email for every BUY/SELL action in an auto-trade cycle (background thread)."""
+    """Send detailed email for every BUY/SELL action in an auto-trade cycle (background thread)."""
     if not smtp_service.is_configured():
         return
     actions = cycle_result.get("actions", [])
@@ -1663,58 +1663,119 @@ def _send_trade_cycle_emails(user_id: int, cycle_result: dict):
         return
 
     balance = trading_engine._get_wallet_balance(user_id)
+    trade_details = cycle_result.get("trade_details", [])
 
-    # Parse each action string and look up full position/order details
-    sb = get_supabase()
-    resp = sb.table("trade_orders").select("*").eq("user_id", user_id).order("created_at", desc=True).limit(len(actions) + 2).execute()
-    recent_orders = resp.data or []
-
-    for order in recent_orders[:len(actions)]:
-        action = order.get("action", "BUY")
-        symbol = order.get("symbol", "???")
-        coin_id = order.get("coin_id", "")
-        price = order.get("price", 0)
-        quantity = order.get("quantity", 0)
-        amount = order.get("amount", 0)
-        ai_reasoning = order.get("ai_reasoning", "")
-
-        # For sells, get P&L from the closed position
-        pnl = 0.0
-        pnl_pct = 0.0
-        stop_loss = 0.0
-        take_profit = 0.0
-        coin_name = symbol
-
-        if order.get("position_id"):
-            pos_resp = sb.table("trade_positions").select("*").eq("id", order["position_id"]).execute()
-            if pos_resp.data:
-                pos = pos_resp.data[0]
-                coin_name = pos.get("coin_name", symbol)
-                stop_loss = pos.get("stop_loss", 0)
-                take_profit = pos.get("take_profit", 0)
-                if action == "SELL":
-                    pnl = pos.get("pnl", 0)
-                    pnl_pct = pos.get("pnl_pct", 0)
-
+    # ── Send emails for each trade detail (enriched with metadata) ──
+    for detail in trade_details:
         try:
-            smtp_service.send_trade_email(
-                to_email=user.email,
-                username=user.username,
-                action=action,
-                symbol=symbol,
-                coin_name=coin_name,
-                price=price,
-                quantity=quantity,
-                amount=amount,
-                ai_reasoning=ai_reasoning,
-                pnl=pnl,
-                pnl_pct=pnl_pct,
-                stop_loss=stop_loss,
-                take_profit=take_profit,
-                wallet_balance=balance,
-            )
+            is_entry = detail.get("type") == "buy"
+            meta = detail.get("trade_metadata", {})
+
+            if is_entry:
+                smtp_service.send_trade_email(
+                    to_email=user.email,
+                    username=user.username,
+                    action=detail.get("action", "BUY"),
+                    symbol=detail.get("symbol", "???"),
+                    coin_name=detail.get("coin_name", ""),
+                    price=detail.get("price", 0),
+                    quantity=detail.get("quantity", 0),
+                    amount=detail.get("amount", 0),
+                    ai_reasoning=detail.get("ai_reasoning", ""),
+                    stop_loss=detail.get("stop_loss", 0),
+                    take_profit=detail.get("take_profit", 0),
+                    wallet_balance=balance,
+                    trade_metadata=meta,
+                    side=detail.get("side", "long"),
+                )
+            else:
+                # Close trade
+                smtp_service.send_trade_email(
+                    to_email=user.email,
+                    username=user.username,
+                    action=detail.get("action", "SELL"),
+                    symbol=detail.get("symbol", "???"),
+                    coin_name=detail.get("coin_name", ""),
+                    price=detail.get("price", 0),
+                    quantity=detail.get("quantity", 0),
+                    amount=detail.get("amount", 0),
+                    ai_reasoning=detail.get("ai_reasoning", ""),
+                    pnl=detail.get("pnl", 0),
+                    pnl_pct=detail.get("pnl_pct", 0),
+                    wallet_balance=balance,
+                    entry_price=detail.get("entry_price", 0),
+                    close_reason=detail.get("close_reason", ""),
+                    hold_duration=detail.get("hold_duration", ""),
+                    side=detail.get("side", "long"),
+                )
         except Exception as e:
-            logger.warning("Trade email failed for user %d (%s %s): %s", user_id, action, symbol, e)
+            logger.warning("Trade email failed for user %d (%s): %s", user_id, detail.get("symbol", "?"), e)
+
+    # ── Fallback: if no trade_details but there are actions, use old DB-lookup method ──
+    if not trade_details and actions:
+        sb = get_supabase()
+        resp = sb.table("trade_orders").select("*").eq("user_id", user_id).order("created_at", desc=True).limit(len(actions) + 2).execute()
+        recent_orders = resp.data or []
+
+        for order in recent_orders[:len(actions)]:
+            action = order.get("action", "BUY")
+            symbol = order.get("symbol", "???")
+            price = order.get("price", 0)
+            quantity = order.get("quantity", 0)
+            amount = order.get("amount", 0)
+            ai_reasoning = order.get("ai_reasoning", "")
+            pnl = 0.0; pnl_pct = 0.0; stop_loss = 0.0; take_profit = 0.0
+            coin_name = symbol; entry_price = 0.0; close_reason = ""; hold_duration = ""; side = "long"
+
+            if order.get("position_id"):
+                pos_resp = sb.table("trade_positions").select("*").eq("id", order["position_id"]).execute()
+                if pos_resp.data:
+                    pos = pos_resp.data[0]
+                    coin_name = pos.get("coin_name", symbol)
+                    stop_loss = pos.get("stop_loss", 0)
+                    take_profit = pos.get("take_profit", 0)
+                    side = pos.get("side", "long")
+                    entry_price = pos.get("entry_price", 0)
+                    if action in ("SELL", "COVER"):
+                        pnl = pos.get("pnl", 0)
+                        pnl_pct = pos.get("pnl_pct", 0)
+                        close_reason = ai_reasoning
+                        # Compute hold duration
+                        opened = pos.get("opened_at") or pos.get("created_at", "")
+                        closed = pos.get("closed_at", "")
+                        if opened and closed:
+                            try:
+                                from datetime import datetime, timezone
+                                _o = datetime.fromisoformat(opened.replace("Z", "+00:00"))
+                                _c = datetime.fromisoformat(closed.replace("Z", "+00:00"))
+                                mins = (_c - _o).total_seconds() / 60
+                                hold_duration = f"{mins/60:.1f}h" if mins >= 60 else f"{mins:.0f}m"
+                            except Exception:
+                                pass
+
+            try:
+                smtp_service.send_trade_email(
+                    to_email=user.email,
+                    username=user.username,
+                    action=action,
+                    symbol=symbol,
+                    coin_name=coin_name,
+                    price=price,
+                    quantity=quantity,
+                    amount=amount,
+                    ai_reasoning=ai_reasoning,
+                    pnl=pnl,
+                    pnl_pct=pnl_pct,
+                    stop_loss=stop_loss,
+                    take_profit=take_profit,
+                    wallet_balance=balance,
+                    entry_price=entry_price,
+                    close_reason=close_reason,
+                    hold_duration=hold_duration,
+                    side=side,
+                )
+            except Exception as e:
+                logger.warning("Trade email failed for user %d (%s %s): %s", user_id, action, symbol, e)
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -1930,6 +1991,10 @@ async def sell_position(position_id: int, user=Depends(require_user)):
                 ai_reasoning="Manual sell order",
                 pnl=result["pnl"], pnl_pct=result["pnl_pct"],
                 wallet_balance=balance,
+                entry_price=result.get("entry_price", pos.get("entry_price", 0)),
+                close_reason="Manual sell order",
+                hold_duration=result.get("hold_duration", ""),
+                side=result.get("side", pos.get("side", "long")),
             ),
             daemon=True,
         ).start()
@@ -1986,6 +2051,15 @@ async def manual_buy(body: ManualBuyRequest, user=Depends(require_user)):
                 ai_reasoning="Manual buy order",
                 stop_loss=stop_loss, take_profit=take_profit,
                 wallet_balance=balance,
+                side="long",
+                trade_metadata={
+                    "direction": "LONG",
+                    "ai_score": 50,
+                    "stop_loss_pct": settings["stop_loss_pct"],
+                    "take_profit_pct": settings["take_profit_pct"],
+                    "max_hold_hours": trading_engine.MAX_HOLD_HOURS,
+                    "market_regime": "N/A (manual trade)",
+                },
             ),
             daemon=True,
         ).start()
