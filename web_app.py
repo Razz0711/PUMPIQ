@@ -312,7 +312,7 @@ async def startup():
 
     # Start always-on auto-trade background loop (skip on Vercel serverless)
     if not os.getenv("VERCEL"):
-        trading_engine.start_autotrader(cg, dex, gemini_client)
+        trading_engine.start_autotrader(cg, gemini_client)
         logger.info("Always-on auto-trader started (system user, ₹1Cr balance)")
 
         # Start learning evaluation loop (evaluates predictions for ALL users)

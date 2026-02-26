@@ -265,8 +265,11 @@ class LearningLoop:
         }
         DOWN_VERDICTS = {
             "sell", "avoid", "bearish", "strong bearish",
-            "short", "caution",
+            "short",
         }
+        # NOTE: "caution" removed from DOWN_VERDICTS — it means "be careful",
+        # not "price will drop". Mapping it to DOWN created false SHORT predictions
+        # that corrupted accuracy metrics.  Now falls through to "flat".
         if v in UP_VERDICTS:
             predicted_direction = "up"
         elif v in DOWN_VERDICTS:
@@ -432,7 +435,13 @@ class LearningLoop:
                     continue
 
                 direction = pred["predicted_direction"]
-                if direction == "up":
+                # BUGFIX: Require minimum 0.5% price move to count as correct.
+                # Without this, a $0.01 move on a $100 coin (0.01%) was "correct",
+                # inflating accuracy and making the model think it's performing well.
+                move_pct = abs((exit_price - entry) / entry) * 100
+                if move_pct < 0.5:
+                    correct = False  # Noise — not a meaningful prediction
+                elif direction == "up":
                     correct = exit_price > entry
                 elif direction == "down":
                     correct = exit_price < entry
@@ -476,7 +485,11 @@ class LearningLoop:
         pnl_pct = ((actual_price - entry) / entry) * 100
 
         direction = pred["predicted_direction"]
-        if direction == "up":
+        # Require minimum 0.5% move to count as correct (avoid counting noise)
+        move_pct = abs((actual_price - entry) / entry) * 100
+        if move_pct < 0.5:
+            correct = False
+        elif direction == "up":
             correct = actual_price > entry
         elif direction == "down":
             correct = actual_price < entry
@@ -495,7 +508,11 @@ class LearningLoop:
         pnl_pct = ((actual_price - entry) / entry) * 100
 
         direction = pred["predicted_direction"]
-        if direction == "up":
+        # Require minimum 1.0% move for 7d evaluation (avoid counting noise)
+        move_pct = abs((actual_price - entry) / entry) * 100
+        if move_pct < 1.0:
+            correct = False
+        elif direction == "up":
             correct = actual_price > entry
         elif direction == "down":
             correct = actual_price < entry

@@ -131,43 +131,63 @@ def _get_learning_adjustments() -> Dict[str, Any]:
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
         recent = [a for a in recent if a.get("created_at", "") >= cutoff]
 
+        # BUGFIX: Only use the LATEST adjustment of each type to prevent stacking.
+        # Previously, 10+ records of the same type would stack penalties exponentially.
+        seen_types: set = set()
         for adj in recent:
             adj_type = adj.get("adjustment_type", "")
 
             if adj_type == "token_confidence_reduction":
                 desc = adj.get("description", "")
                 token = desc.split(" ")[0].lower() if desc else ""
-                if token:
+                dedup_key = f"{adj_type}_{token}"
+                if token and dedup_key not in seen_types:
+                    seen_types.add(dedup_key)
                     adjustments["token_penalties"][token] = (
-                        adjustments["token_penalties"].get(token, 0) - 15
+                        adjustments["token_penalties"].get(token, 0) - 10
                     )
 
             elif adj_type == "direction_bias_correction":
+                if adj_type in seen_types:
+                    continue
+                seen_types.add(adj_type)
                 new_val = adj.get("new_value", "")
                 if "short" in new_val.lower():
                     adjustments["direction_bias"]["short"] = min(
-                        adjustments["direction_bias"].get("short", 1.0), 0.5
+                        adjustments["direction_bias"].get("short", 1.0), 0.6
                     )
                 elif "long" in new_val.lower():
                     adjustments["direction_bias"]["long"] = min(
-                        adjustments["direction_bias"].get("long", 1.0), 0.5
+                        adjustments["direction_bias"].get("long", 1.0), 0.6
                     )
 
             elif adj_type == "global_confidence_reduction":
-                adjustments["global_score_offset"] += 15
+                if adj_type in seen_types:
+                    continue
+                seen_types.add(adj_type)
+                adjustments["global_score_offset"] += 5
                 adjustments["reduce_position_size"] = True
 
             elif adj_type == "global_confidence_increase":
+                if adj_type in seen_types:
+                    continue
+                seen_types.add(adj_type)
                 adjustments["global_score_offset"] = max(
                     0, adjustments["global_score_offset"] - 5
                 )
 
             elif adj_type == "pnl_drift_alert":
-                adjustments["sl_modifier"] += 1.0
+                if adj_type in seen_types:
+                    continue
+                seen_types.add(adj_type)
+                adjustments["sl_modifier"] += 0.5
                 adjustments["reduce_position_size"] = True
 
             elif adj_type == "regime_weight_reduction":
-                adjustments["global_score_offset"] += 10
+                if adj_type in seen_types:
+                    continue
+                seen_types.add(adj_type)
+                adjustments["global_score_offset"] += 3
 
         # ── HARD CAP: prevent stacked adjustments from blocking ALL trades ──
         # Without this cap, 27+ global_confidence_reduction records stack to +415,
@@ -599,13 +619,16 @@ def execute_sell(user_id, position_id, current_price, reason="manual"):
 
 # -- AI Research Engine --------------------------------------------------------
 
-async def research_opportunities(cg_collector, dex_collector, gemini_client=None):
+async def research_opportunities(cg_collector, gemini_client=None):
     """Research and score trading opportunities — DIRECTION-AGNOSTIC.
     
     Principle: We don't have a LONG bias or SHORT bias.
     We READ THE MARKET and pick the direction that maximises profit.
     Both sides get symmetric scoring — bearish signals are just as valuable as bullish ones.
     XGBoost ML model validates direction when its accuracy justifies trust.
+    
+    NOTE: DexScreener removed — it provided unreliable data and tokens
+    bypassed ML/backtest verification, causing many losing trades.
     """
     opportunities = []
 
@@ -894,7 +917,9 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
 
             short_score = max(0, min(100, short_score))
 
-            if short_score >= 15:
+            # SHORT minimum score raised to 25 (was 15) — shorts are inherently riskier
+            # and need stronger conviction to avoid poorly-timed counter-trend trades.
+            if short_score >= 25:
                 opportunities.append({
                     "coin_id": coin.coin_id, "name": coin.name, "symbol": coin.symbol.upper(),
                     "price": coin.current_price, "change_24h": change_24h,
@@ -905,35 +930,8 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
     except Exception as e:
         logger.warning("CoinGecko research failed: %s", e)
 
-    try:
-        for term in ["SOL", "ETH", "PEPE"]:
-            pairs = await dex_collector.search_pairs(term)
-            for p in (pairs or [])[:10]:
-                buys = p.txns_buys_24h
-                sells = p.txns_sells_24h
-                bsr = buys / max(sells, 1)
-                score = 0; reasons = []
-                if p.volume_24h > 50000:
-                    score += 20; reasons.append(f"Volume: ${p.volume_24h:,.0f}")
-                if p.liquidity_usd > 50000:
-                    score += 15; reasons.append(f"Liquidity: ${p.liquidity_usd:,.0f}")
-                if 1.5 < bsr < 5:
-                    score += 15; reasons.append(f"Buy pressure: {bsr:.1f}x")
-                if 2 < p.price_change_24h < 30:
-                    score += 20; reasons.append(f"Price up {p.price_change_24h:+.1f}%")
-                if p.market_cap > 1000000:
-                    score += 10
-                score = max(0, min(100, score))
-                if score >= 30:
-                    opportunities.append({
-                        "coin_id": p.base_token_address, "name": p.base_token_name,
-                        "symbol": p.base_token_symbol, "price": p.price_usd,
-                        "change_24h": p.price_change_24h, "market_cap": p.market_cap,
-                        "volume_24h": p.volume_24h, "score": score, "reasons": reasons,
-                        "reasoning": " | ".join(reasons), "source": "dexscreener",
-                    })
-    except Exception as e:
-        logger.warning("DexScreener research failed: %s", e)
+    # NOTE: DexScreener block removed — tokens bypassed ML/backtest verification
+    # and provided unreliable data, causing many losing trades.
 
     if gemini_client and opportunities:
         try:
@@ -954,14 +952,18 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
             )
             resp = await asyncio.wait_for(gemini_client.chat("You are a crypto trading AI assistant.", prompt), timeout=15)
             if resp.success:
+                # BUGFIX: Extract per-coin analysis instead of duplicating full response
                 for opp in top5:
-                    opp["ai_analysis"] = resp.content
-                    # Also enhance the reasoning field with AI insight
                     symbol = opp["symbol"].upper()
+                    # Find the relevant section for THIS coin
+                    coin_analysis = ""
                     for line in resp.content.split("\n"):
                         if symbol in line.upper():
-                            opp["reasoning"] = line.strip()[:300]
+                            coin_analysis = line.strip()[:300]
                             break
+                    opp["ai_analysis"] = coin_analysis or resp.content[:200]
+                    if coin_analysis:
+                        opp["reasoning"] = coin_analysis
         except Exception as e:
             logger.warning("AI analysis failed: %s", e)
 
@@ -1036,11 +1038,12 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
             )
             opp["reasoning"] = " | ".join(opp["reasons"])
         else:
-            # Mild penalty — don't kill opportunities in aggressive mode
+            # Backtest FAILED — historical data says this pattern loses money.
+            # Penalty increased from -5 to -15 to actually discourage trading.
             tested = opp.get("backtest_strategies_tested", [])
-            opp["score"] = max(0, opp["score"] - 5)
+            opp["score"] = max(0, opp["score"] - 15)
             opp["reasons"].append(
-                f"⚠️ Backtest caution (tested {', '.join(tested) if tested else 'LONG'}): "
+                f"⚠️ Backtest FAILED (tested {', '.join(tested) if tested else 'LONG'}): "
                 f"{'; '.join(bt_result.failure_reasons)}"
             )
             opp["reasoning"] = " | ".join(opp["reasons"])
@@ -1051,9 +1054,13 @@ async def research_opportunities(cg_collector, dex_collector, gemini_client=None
     return backtested
 
 
+# ── Per-token cooldown after stop-loss (prevent re-buying losers immediately) ──
+_token_cooldowns: Dict[str, float] = {}  # coin_id -> timestamp when cooldown expires
+TOKEN_COOLDOWN_MINUTES = 60  # 1 hour cooldown after SL hit
+
 # -- Autonomous Trading Loop ---------------------------------------------------
 
-async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=None):
+async def auto_trade_cycle(user_id, cg_collector, gemini_client=None):
     settings = get_trade_settings(user_id)
     if not settings.get("auto_trade_enabled"):
         return {"status": "disabled", "message": "Auto-trading is disabled. Turn on the toggle to start."}
@@ -1157,8 +1164,29 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
                 except Exception:
                     pass
 
-            # Check stop-loss (works for both LONG and SHORT)
-            if pnl_pct <= -settings["stop_loss_pct"]:
+            # Check stop-loss using POSITION'S stored SL/TP prices (not settings)
+            # BUGFIX: Previously used settings["stop_loss_pct"] which could change
+            # after the position was opened, causing wrong exit triggers.
+            pos_sl = pos.get("stop_loss", 0)
+            pos_tp = pos.get("take_profit", 0)
+            sl_hit = False
+            tp_hit = False
+            if pos_sl > 0:
+                if side == "short":
+                    sl_hit = current_price >= pos_sl  # SHORT SL is above entry
+                else:
+                    sl_hit = current_price <= pos_sl  # LONG SL is below entry
+            else:
+                sl_hit = pnl_pct <= -settings["stop_loss_pct"]  # fallback
+            if pos_tp > 0:
+                if side == "short":
+                    tp_hit = current_price <= pos_tp  # SHORT TP is below entry
+                else:
+                    tp_hit = current_price >= pos_tp  # LONG TP is above entry
+            else:
+                tp_hit = pnl_pct >= settings["take_profit_pct"]  # fallback
+
+            if sl_hit:
                 side_verb = "covered" if side == "short" else "sold"
                 sell_reason = (
                     f"STOP-LOSS ({side.upper()}): {pos['symbol']} lost {pnl_pct:.1f}% "
@@ -1174,10 +1202,28 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
                     if ll:
                         try: ll.evaluate_trade_close(pos["coin_id"], current_price, pnl_pct, hold_duration_minutes=_hold_minutes, exit_reason="stop_loss")
                         except Exception: pass
+                    # Set per-token cooldown after SL hit — don't re-buy this coin for 1 hour
+                    _token_cooldowns[coin_id] = time.time() + TOKEN_COOLDOWN_MINUTES * 60
+                    logger.info("Token cooldown set: %s blocked for %d min after SL", pos.get("symbol", coin_id), TOKEN_COOLDOWN_MINUTES)
                 continue
 
-            # Check take-profit
-            if pnl_pct >= settings["take_profit_pct"]:
+            # ── TRAILING STOP: Update SL upward if price has moved in our favor ──
+            # This locks in profits instead of letting winners turn into losers.
+            if pos_sl > 0 and pos["entry_price"] > 0:
+                if side == "long" and current_price > pos["entry_price"] * 1.01:  # at least 1% in profit
+                    # Trail SL to 1.5% below current high (or current price as proxy)
+                    new_sl = current_price * (1 - settings["stop_loss_pct"] / 100)
+                    if new_sl > pos_sl:
+                        sb.table("trade_positions").update({"stop_loss": round(new_sl, 6)}).eq("id", pos["id"]).execute()
+                        logger.debug("Trailing SL updated for %s LONG: $%.4f -> $%.4f", pos.get("symbol"), pos_sl, new_sl)
+                elif side == "short" and current_price < pos["entry_price"] * 0.99:  # at least 1% in profit
+                    new_sl = current_price * (1 + settings["stop_loss_pct"] / 100)
+                    if new_sl < pos_sl:
+                        sb.table("trade_positions").update({"stop_loss": round(new_sl, 6)}).eq("id", pos["id"]).execute()
+                        logger.debug("Trailing SL updated for %s SHORT: $%.4f -> $%.4f", pos.get("symbol"), pos_sl, new_sl)
+
+            # Check take-profit using position's stored TP price
+            if tp_hit:
                 side_verb = "covered" if side == "short" else "sold"
                 sell_reason = (
                     f"TAKE-PROFIT ({side.upper()}): {pos['symbol']} gained {pnl_pct:.1f}% "
@@ -1262,7 +1308,7 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
         f"${balance:,.0f}", len(open_positions), MAX_PORTFOLIO_SLOTS,
     )
     if True:
-        opportunities = await research_opportunities(cg_collector, dex_collector, gemini_client)
+        opportunities = await research_opportunities(cg_collector, gemini_client)
 
         # Filter stablecoins, invalid prices, and low market cap
         opportunities = [o for o in opportunities if o.get("price", 0) > 0.001]
@@ -1336,7 +1382,9 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
         learning_offset = learning_mods.get("global_score_offset", 0)
         confidence_min_score = int(confidence_threshold * 10)
         base_min = min_score + learning_offset
-        effective_min_score = base_min if risk_profile == "aggressive" else max(base_min, confidence_min_score)
+        # BUGFIX: Always apply user's confidence_threshold, even in aggressive mode.
+        # Previously aggressive mode ignored it entirely, letting low-confidence trades through.
+        effective_min_score = max(base_min, confidence_min_score)
         pre_filter_count = len(opportunities)
         opportunities = [o for o in opportunities if o["score"] >= effective_min_score]
         logger.info(
@@ -1355,6 +1403,20 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
         # Filter out coins we already hold (same coin + same side)
         current_positions_key = {(p["coin_id"], p.get("side", "long")) for p in open_positions}
         new_opportunities = [o for o in opportunities if (o["coin_id"], o.get("side", "long")) not in current_positions_key]
+
+        # Filter out coins under cooldown (recently hit stop-loss)
+        now_ts = time.time()
+        cooled_off = []
+        for o in new_opportunities:
+            cid = o.get("coin_id", "")
+            cooldown_until = _token_cooldowns.get(cid, 0)
+            if now_ts < cooldown_until:
+                remaining_min = (cooldown_until - now_ts) / 60
+                logger.info("Skipping %s — cooldown active (%.0f min remaining after SL)", o.get("symbol", cid), remaining_min)
+            else:
+                _token_cooldowns.pop(cid, None)  # Clean up expired cooldowns
+                cooled_off.append(o)
+        new_opportunities = cooled_off
 
         # Separate LONG and SHORT opportunities
         long_opps = [o for o in new_opportunities if o.get("side", "long") == "long"]
@@ -1399,8 +1461,13 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
             base_sl = max(1.0, settings["stop_loss_pct"] + mods["stop_loss_add"] + learning_mods.get("sl_modifier", 0))
             base_tp = settings["take_profit_pct"]
 
+            slots_used_this_cycle = 0  # Track slots consumed this cycle to avoid exceeding MAX
             for opp, trade_side in picks:
                 if balance - RESERVE_AMOUNT < MIN_POSITION_AMOUNT:
+                    break
+                # Re-check slot availability after each buy to prevent exceeding MAX_PORTFOLIO_SLOTS
+                if (len(open_positions) + slots_used_this_cycle) >= MAX_PORTFOLIO_SLOTS:
+                    logger.info("Portfolio full (%d + %d slots used) — stopping new trades", len(open_positions), slots_used_this_cycle)
                     break
 
                 score = opp["score"]
@@ -1464,6 +1531,7 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
                 if buy_result["success"]:
                     results["new_trades"] += 1
                     balance -= trade_amount
+                    slots_used_this_cycle += 1
                     action_verb = "Shorted" if trade_side == "short" else "Bought"
                     results["actions"].append(
                         f"{action_verb} {opp['symbol']} ({trade_side.upper()}) at ${opp['price']:,.4f} (${trade_amount:,.0f}) "
@@ -1866,7 +1934,7 @@ def ensure_system_wallet():
         logger.error("Failed to ensure system wallet: %s", e)
 
 
-async def continuous_trading_loop(cg_collector, dex_collector, gemini_client=None):
+async def continuous_trading_loop(cg_collector, gemini_client=None):
     """
     Always-on background trading loop.
 
@@ -1897,7 +1965,6 @@ async def continuous_trading_loop(cg_collector, dex_collector, gemini_client=Non
             result = await auto_trade_cycle(
                 user_id=SYSTEM_USER_ID,
                 cg_collector=cg_collector,
-                dex_collector=dex_collector,
                 gemini_client=gemini_client,
             )
 
@@ -1940,8 +2007,10 @@ async def continuous_trading_loop(cg_collector, dex_collector, gemini_client=Non
                 except Exception as e:
                     logger.warning("Learning evaluation error: %s", e)
 
-                # 3. Generate strategy adjustments every 10 cycles
-                if cycle_count % 10 == 0:
+                # 3. Generate strategy adjustments every 100 cycles (~50 min)
+                # BUGFIX: Was every 10 cycles (5 min), creating thousands of redundant
+                # DB records over 300+ trades that stacked penalties exponentially.
+                if cycle_count % 100 == 0:
                     try:
                         adjustments = ll.generate_adjustments()
                         if adjustments:
@@ -1970,7 +2039,7 @@ async def continuous_trading_loop(cg_collector, dex_collector, gemini_client=Non
     logger.info("=== NEXYPHER AUTO-TRADER STOPPED after %d cycles ===", cycle_count)
 
 
-def start_autotrader(cg_collector, dex_collector, gemini_client=None):
+def start_autotrader(cg_collector, gemini_client=None):
     """
     Start the always-on auto-trader as a background asyncio task.
     Safe to call multiple times — will not create duplicate tasks.
@@ -1986,7 +2055,7 @@ def start_autotrader(cg_collector, dex_collector, gemini_client=None):
 
     _autotrader_running = True
     _autotrader_task = asyncio.create_task(
-        continuous_trading_loop(cg_collector, dex_collector, gemini_client)
+        continuous_trading_loop(cg_collector, gemini_client)
     )
     logger.info("Auto-trader background task created")
 
