@@ -1695,6 +1695,67 @@ def get_pnl_chart_data(user_id: int, days: int = 14) -> List[Dict[str, Any]]:
         return []
 
 
+def get_pnl_heatmap(user_id: int, days: int = 30) -> List[Dict[str, Any]]:
+    """Aggregate P&L per coin for a treemap heatmap.
+    Returns list of { coin, symbol, pnl, pnl_pct, position_size, trades, status }.
+    Combines both open + closed positions within the window."""
+    sb = get_supabase()
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT00:00:00+00:00")
+    try:
+        # Closed positions in window
+        closed = sb.table("trade_positions").select(
+            "coin_id,symbol,invested_amount,pnl,pnl_pct"
+        ).eq("user_id", user_id).eq("status", "closed").gte("closed_at", since).execute()
+
+        # Open positions (always included)
+        open_pos = sb.table("trade_positions").select(
+            "coin_id,symbol,invested_amount,pnl,pnl_pct,current_value"
+        ).eq("user_id", user_id).eq("status", "open").execute()
+
+        coin_map: Dict[str, Dict[str, Any]] = {}
+
+        for p in (closed.data or []):
+            cid = p["coin_id"]
+            if cid not in coin_map:
+                coin_map[cid] = {"coin": cid, "symbol": p.get("symbol", cid).upper(),
+                                 "pnl": 0, "invested": 0, "trades": 0, "open_value": 0, "has_open": False}
+            coin_map[cid]["pnl"] += p.get("pnl", 0) or 0
+            coin_map[cid]["invested"] += p.get("invested_amount", 0) or 0
+            coin_map[cid]["trades"] += 1
+
+        for p in (open_pos.data or []):
+            cid = p["coin_id"]
+            if cid not in coin_map:
+                coin_map[cid] = {"coin": cid, "symbol": p.get("symbol", cid).upper(),
+                                 "pnl": 0, "invested": 0, "trades": 0, "open_value": 0, "has_open": False}
+            coin_map[cid]["pnl"] += p.get("pnl", 0) or 0
+            coin_map[cid]["invested"] += p.get("invested_amount", 0) or 0
+            coin_map[cid]["open_value"] += p.get("current_value", 0) or 0
+            coin_map[cid]["trades"] += 1
+            coin_map[cid]["has_open"] = True
+
+        result = []
+        for cid, d in coin_map.items():
+            position_size = d["open_value"] if d["has_open"] else d["invested"]
+            pnl_pct = (d["pnl"] / d["invested"] * 100) if d["invested"] > 0 else 0
+            result.append({
+                "coin": cid,
+                "symbol": d["symbol"],
+                "pnl": round(d["pnl"], 2),
+                "pnl_pct": round(pnl_pct, 2),
+                "position_size": round(max(position_size, 0.01), 2),
+                "trades": d["trades"],
+                "status": "open" if d["has_open"] else "closed",
+            })
+
+        # Sort by absolute position size descending (bigger tiles first)
+        result.sort(key=lambda x: x["position_size"], reverse=True)
+        return result
+    except Exception as e:
+        logger.warning("get_pnl_heatmap error: %s", e)
+        return []
+
+
 def get_live_feed(user_id: int, limit: int = 20) -> List[Dict[str, Any]]:
     """Get the most recent trade actions for the live feed."""
     sb = get_supabase()

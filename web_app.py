@@ -2144,6 +2144,12 @@ async def get_cycle_log():
     return trading_engine.get_cycle_log()
 
 
+@app.get("/api/trader/pnl-heatmap")
+async def get_pnl_heatmap(days: int = Query(30)):
+    """P&L heatmap data aggregated by coin (system auto-trader)."""
+    return trading_engine.get_pnl_heatmap(trading_engine.SYSTEM_USER_ID, min(days, 90))
+
+
 # ══════════════════════════════════════════════════════════════════
 # TRANSACTION HASH VERIFICATION
 # ══════════════════════════════════════════════════════════════════
