@@ -10100,6 +10100,7 @@
 
         function renderTraderPositions(positions) {
             const el = document.getElementById('traderPositions');
+            _autoCloseTriggered.clear(); // reset auto-close guard on re-render
             if (!positions.length) {
                 el.innerHTML = '<div class="empty-state" style="padding:20px"><p>No open positions — the bot scans every 30s and will execute automatically</p></div>';
                 return;
@@ -10133,7 +10134,7 @@
 
                 // Countdown timer calculation
                 const openedAt = new Date(p.opened_at || p.created_at);
-                const expiresAt = new Date(openedAt.getTime() + 60 * 60 * 1000); // 1 hour
+                const expiresAt = new Date(openedAt.getTime() + 2 * 60 * 60 * 1000); // 2 hours (matches backend MAX_HOLD_HOURS)
                 const now = new Date();
                 const msRemaining = Math.max(0, expiresAt - now);
                 const minRemaining = Math.floor(msRemaining / 60000);
@@ -10156,7 +10157,7 @@
             </div>
             <div style="display:flex;align-items:center;gap:8px;margin:6px 0;padding:5px 10px;background:${timeBg};border-radius:6px;font-size:12px">
                 <span style="color:var(--text-muted)">⏱ Auto-close in:</span>
-                <strong style="color:${timeColor}" data-countdown="${expiresAt.toISOString()}">${timeStr}</strong>
+                <strong style="color:${timeColor}" data-countdown="${expiresAt.toISOString()}" data-pos-id="${p.id}">${timeStr}</strong>
                 ${minRemaining <= 5 && msRemaining > 0 ? '<span style="color:var(--red);font-size:11px">⚠️ Closing soon!</span>' : ''}
             </div>
             <div class="position-details">
@@ -10183,6 +10184,7 @@
 
         // Live countdown timers for position auto-close
         let _countdownInterval = null;
+        const _autoCloseTriggered = new Set(); // guard against duplicate close calls
         function _startCountdownTimers() {
             if (_countdownInterval) clearInterval(_countdownInterval);
             _countdownInterval = setInterval(() => {
@@ -10194,6 +10196,13 @@
                     if (ms <= 0) {
                         el.textContent = 'CLOSING...';
                         el.style.color = 'var(--red)';
+                        // ── INSTANT AUTO-CLOSE: trigger sell API immediately ──
+                        const posId = el.dataset.posId;
+                        if (posId && !_autoCloseTriggered.has(posId)) {
+                            _autoCloseTriggered.add(posId);
+                            console.log(`⏱ Auto-close triggered for position ${posId}`);
+                            sellPosition(parseInt(posId), true); // true = auto-close, skip confirm
+                        }
                     } else {
                         el.textContent = `${min}m ${sec}s`;
                         el.style.color = min <= 5 ? 'var(--red)' : min <= 15 ? '#f39c12' : 'var(--green)';
@@ -10316,14 +10325,25 @@
             }
         }
 
-        async function sellPosition(posId) {
-            if (!confirm('Sell this position?')) return;
+        async function sellPosition(posId, autoClose = false) {
+            if (!autoClose && !confirm('Sell this position?')) return;
             try {
                 const result = await api(`/api/trader/sell/${posId}`, { method: 'POST' });
                 const hashLine = result.tx_hash ? `\n\n🔗 TX Hash:\n${result.tx_hash}` : '';
-                alert(`Sold! P&L: $${result.pnl.toFixed(2)} (${result.pnl_pct >= 0 ? '+' : ''}${result.pnl_pct.toFixed(1)}%)${hashLine}`);
+                if (autoClose) {
+                    console.log(`✅ Auto-closed position ${posId}: P&L $${result.pnl.toFixed(2)}`);
+                } else {
+                    alert(`Sold! P&L: $${result.pnl.toFixed(2)} (${result.pnl_pct >= 0 ? '+' : ''}${result.pnl_pct.toFixed(1)}%)${hashLine}`);
+                }
                 loadTraderDashboard();
-            } catch (e) { alert(e.message); }
+            } catch (e) {
+                if (autoClose) {
+                    console.warn(`Auto-close failed for position ${posId}:`, e.message);
+                    _autoCloseTriggered.delete(String(posId)); // allow retry on next tick
+                } else {
+                    alert(e.message);
+                }
+            }
         }
 
         function showManualBuyModal() {
