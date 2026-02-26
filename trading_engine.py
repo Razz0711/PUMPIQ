@@ -175,7 +175,7 @@ def _get_learning_adjustments() -> Dict[str, Any]:
         # Cap at +5 means: worst case min_score goes from 40 -> 45 (aggressive).
         # Combined with quality floor (35) this still maintains risk control.
         adjustments["global_score_offset"] = min(adjustments["global_score_offset"], 5)
-        adjustments["sl_modifier"] = min(adjustments["sl_modifier"], 3.0)
+        adjustments["sl_modifier"] = min(adjustments["sl_modifier"], 1.0)
 
         # Additionally: penalize tokens in worst predictions
         try:
@@ -1397,6 +1397,7 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
             investable = balance - RESERVE_AMOUNT
             total_score = sum(max(o["score"], 1) for o, _ in picks)
             base_sl = max(1.0, settings["stop_loss_pct"] + mods["stop_loss_add"] + learning_mods.get("sl_modifier", 0))
+            base_tp = settings["take_profit_pct"]
 
             for opp, trade_side in picks:
                 if balance - RESERVE_AMOUNT < MIN_POSITION_AMOUNT:
@@ -1405,16 +1406,16 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
                 score = opp["score"]
 
                 # ── SCORE-TIERED RISK PARAMETERS ──
-                # Calibrated for 2h holds (training mode): fast rotation, tight SL/TP.
-                # Goal: maximize learning data points with real trade outcomes.
+                # Uses user's configured SL/TP as base, only adjusts allocation %.
+                # Higher scores get slightly wider TP and more allocation.
                 if score >= 80:
-                    effective_sl = max(base_sl, 2.0); effective_tp = 3.0; max_alloc_pct = 10.0
+                    effective_sl = base_sl; effective_tp = base_tp + 0.5; max_alloc_pct = 10.0
                 elif score >= 60:
-                    effective_sl = max(base_sl, 1.8); effective_tp = 2.5; max_alloc_pct = 7.0
+                    effective_sl = base_sl; effective_tp = base_tp; max_alloc_pct = 7.0
                 elif score >= 45:
-                    effective_sl = max(base_sl, 1.5); effective_tp = 2.0; max_alloc_pct = 5.0
+                    effective_sl = base_sl; effective_tp = base_tp; max_alloc_pct = 5.0
                 elif score >= 35:
-                    effective_sl = max(base_sl, 1.5); effective_tp = 2.0; max_alloc_pct = 3.0
+                    effective_sl = base_sl; effective_tp = base_tp; max_alloc_pct = 3.0
                 else:
                     logger.info("Skipping %s (score %d < 35) — below quality floor", opp["symbol"], score)
                     continue  # Quality floor: don't trade on very weak signals
