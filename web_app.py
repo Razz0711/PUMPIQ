@@ -32,7 +32,6 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from src.data_collectors.coingecko_collector import CoinGeckoCollector
-from src.data_collectors.dexscreener_collector import DexScreenerCollector
 from src.data_collectors.news_collector import NewsCollector
 from src.data_collectors.technical_analyzer import TechnicalAnalyzer
 
@@ -72,7 +71,6 @@ _notification_formatter = NotificationFormatter()
 
 # ── Globals ───────────────────────────────────────────────────────
 cg: CoinGeckoCollector = None  # type: ignore
-dex: DexScreenerCollector = None  # type: ignore
 news: NewsCollector = None  # type: ignore
 ta: TechnicalAnalyzer = None  # type: ignore
 gemini_client = None
@@ -146,24 +144,6 @@ class TokenDetail(BaseModel):
     backtest_strategies_tested: List[str] = []
 
 
-class DexToken(BaseModel):
-    name: str
-    symbol: str
-    address: str
-    price: float
-    price_change_24h: float = 0.0
-    volume_24h: float = 0.0
-    liquidity: float = 0.0
-    market_cap: float = 0.0
-    buys_24h: int = 0
-    sells_24h: int = 0
-    buy_sell_ratio: float = 1.0
-    dex: str = ""
-    pair_address: str = ""
-    age: str = ""
-    trades_count: int = 0
-
-
 class TrendingToken(BaseModel):
     name: str
     symbol: str
@@ -173,13 +153,11 @@ class TrendingToken(BaseModel):
 
 class SearchResult(BaseModel):
     coingecko: List[TokenCard] = []
-    dexscreener: List[DexToken] = []
 
 
 class AITokenScore(BaseModel):
     name: str
     symbol: str
-    address: str = ""
     coin_id: str = ""
     score: int = 0
     summary: str = ""
@@ -275,7 +253,7 @@ _init_lock = threading.Lock()
 
 def _ensure_initialized():
     """Lazy initialization — works both with startup event and on first request (Vercel)."""
-    global _initialized, cg, dex, news, ta, gemini_client
+    global _initialized, cg, news, ta, gemini_client
     if _initialized:
         return
     with _init_lock:
@@ -284,7 +262,6 @@ def _ensure_initialized():
         _initialized = True
 
     cg = CoinGeckoCollector(api_key=os.getenv("COINGECKO_API_KEY", ""))
-    dex = DexScreenerCollector(apify_api_key=os.getenv("APIFY_API_KEY", ""))
     news = NewsCollector(
         api_key=os.getenv("CRYPTOPANIC_API_KEY", ""),
         news_api_key=os.getenv("NEWS_API_KEY", ""),
@@ -1078,79 +1055,47 @@ async def get_trending():
 
 
 # ══════════════════════════════════════════════════════════════════
-# TOKEN FEED (DexScreener live feed)
+# TOKEN FEED (CoinGecko live feed)
 # ══════════════════════════════════════════════════════════════════
 
-@app.get("/api/feed/tokens", response_model=List[DexToken])
+@app.get("/api/feed/tokens", response_model=List[TokenCard])
 async def get_token_feed(
     sort: str = Query("volume"),
     status: str = Query("all"),
     limit: int = Query(50, ge=1, le=100),
 ):
-    search_terms = ["SOL", "BONK", "WIF"]
-    tasks = [dex.search_pairs(term) for term in search_terms]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    coins = await cg.get_top_coins(limit=100)
+    if not coins:
+        return []
 
-    seen = set()
-    all_pairs: List[DexToken] = []
-    for result in results:
-        if isinstance(result, Exception):
-            continue
-        for p in result:
-            key = p.base_token_address
-            if key in seen:
-                continue
-            seen.add(key)
-
-            age_str = ""
-            if hasattr(p, "pair_created_at") and p.pair_created_at:
-                try:
-                    created = datetime.fromisoformat(str(p.pair_created_at).replace("Z", "+00:00"))
-                    delta = datetime.now(timezone.utc) - created
-                    if delta.days > 0:
-                        age_str = f"{delta.days}d ago"
-                    elif delta.seconds > 3600:
-                        age_str = f"{delta.seconds // 3600}h ago"
-                    else:
-                        age_str = f"{delta.seconds // 60}m ago"
-                except Exception:
-                    pass
-
-            bsr = p.txns_buys_24h / max(p.txns_sells_24h, 1)
-            trades = p.txns_buys_24h + p.txns_sells_24h
-            all_pairs.append(DexToken(
-                name=p.base_token_name,
-                symbol=p.base_token_symbol,
-                address=p.base_token_address,
-                price=p.price_usd,
-                price_change_24h=p.price_change_24h,
-                volume_24h=p.volume_24h,
-                liquidity=p.liquidity_usd,
-                market_cap=p.market_cap,
-                buys_24h=p.txns_buys_24h,
-                sells_24h=p.txns_sells_24h,
-                buy_sell_ratio=round(bsr, 2),
-                dex=p.dex_id,
-                pair_address=p.pair_address,
-                age=age_str,
-                trades_count=trades,
-            ))
+    all_tokens: List[TokenCard] = []
+    for c in coins:
+        all_tokens.append(TokenCard(
+            name=c.name,
+            symbol=c.symbol.upper(),
+            coin_id=c.coin_id,
+            price=c.current_price,
+            price_change_24h=c.price_change_pct_24h,
+            market_cap=c.market_cap,
+            volume_24h=c.total_volume_24h,
+            rank=c.market_cap_rank,
+        ))
 
     if sort == "volume":
-        all_pairs.sort(key=lambda x: x.volume_24h, reverse=True)
+        all_tokens.sort(key=lambda x: x.volume_24h, reverse=True)
     elif sort == "newest":
-        all_pairs.sort(key=lambda x: x.age or "zzz")
+        all_tokens.sort(key=lambda x: x.rank or 9999)
     elif sort == "price":
-        all_pairs.sort(key=lambda x: x.price, reverse=True)
+        all_tokens.sort(key=lambda x: x.price, reverse=True)
     elif sort == "trades":
-        all_pairs.sort(key=lambda x: x.trades_count, reverse=True)
+        all_tokens.sort(key=lambda x: x.volume_24h / max(x.price, 0.0001), reverse=True)
 
     if status == "active":
-        all_pairs = [p for p in all_pairs if p.liquidity > 1000]
+        all_tokens = [t for t in all_tokens if t.volume_24h > 1_000_000]
     elif status == "graduated":
-        all_pairs = [p for p in all_pairs if p.market_cap > 100000]
+        all_tokens = [t for t in all_tokens if t.market_cap > 100_000_000]
 
-    return all_pairs[:limit]
+    return all_tokens[:limit]
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -1359,7 +1304,7 @@ async def get_token_detail(coin_id: str):
 
 
 # ══════════════════════════════════════════════════════════════════
-# AI RECOMMENDATIONS
+# AI RECOMMENDATIONS (CoinGecko-based)
 # ══════════════════════════════════════════════════════════════════
 
 @app.get("/api/ai/recommendations", response_model=AIRecommendations)
@@ -1367,61 +1312,62 @@ async def get_ai_recommendations(
     enable_onchain: bool = Query(True),
     enable_technical: bool = Query(True),
 ):
-    pairs = await dex.search_pairs("SOL")
+    coins_task = cg.get_top_coins(limit=50)
+    trending_task = cg.get_trending()
+    coins, trending = await asyncio.gather(coins_task, trending_task, return_exceptions=True)
+    if isinstance(coins, Exception) or not coins:
+        coins = []
+    if isinstance(trending, Exception):
+        trending = []
+
+    trending_ids = {t.coin_id for t in (trending or [])}
     tokens_scored: List[AITokenScore] = []
-    token_prices: Dict[str, float] = {}  # address → price_usd for learning loop
-    seen = set()
+    token_prices: Dict[str, float] = {}  # coin_id → price for learning loop
 
-    for p in (pairs or [])[:20]:
-        if p.base_token_address in seen:
-            continue
-        seen.add(p.base_token_address)
-
-        buys = p.txns_buys_24h
-        sells = p.txns_sells_24h
-        total_trades = buys + sells
-        bsr = buys / max(sells, 1)
-        liquidity = p.liquidity_usd
-        volume = p.volume_24h
+    for c in coins[:30]:
+        volume = c.total_volume_24h or 0
+        mcap = c.market_cap or 0
+        price_chg = c.price_change_pct_24h or 0
 
         on_chain = {}
         on_chain_score = 0
         if enable_onchain:
-            vol_score = min(25, (volume / 10000) * 25) if volume > 0 else 0
-            liq_score = min(25, (liquidity / 50000) * 25) if liquidity > 0 else 0
-            trade_score = min(15, (total_trades / 100) * 15)
-            buy_score = min(10, bsr * 5) if bsr > 0 else 0
-            on_chain_score = vol_score + liq_score + trade_score + buy_score
+            vol_score = min(25, (volume / 1_000_000) * 5) if volume > 0 else 0
+            mcap_score = min(25, (mcap / 10_000_000) * 5) if mcap > 0 else 0
+            vol_mcap = (volume / max(mcap, 1)) * 100 if mcap > 0 else 0
+            activity_score = min(15, vol_mcap * 3)
+            trend_score = 10 if c.coin_id in trending_ids else 0
+            on_chain_score = vol_score + mcap_score + activity_score + trend_score
             on_chain = {
                 "volume_score": round(vol_score, 1),
-                "liquidity_score": round(liq_score, 1),
-                "trade_score": round(trade_score, 1),
-                "buy_pressure_score": round(buy_score, 1),
+                "market_cap_score": round(mcap_score, 1),
+                "activity_score": round(activity_score, 1),
+                "trending_score": round(trend_score, 1),
             }
 
         technical = {}
         tech_score = 0
         if enable_technical:
-            momentum = min(15, max(0, p.price_change_24h * 0.5 + 7.5))
-            vol_mom = min(10, (volume / 5000) * 10)
+            momentum = min(15, max(0, price_chg * 0.5 + 7.5))
+            vol_mom = min(10, (volume / 500_000) * 10)
             tech_score = momentum + vol_mom
             technical = {
                 "price_momentum": round(momentum, 1),
                 "volume_momentum": round(vol_mom, 1),
-                "trend": "bullish" if p.price_change_24h > 2 else ("bearish" if p.price_change_24h < -2 else "neutral"),
+                "trend": "bullish" if price_chg > 2 else ("bearish" if price_chg < -2 else "neutral"),
             }
 
         total_score = int(min(100, on_chain_score + tech_score))
 
         flags = []
-        if liquidity < 5000:
-            flags.append("Low liquidity")
-        if total_trades < 10:
-            flags.append("Low trading activity")
-        if bsr > 5:
-            flags.append("Unusual buy pressure")
-        if p.price_change_24h < -20:
+        if mcap < 10_000_000:
+            flags.append("Low market cap")
+        if volume < 100_000:
+            flags.append("Low trading volume")
+        if price_chg < -20:
             flags.append("Heavy sell-off")
+        if c.coin_id in trending_ids:
+            flags.append("Trending")
 
         if total_score >= 70:
             verdict = "STRONG BUY"
@@ -1436,15 +1382,15 @@ async def get_ai_recommendations(
 
         summary = (
             f"{'Strong' if total_score >= 60 else 'Moderate' if total_score >= 40 else 'Weak'} "
-            f"on-chain activity with {total_trades} trades. "
-            f"{'Healthy' if liquidity > 10000 else 'Low'} liquidity at ${liquidity:,.0f}. "
-            f"Buy/sell ratio: {bsr:.1f}x."
+            f"market activity. Volume: ${volume:,.0f}, Market Cap: ${mcap:,.0f}. "
+            f"24h change: {price_chg:+.1f}%. "
+            f"{'🔥 Trending on CoinGecko.' if c.coin_id in trending_ids else ''}"
         )
 
         tokens_scored.append(AITokenScore(
-            name=p.base_token_name,
-            symbol=p.base_token_symbol,
-            address=p.base_token_address,
+            name=c.name,
+            symbol=c.symbol.upper(),
+            coin_id=c.coin_id,
             score=total_score,
             summary=summary,
             on_chain=on_chain,
@@ -1452,25 +1398,22 @@ async def get_ai_recommendations(
             risk_flags=flags,
             verdict=verdict,
             confidence_bar=confidence_bar(total_score / 10),
-            risk_badge_text=risk_badge("HIGH" if flags else ("MEDIUM" if total_score < 50 else "LOW")),
+            risk_badge_text=risk_badge("HIGH" if len(flags) > 1 else ("MEDIUM" if total_score < 50 else "LOW")),
             verdict_emoji=verdict_emoji(verdict.title()),
             verdict_color=verdict_colour(verdict.title()),
         ))
-        token_prices[p.base_token_address] = p.price_usd
+        token_prices[c.coin_id] = c.current_price
 
     tokens_scored.sort(key=lambda x: x.score, reverse=True)
 
     # ── Record predictions in the learning loop ───────────────────
-    # NOTE: DexScreener tokens use symbol as ticker (e.g. "PEPE") which
-    # won't resolve via CoinGecko price lookup.  We also store the
-    # price at prediction time so the evaluation path has a fallback.
     ll = _get_ll()
     if ll:
         for t in tokens_scored:
             try:
-                price = token_prices.get(t.address, 0.0)
+                price = token_prices.get(t.coin_id, 0.0)
                 if price <= 0:
-                    continue  # skip — can't evaluate without entry price
+                    continue
                 ll.record_prediction(
                     token_ticker=t.symbol.upper(),
                     token_name=t.name,
@@ -1488,8 +1431,8 @@ async def get_ai_recommendations(
     strong = len([t for t in tokens_scored if t.score >= 60])
     weak = len([t for t in tokens_scored if t.score < 30])
     market_summary = (
-        f"The DexScreener market shows {'strong' if avg_score > 55 else 'moderate' if avg_score > 35 else 'weak'} "
-        f"activity with a mix of new launches and established tokens. "
+        f"The crypto market shows {'strong' if avg_score > 55 else 'moderate' if avg_score > 35 else 'weak'} "
+        f"activity across top tokens. "
         f"{strong} tokens show strong signals, while {weak} have concerning metrics."
     )
 
@@ -1497,7 +1440,7 @@ async def get_ai_recommendations(
         try:
             top3 = tokens_scored[:3]
             prompt = (
-                "You are NEXYPHER market analyst. Summarize this DexScreener market in 2-3 sentences:\n"
+                "You are NEXYPHER market analyst. Summarize the crypto market in 2-3 sentences:\n"
                 + "\n".join(f"- {t.name} ({t.symbol}): Score {t.score}/100, {t.verdict}" for t in top3)
                 + f"\nAverage score: {avg_score:.0f}/100"
             )
@@ -1645,44 +1588,35 @@ async def run_backtest(
 
 
 # ══════════════════════════════════════════════════════════════════
-# DEX SEARCH
+# TOKEN SEARCH (CoinGecko)
 # ══════════════════════════════════════════════════════════════════
 
-@app.get("/api/dex/search", response_model=List[DexToken])
+@app.get("/api/dex/search", response_model=List[TokenCard])
 async def dex_search(q: str = Query(..., min_length=1)):
-    pairs = await dex.search_pairs(q)
+    """Legacy DEX search endpoint — now powered by CoinGecko."""
+    q_lower = q.lower().strip()
+    resolved = _COIN_ALIASES.get(q_lower, q_lower)
+    coin = await cg.get_coin_detail(resolved)
     results = []
-    seen = set()
-    for p in pairs[:20]:
-        key = p.base_token_address
-        if key in seen:
-            continue
-        seen.add(key)
-        bsr = p.txns_buys_24h / max(p.txns_sells_24h, 1)
-        results.append(DexToken(
-            name=p.base_token_name,
-            symbol=p.base_token_symbol,
-            address=p.base_token_address,
-            price=p.price_usd,
-            price_change_24h=p.price_change_24h,
-            volume_24h=p.volume_24h,
-            liquidity=p.liquidity_usd,
-            market_cap=p.market_cap,
-            buys_24h=p.txns_buys_24h,
-            sells_24h=p.txns_sells_24h,
-            buy_sell_ratio=round(bsr, 2),
-            dex=p.dex_id,
-            pair_address=p.pair_address,
-            trades_count=p.txns_buys_24h + p.txns_sells_24h,
+    if coin and coin.current_price > 0:
+        results.append(TokenCard(
+            name=coin.name,
+            symbol=coin.symbol.upper(),
+            coin_id=coin.coin_id,
+            price=coin.current_price,
+            price_change_24h=coin.price_change_pct_24h,
+            market_cap=coin.market_cap,
+            volume_24h=coin.total_volume_24h,
+            rank=coin.market_cap_rank,
         ))
     return results
 
 
 @app.get("/api/search", response_model=SearchResult)
 async def unified_search(q: str = Query(..., min_length=1)):
-    cg_task = cg.get_coin_detail(q.lower())
-    dex_task = dex.search_pairs(q)
-    coin, dex_pairs = await asyncio.gather(cg_task, dex_task)
+    q_lower = q.lower().strip()
+    resolved = _COIN_ALIASES.get(q_lower, q_lower)
+    coin = await cg.get_coin_detail(resolved)
 
     cg_results = []
     if coin and coin.current_price > 0:
@@ -1693,24 +1627,7 @@ async def unified_search(q: str = Query(..., min_length=1)):
             rank=coin.market_cap_rank,
         ))
 
-    dex_results = []
-    seen = set()
-    for p in (dex_pairs or [])[:10]:
-        key = p.base_token_address
-        if key in seen:
-            continue
-        seen.add(key)
-        bsr = p.txns_buys_24h / max(p.txns_sells_24h, 1)
-        dex_results.append(DexToken(
-            name=p.base_token_name, symbol=p.base_token_symbol,
-            address=p.base_token_address, price=p.price_usd,
-            price_change_24h=p.price_change_24h, volume_24h=p.volume_24h,
-            liquidity=p.liquidity_usd, market_cap=p.market_cap,
-            buys_24h=p.txns_buys_24h, sells_24h=p.txns_sells_24h,
-            buy_sell_ratio=round(bsr, 2), dex=p.dex_id, pair_address=p.pair_address,
-        ))
-
-    return SearchResult(coingecko=cg_results, dexscreener=dex_results)
+    return SearchResult(coingecko=cg_results)
 
 
 @app.get("/api/health")
@@ -1723,7 +1640,6 @@ async def health():
         "blockchain": blockchain.get_status(),
         "collectors": {
             "coingecko": cg is not None,
-            "dexscreener": dex is not None,
             "news": news is not None,
             "technical": ta is not None,
         },
@@ -1893,7 +1809,7 @@ async def toggle_auto_trade(user=Depends(require_user)):
         else:
             try:
                 cycle_result = await trading_engine.auto_trade_cycle(
-                    user.id, cg, dex, gemini_client
+                    user.id, cg, gemini_client
                 )
                 result["cycle"] = cycle_result
                 actions_count = len(cycle_result.get("actions", []))
@@ -2082,7 +1998,7 @@ async def manual_buy(body: ManualBuyRequest, user=Depends(require_user)):
 @app.get("/api/trader/research")
 async def run_research(user=Depends(require_user)):
     """Manually trigger AI research and return opportunities."""
-    opportunities = await trading_engine.research_opportunities(cg, dex, gemini_client)
+    opportunities = await trading_engine.research_opportunities(cg, gemini_client)
     return {"opportunities": opportunities[:15], "total": len(opportunities)}
 
 
@@ -2091,7 +2007,7 @@ async def run_research(user=Depends(require_user)):
 @app.post("/api/trader/run-cycle")
 async def run_trade_cycle(user=Depends(require_user)):
     """Manually trigger one auto-trade cycle."""
-    result = await trading_engine.auto_trade_cycle(user.id, cg, dex, gemini_client)
+    result = await trading_engine.auto_trade_cycle(user.id, cg, gemini_client)
     # Send trade emails in background
     if result.get("actions"):
         import threading
@@ -2219,7 +2135,7 @@ async def bot_ask(body: BotAskRequest, user=Depends(require_user)):
     """
     AI chatbot that answers crypto questions using LIVE web data.
     1. Parses question via NLP intent recognition + parameter extraction
-    2. Fetches real-time data from CoinGecko, DexScreener, news
+    2. Fetches real-time data from CoinGecko, news
     3. Feeds everything to Gemini for a grounded, domain-specific answer
     4. Falls back to data-driven answers when AI quota is exhausted
     """
@@ -2353,21 +2269,6 @@ async def bot_ask(body: BotAskRequest, user=Depends(require_user)):
         except Exception as e:
             logger.warning("Bot news failed: %s", e)
 
-    async def _fetch_dex_search(term: str):
-        try:
-            pairs = await dex.search_pairs(term)
-            if pairs:
-                lines = [f"🔗 DEXSCREENER DATA for '{term}':"]
-                for p in pairs[:5]:
-                    lines.append(
-                        f"  • {p.base_token_symbol}/{p.quote_token_symbol} on {p.dex_id} "
-                        f"— ${p.price_usd:,.6f} | 24h: {p.price_change_24h:+.1f}% "
-                        f"| Vol: ${p.volume_24h:,.0f} | Liq: ${p.liquidity_usd:,.0f}"
-                    )
-                live_data_parts.append("\n".join(lines))
-        except Exception as e:
-            logger.warning("Bot dex search failed: %s", e)
-
     # Build parallel tasks
     tasks = []
     for cid in detected_coins[:3]:  # max 3 coins
@@ -2388,15 +2289,10 @@ async def bot_ask(body: BotAskRequest, user=Depends(require_user)):
                 break
         tasks.append(_fetch_news_for(symbol))
 
-    # DEX data for memecoin-ish queries
-    dex_keywords = {"dex", "pair", "liquidity", "swap", "pump", "meme", "new token", "dexscreener"}
-    if any(kw in q_lower for kw in dex_keywords):
-        search_term = detected_coins[0] if detected_coins else q_lower.split()[0]
-        for alias, cgid in COIN_ALIASES.items():
-            if cgid == search_term:
-                search_term = alias.upper()
-                break
-        tasks.append(_fetch_dex_search(search_term))
+    # For memecoin-ish queries, also fetch trending data
+    meme_keywords = {"meme", "pump", "new token", "trending", "hot"}
+    if any(kw in q_lower for kw in meme_keywords) and _fetch_trending not in [t.__wrapped__ if hasattr(t, '__wrapped__') else t for t in tasks]:
+        tasks.append(_fetch_trending())
 
     if tasks:
         await asyncio.gather(*tasks)
@@ -2417,7 +2313,7 @@ async def bot_ask(body: BotAskRequest, user=Depends(require_user)):
             "- Cite specific prices, percentages, and rankings from the data\n"
             "- Be concise but thorough (3-6 sentences for simple questions, more for complex analysis)\n"
             "- Use bullet points and formatting for readability\n"
-            "- Always mention data is real-time from CoinGecko/DexScreener\n"
+            "- Always mention data is real-time from CoinGecko\n"
             "- For price predictions, give balanced analysis with bull/bear cases\n"
             "- Never give financial advice — frame as analysis and insights\n"
             "- If you don't have data for something, say so honestly\n"
@@ -2548,7 +2444,6 @@ def _build_data_driven_answer(question: str, q_lower: str, coins: list, data_par
     market_overview = []
     trending_data = []
     news_data = []
-    dex_data = []
 
     for part in data_parts:
         header = part.strip().split("\n")[0]
@@ -2560,8 +2455,6 @@ def _build_data_driven_answer(question: str, q_lower: str, coins: list, data_par
             trending_data.append(part)
         elif "NEWS" in header:
             news_data.append(part)
-        elif "DEXSCREENER" in header:
-            dex_data.append(part)
         else:
             coin_details.append(part)
 
@@ -2687,29 +2580,6 @@ def _build_data_driven_answer(question: str, q_lower: str, coins: list, data_par
                 lines.append(f"• {pl}")
         lines.append("")
 
-    # ── DEX Data ──
-    for part in dex_data:
-        part_lines = [l.strip() for l in part.strip().split("\n") if l.strip()]
-        if not part_lines:
-            continue
-        lines.append("### 🔗 DEX Trading Pairs")
-        lines.append("")
-        lines.append("| Pair | DEX | Price | 24h | Volume | Liquidity |")
-        lines.append("|------|-----|-------|-----|--------|-----------|")
-        for pl in part_lines[1:]:
-            m = _re.match(
-                r"[•\-]\s*(\w+/\w+)\s+on\s+(\w+)\s*—\s*(\$[\d,.]+)\s*\|\s*24h:\s*([+\-][\d.]+%)"
-                r"\s*\|\s*Vol:\s*(\$[\d,.]+)\s*\|\s*Liq:\s*(\$[\d,.]+)",
-                pl,
-            )
-            if m:
-                pair, dex_name, dprice, dchange, dvol, dliq = m.groups()
-                icon = "🟢" if dchange.startswith("+") else "🔴"
-                lines.append(f"| **{pair}** | {dex_name} | {dprice} | {icon} {dchange} | {dvol} | {dliq} |")
-            else:
-                lines.append(f"| {pl.lstrip('•- ')} | — | — | — | — | — |")
-        lines.append("")
-
     # ── Smart Insights ──
     full_text = "\n".join(data_parts).lower()
     insights = []
@@ -2761,7 +2631,7 @@ def _build_data_driven_answer(question: str, q_lower: str, coins: list, data_par
 
     # ── Footer ──
     lines.append("---")
-    lines.append("*📡 Live data from CoinGecko & DexScreener • Updated just now*")
+    lines.append("*📡 Live data from CoinGecko • Updated just now*")
     lines.append("*💡 For deeper AI-powered analysis, try again shortly*")
 
     return "\n".join(lines)
@@ -3061,15 +2931,11 @@ async def get_platform_stats():
     """
     global _platform_ai_scan_count
 
-    # 1. Tokens tracked: how many tokens DexScreener feed knows about
+    # 1. Tokens tracked: how many tokens CoinGecko feed knows about
     tokens_tracked = 0
     try:
-        feed = await dex.get_latest_tokens(limit=1)
-        # DexScreener returns paginated; we just want total count
-        tokens_tracked = len(feed) if feed else 0
-        # Also count CoinGecko top coins
         top = await cg.get_top_coins(limit=1)
-        tokens_tracked = max(tokens_tracked, 100)  # Platform tracks 100+ tokens
+        tokens_tracked = max(len(top) if top else 0, 100)  # Platform tracks 100+ tokens
     except Exception:
         tokens_tracked = 100  # Sensible default
 

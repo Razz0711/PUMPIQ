@@ -5317,10 +5317,10 @@
             </div>
         </div>
 
-        <!-- Market Sub-tabs: Top Coins | DEX Feed -->
+        <!-- Market Sub-tabs: Top Coins | Token Feed -->
         <div class="trader-subtabs" style="margin-bottom:20px">
             <button class="trader-subtab active" onclick="switchMarketTab('coins')">Top Coins</button>
-            <button class="trader-subtab" onclick="switchMarketTab('dex')">DEX Feed</button>
+            <button class="trader-subtab" onclick="switchMarketTab('dex')">Token Feed</button>
         </div>
 
         <!-- SUB: Top Coins (CoinGecko) -->
@@ -5346,25 +5346,25 @@
         </div>
         </div><!-- /marketSub-coins -->
 
-        <!-- SUB: DEX Feed (DexScreener) -->
+        <!-- SUB: Token Feed (CoinGecko) -->
         <div id="marketSub-dex" style="display:none">
-            <div class="section-desc" id="feedCount">Live token feed from DexScreener</div>
+            <div class="section-desc" id="feedCount">Live token feed from CoinGecko</div>
             <div class="filter-bar">
                 <div class="filter-pill active" data-sort="volume" onclick="setFeedSort(this)">Volume</div>
-                <div class="filter-pill" data-sort="newest" onclick="setFeedSort(this)">Newest</div>
+                <div class="filter-pill" data-sort="newest" onclick="setFeedSort(this)">Rank</div>
                 <div class="filter-pill" data-sort="price" onclick="setFeedSort(this)">Price</div>
-                <div class="filter-pill" data-sort="trades" onclick="setFeedSort(this)">Trades</div>
+                <div class="filter-pill" data-sort="trades" onclick="setFeedSort(this)">Market Cap</div>
                 <div style="width:1px;height:24px;background:var(--border);margin:0 8px"></div>
                 <div class="filter-pill active" data-status="all" onclick="setFeedStatus(this)">All</div>
                 <div class="filter-pill" data-status="active" onclick="setFeedStatus(this)">Active</div>
-                <div class="filter-pill" data-status="graduated" onclick="setFeedStatus(this)">Graduated</div>
+                <div class="filter-pill" data-status="graduated" onclick="setFeedStatus(this)">Top 100</div>
                 <div style="flex:1"></div>
                 <input class="search-box" style="width:180px" placeholder="Search feed..." oninput="filterFeedLocal(this.value)">
             </div>
             <div style="overflow-x:auto">
                 <table class="feed-table">
                     <thead>
-                        <tr><th>Token</th><th>Price</th><th>24h</th><th>Volume</th><th>Liquidity</th><th>Trades</th><th>Age</th></tr>
+                        <tr><th>#</th><th>Token</th><th>Price</th><th>24h</th><th>Volume</th><th>Market Cap</th></tr>
                     </thead>
                     <tbody id="feedBody"></tbody>
                 </table>
@@ -8737,21 +8737,22 @@
 
         async function loadFeed() {
             const body = document.getElementById('feedBody');
-            body.innerHTML = skeletonRows(7, 10);
+            body.innerHTML = skeletonRows(6, 10);
 
             try {
                 feedData = await api(`/api/feed/tokens?sort=${feedSort}&status=${feedStatus}&limit=50`);
-                document.getElementById('feedCount').textContent = `${feedData.length} live tokens`;
+                document.getElementById('feedCount').textContent = `${feedData.length} tokens from CoinGecko`;
                 renderFeed(feedData);
             } catch (e) {
-                body.innerHTML = `<tr><td colspan="7">${errorWithRetry('Failed to load feed — ' + e.message, 'loadFeed()')}</td></tr>`;
+                body.innerHTML = `<tr><td colspan="6">${errorWithRetry('Failed to load feed — ' + e.message, 'loadFeed()')}</td></tr>`;
             }
         }
 
         function renderFeed(data) {
             const body = document.getElementById('feedBody');
             body.innerHTML = data.map(t => `
-        <tr style="cursor:pointer" onclick="openToken('${t.symbol.toLowerCase()}','${t.name}')">
+        <tr style="cursor:pointer" onclick="openToken('${(t.coin_id || t.symbol).toLowerCase()}','${t.name}')">
+            <td style="color:var(--text-muted)">${t.rank || '-'}</td>
             <td>
                 <div class="token-info">
                     <div class="token-icon">${t.symbol.slice(0, 2)}</div>
@@ -8764,9 +8765,7 @@
             <td>${fmt(t.price)}</td>
             <td>${fmtPct(t.price_change_24h)}</td>
             <td>${fmt(t.volume_24h)}</td>
-            <td>${fmt(t.liquidity)}</td>
-            <td>${t.trades_count}</td>
-            <td style="color:var(--text-muted)">${t.age || '-'}</td>
+            <td>${fmt(t.market_cap)}</td>
         </tr>
     `).join('');
         }
