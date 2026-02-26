@@ -42,7 +42,8 @@ logger = logging.getLogger(__name__)
 # ── System auto-trader (always-on background bot) ──
 SYSTEM_USER_ID = 1  # trades under the primary user account so dashboard shows activity
 SYSTEM_INITIAL_BALANCE = 10_000_000.0  # ₹1,00,00,000 (1 Cr)
-AUTO_TRADE_INTERVAL_SECONDS = 30   # 30 seconds — continuous market scanning
+AUTO_TRADE_INTERVAL_SECONDS = 10   # 10 seconds — fast position checks
+RESEARCH_EVERY_N_CYCLES = 6         # full research every 6th cycle (~60s)
 MAX_HOLD_HOURS = 2                  # auto-sell if TP/SL not hit within 2 hours (fast rotation for model training)
 WARNING_MINUTES_BEFORE_CLOSE = 10   # SMS warning 10 min before auto-close
 MAX_PORTFOLIO_SLOTS = 15            # 10-15 simultaneous positions
@@ -1060,6 +1061,197 @@ TOKEN_COOLDOWN_MINUTES = 60  # 1 hour cooldown after SL hit
 
 # -- Autonomous Trading Loop ---------------------------------------------------
 
+async def fast_position_check(user_id, cg_collector):
+    """
+    Fast position management — runs every cycle (10s).
+    Only checks SL/TP/trailing-stop/auto-exit for open positions.
+    Does NOT do research, backtesting, or AI analysis.
+    This ensures expired/stopped positions close within seconds, not minutes.
+    """
+    settings = get_trade_settings(user_id)
+    sb = get_supabase()
+    results = {"actions": [], "positions_updated": 0, "positions_closed": 0}
+
+    open_positions = get_open_positions(user_id)
+    if not open_positions:
+        return results
+
+    # Batch price fetch — single API call for all coins
+    coin_ids = list({p.get("coin_id", "") for p in open_positions
+                     if p.get("coin_id") and not p["coin_id"].startswith("0x") and len(p["coin_id"]) <= 20})
+    prices_map = {}
+    if coin_ids:
+        try:
+            prices_map = await cg_collector.get_simple_price(coin_ids)
+        except Exception:
+            pass
+
+    for pos in open_positions:
+        try:
+            coin_id = pos.get("coin_id", "")
+            side = pos.get("side", "long")
+            current_price = prices_map.get(coin_id, pos["current_price"])
+
+            # P&L calculation based on side
+            if side == "short":
+                current_value = pos["invested_amount"] + (pos["entry_price"] - current_price) * pos["quantity"]
+                pnl = current_value - pos["invested_amount"]
+            else:
+                current_value = pos["quantity"] * current_price if current_price > 0 else 0
+                pnl = current_value - pos["invested_amount"]
+            pnl_pct = (pnl / pos["invested_amount"]) * 100 if pos["invested_amount"] > 0 else 0
+
+            # Update position in DB
+            sb.table("trade_positions").update({
+                "current_price": current_price,
+                "current_value": max(0, current_value),
+                "pnl": pnl,
+                "pnl_pct": pnl_pct,
+            }).eq("id", pos["id"]).execute()
+            results["positions_updated"] += 1
+
+            # Compute hold duration
+            _opened_at_str = pos.get("opened_at") or pos.get("created_at", "")
+            _hold_minutes = 0.0
+            if _opened_at_str:
+                try:
+                    _opened_at = datetime.fromisoformat(_opened_at_str.replace("Z", "+00:00"))
+                    if _opened_at.tzinfo is None:
+                        _opened_at = _opened_at.replace(tzinfo=timezone.utc)
+                    _hold_minutes = (datetime.now(timezone.utc) - _opened_at).total_seconds() / 60
+                except Exception:
+                    pass
+
+            # Check stop-loss
+            pos_sl = pos.get("stop_loss", 0)
+            pos_tp = pos.get("take_profit", 0)
+            sl_hit = False
+            tp_hit = False
+            if pos_sl > 0:
+                if side == "short":
+                    sl_hit = current_price >= pos_sl
+                else:
+                    sl_hit = current_price <= pos_sl
+            else:
+                sl_hit = pnl_pct <= -settings["stop_loss_pct"]
+            if pos_tp > 0:
+                if side == "short":
+                    tp_hit = current_price <= pos_tp
+                else:
+                    tp_hit = current_price >= pos_tp
+            else:
+                tp_hit = pnl_pct >= settings["take_profit_pct"]
+
+            if sl_hit:
+                side_verb = "covered" if side == "short" else "sold"
+                sell_reason = (
+                    f"STOP-LOSS ({side.upper()}): {pos['symbol']} lost {pnl_pct:.1f}% "
+                    f"(entry ${pos['entry_price']:.4f} -> ${current_price:.4f}). "
+                    f"Loss ${abs(pnl):,.0f}. Cutting losses."
+                )
+                sell_result = execute_sell(user_id, pos["id"], current_price, sell_reason)
+                if sell_result["success"]:
+                    results["actions"].append(
+                        f"Stop-loss: {side_verb} {pos['symbol']} ({side.upper()}) at ${current_price:,.4f} (P&L: {pnl_pct:+.1f}%)"
+                    )
+                    results["positions_closed"] += 1
+                    ll = _get_learning_loop()
+                    if ll:
+                        try: ll.evaluate_trade_close(pos["coin_id"], current_price, pnl_pct, hold_duration_minutes=_hold_minutes, exit_reason="stop_loss")
+                        except Exception: pass
+                    _token_cooldowns[coin_id] = time.time() + TOKEN_COOLDOWN_MINUTES * 60
+                    logger.info("Token cooldown set: %s blocked for %d min after SL", pos.get("symbol", coin_id), TOKEN_COOLDOWN_MINUTES)
+                continue
+
+            # Trailing stop
+            if pos_sl > 0 and pos["entry_price"] > 0:
+                if side == "long" and current_price > pos["entry_price"] * 1.01:
+                    new_sl = current_price * (1 - settings["stop_loss_pct"] / 100)
+                    if new_sl > pos_sl:
+                        sb.table("trade_positions").update({"stop_loss": round(new_sl, 6)}).eq("id", pos["id"]).execute()
+                        logger.debug("Trailing SL updated for %s LONG: $%.4f -> $%.4f", pos.get("symbol"), pos_sl, new_sl)
+                elif side == "short" and current_price < pos["entry_price"] * 0.99:
+                    new_sl = current_price * (1 + settings["stop_loss_pct"] / 100)
+                    if new_sl < pos_sl:
+                        sb.table("trade_positions").update({"stop_loss": round(new_sl, 6)}).eq("id", pos["id"]).execute()
+                        logger.debug("Trailing SL updated for %s SHORT: $%.4f -> $%.4f", pos.get("symbol"), pos_sl, new_sl)
+
+            if tp_hit:
+                side_verb = "covered" if side == "short" else "sold"
+                sell_reason = (
+                    f"TAKE-PROFIT ({side.upper()}): {pos['symbol']} gained {pnl_pct:.1f}% "
+                    f"(entry ${pos['entry_price']:.4f} -> ${current_price:.4f}). "
+                    f"Profit ${pnl:,.0f}. Locking in gains."
+                )
+                sell_result = execute_sell(user_id, pos["id"], current_price, sell_reason)
+                if sell_result["success"]:
+                    results["actions"].append(
+                        f"Take-profit: {side_verb} {pos['symbol']} ({side.upper()}) at ${current_price:,.4f} (P&L: {pnl_pct:+.1f}%)"
+                    )
+                    results["positions_closed"] += 1
+                    ll = _get_learning_loop()
+                    if ll:
+                        try: ll.evaluate_trade_close(pos["coin_id"], current_price, pnl_pct, hold_duration_minutes=_hold_minutes, exit_reason="take_profit")
+                        except Exception: pass
+                continue
+
+            # Auto-exit (max hold time) + SMS warning
+            opened_at_str = pos.get("opened_at") or pos.get("created_at", "")
+            if opened_at_str:
+                try:
+                    opened_at = datetime.fromisoformat(opened_at_str.replace("Z", "+00:00"))
+                    if opened_at.tzinfo is None:
+                        opened_at = opened_at.replace(tzinfo=timezone.utc)
+                    seconds_held = (datetime.now(timezone.utc) - opened_at).total_seconds()
+                    hours_held = seconds_held / 3600
+                    minutes_remaining = (MAX_HOLD_HOURS * 60) - (seconds_held / 60)
+
+                    if 0 < minutes_remaining <= WARNING_MINUTES_BEFORE_CLOSE:
+                        warning_key = f"warned_{pos['id']}"
+                        if warning_key not in results:
+                            results[warning_key] = True
+                            side_verb = "cover" if side == "short" else "close"
+                            _send_trade_sms(
+                                user_id,
+                                f"⚠️ {pos['symbol']} ({side.upper()}) will auto-{side_verb} in {minutes_remaining:.0f}min! "
+                                f"P&L: {pnl_pct:+.1f}% (${pnl:,.0f}). "
+                                f"Entry: ${pos['entry_price']:.4f} → Now: ${current_price:.4f}"
+                            )
+                            results["actions"].append(
+                                f"⚠️ SMS warning: {pos['symbol']} ({side.upper()}) closing in {minutes_remaining:.0f}min"
+                            )
+
+                    if hours_held >= MAX_HOLD_HOURS:
+                        side_verb = "covered" if side == "short" else "sold"
+                        sell_reason = (
+                            f"AUTO-EXIT ({side.upper()}): {pos['symbol']} held {hours_held:.1f}h "
+                            f"(max {MAX_HOLD_HOURS}h). P&L: {pnl_pct:+.1f}%. FORCED CLOSE."
+                        )
+                        sell_result = execute_sell(user_id, pos["id"], current_price, sell_reason)
+                        if sell_result["success"]:
+                            results["actions"].append(
+                                f"Auto-exit: {side_verb} {pos['symbol']} ({side.upper()}) after {hours_held:.1f}h (P&L: {pnl_pct:+.1f}%)"
+                            )
+                            results["positions_closed"] += 1
+                            _send_trade_sms(
+                                user_id,
+                                f"🔴 AUTO-CLOSED {pos['symbol']} ({side.upper()}) after {hours_held:.1f}h | "
+                                f"P&L: {pnl_pct:+.1f}% (${pnl:,.0f})"
+                            )
+                            ll = _get_learning_loop()
+                            if ll:
+                                try: ll.evaluate_trade_close(pos["coin_id"], current_price, pnl_pct, hold_duration_minutes=seconds_held / 60, exit_reason="auto_exit")
+                                except Exception: pass
+                        continue
+                except Exception:
+                    pass
+
+        except Exception as e:
+            logger.warning("Fast position check failed for %s: %s", pos.get("coin_id"), e)
+
+    return results
+
+
 async def auto_trade_cycle(user_id, cg_collector, gemini_client=None):
     settings = get_trade_settings(user_id)
     if not settings.get("auto_trade_enabled"):
@@ -1119,183 +1311,12 @@ async def auto_trade_cycle(user_id, cg_collector, gemini_client=None):
 
     # (No cooldown for always-on all-in bot — we sell and rebuy every cycle)
 
-    # ── STEP 1: Update all open positions with live prices & check stop/take/auto-exit ──
-    open_positions = get_open_positions(user_id)
-    for pos in open_positions:
-        try:
-            coin_id = pos.get("coin_id", "")
-            side = pos.get("side", "long")
-            if coin_id and not coin_id.startswith("0x") and len(coin_id) <= 20:
-                try:
-                    prices = await cg_collector.get_simple_price([coin_id])
-                    current_price = prices.get(coin_id, pos["current_price"])
-                except Exception:
-                    current_price = pos["current_price"]
-            else:
-                current_price = pos["current_price"]
-
-            # P&L calculation based on side
-            if side == "short":
-                current_value = pos["invested_amount"] + (pos["entry_price"] - current_price) * pos["quantity"]
-                pnl = current_value - pos["invested_amount"]
-            else:
-                current_value = pos["quantity"] * current_price if current_price > 0 else 0
-                pnl = current_value - pos["invested_amount"]
-            pnl_pct = (pnl / pos["invested_amount"]) * 100 if pos["invested_amount"] > 0 else 0
-
-            # Update position in DB
-            sb.table("trade_positions").update({
-                "current_price": current_price,
-                "current_value": max(0, current_value),
-                "pnl": pnl,
-                "pnl_pct": pnl_pct,
-            }).eq("id", pos["id"]).execute()
-            results["positions_updated"] += 1
-
-            # Compute hold duration for learning loop metadata
-            _opened_at_str = pos.get("opened_at") or pos.get("created_at", "")
-            _hold_minutes = 0.0
-            if _opened_at_str:
-                try:
-                    _opened_at = datetime.fromisoformat(_opened_at_str.replace("Z", "+00:00"))
-                    if _opened_at.tzinfo is None:
-                        _opened_at = _opened_at.replace(tzinfo=timezone.utc)
-                    _hold_minutes = (datetime.now(timezone.utc) - _opened_at).total_seconds() / 60
-                except Exception:
-                    pass
-
-            # Check stop-loss using POSITION'S stored SL/TP prices (not settings)
-            # BUGFIX: Previously used settings["stop_loss_pct"] which could change
-            # after the position was opened, causing wrong exit triggers.
-            pos_sl = pos.get("stop_loss", 0)
-            pos_tp = pos.get("take_profit", 0)
-            sl_hit = False
-            tp_hit = False
-            if pos_sl > 0:
-                if side == "short":
-                    sl_hit = current_price >= pos_sl  # SHORT SL is above entry
-                else:
-                    sl_hit = current_price <= pos_sl  # LONG SL is below entry
-            else:
-                sl_hit = pnl_pct <= -settings["stop_loss_pct"]  # fallback
-            if pos_tp > 0:
-                if side == "short":
-                    tp_hit = current_price <= pos_tp  # SHORT TP is below entry
-                else:
-                    tp_hit = current_price >= pos_tp  # LONG TP is above entry
-            else:
-                tp_hit = pnl_pct >= settings["take_profit_pct"]  # fallback
-
-            if sl_hit:
-                side_verb = "covered" if side == "short" else "sold"
-                sell_reason = (
-                    f"STOP-LOSS ({side.upper()}): {pos['symbol']} lost {pnl_pct:.1f}% "
-                    f"(entry ${pos['entry_price']:.4f} -> ${current_price:.4f}). "
-                    f"Loss ${abs(pnl):,.0f}. Cutting losses."
-                )
-                sell_result = execute_sell(user_id, pos["id"], current_price, sell_reason)
-                if sell_result["success"]:
-                    results["actions"].append(
-                        f"Stop-loss: {side_verb} {pos['symbol']} ({side.upper()}) at ${current_price:,.4f} (P&L: {pnl_pct:+.1f}%)"
-                    )
-                    ll = _get_learning_loop()
-                    if ll:
-                        try: ll.evaluate_trade_close(pos["coin_id"], current_price, pnl_pct, hold_duration_minutes=_hold_minutes, exit_reason="stop_loss")
-                        except Exception: pass
-                    # Set per-token cooldown after SL hit — don't re-buy this coin for 1 hour
-                    _token_cooldowns[coin_id] = time.time() + TOKEN_COOLDOWN_MINUTES * 60
-                    logger.info("Token cooldown set: %s blocked for %d min after SL", pos.get("symbol", coin_id), TOKEN_COOLDOWN_MINUTES)
-                continue
-
-            # ── TRAILING STOP: Update SL upward if price has moved in our favor ──
-            # This locks in profits instead of letting winners turn into losers.
-            if pos_sl > 0 and pos["entry_price"] > 0:
-                if side == "long" and current_price > pos["entry_price"] * 1.01:  # at least 1% in profit
-                    # Trail SL to 1.5% below current high (or current price as proxy)
-                    new_sl = current_price * (1 - settings["stop_loss_pct"] / 100)
-                    if new_sl > pos_sl:
-                        sb.table("trade_positions").update({"stop_loss": round(new_sl, 6)}).eq("id", pos["id"]).execute()
-                        logger.debug("Trailing SL updated for %s LONG: $%.4f -> $%.4f", pos.get("symbol"), pos_sl, new_sl)
-                elif side == "short" and current_price < pos["entry_price"] * 0.99:  # at least 1% in profit
-                    new_sl = current_price * (1 + settings["stop_loss_pct"] / 100)
-                    if new_sl < pos_sl:
-                        sb.table("trade_positions").update({"stop_loss": round(new_sl, 6)}).eq("id", pos["id"]).execute()
-                        logger.debug("Trailing SL updated for %s SHORT: $%.4f -> $%.4f", pos.get("symbol"), pos_sl, new_sl)
-
-            # Check take-profit using position's stored TP price
-            if tp_hit:
-                side_verb = "covered" if side == "short" else "sold"
-                sell_reason = (
-                    f"TAKE-PROFIT ({side.upper()}): {pos['symbol']} gained {pnl_pct:.1f}% "
-                    f"(entry ${pos['entry_price']:.4f} -> ${current_price:.4f}). "
-                    f"Profit ${pnl:,.0f}. Locking in gains."
-                )
-                sell_result = execute_sell(user_id, pos["id"], current_price, sell_reason)
-                if sell_result["success"]:
-                    results["actions"].append(
-                        f"Take-profit: {side_verb} {pos['symbol']} ({side.upper()}) at ${current_price:,.4f} (P&L: {pnl_pct:+.1f}%)"
-                    )
-                    ll = _get_learning_loop()
-                    if ll:
-                        try: ll.evaluate_trade_close(pos["coin_id"], current_price, pnl_pct, hold_duration_minutes=_hold_minutes, exit_reason="take_profit")
-                        except Exception: pass
-                continue
-
-            # Check auto-exit (max hold time) + SMS warning
-            opened_at_str = pos.get("opened_at") or pos.get("created_at", "")
-            if opened_at_str:
-                try:
-                    opened_at = datetime.fromisoformat(opened_at_str.replace("Z", "+00:00"))
-                    if opened_at.tzinfo is None:
-                        opened_at = opened_at.replace(tzinfo=timezone.utc)
-                    seconds_held = (datetime.now(timezone.utc) - opened_at).total_seconds()
-                    hours_held = seconds_held / 3600
-                    minutes_remaining = (MAX_HOLD_HOURS * 60) - (seconds_held / 60)
-
-                    # ── 5-minute SMS warning before auto-close ──
-                    if 0 < minutes_remaining <= WARNING_MINUTES_BEFORE_CLOSE:
-                        warning_key = f"warned_{pos['id']}"
-                        if warning_key not in results:
-                            results[warning_key] = True
-                            side_verb = "cover" if side == "short" else "close"
-                            _send_trade_sms(
-                                user_id,
-                                f"⚠️ {pos['symbol']} ({side.upper()}) will auto-{side_verb} in {minutes_remaining:.0f}min! "
-                                f"P&L: {pnl_pct:+.1f}% (${pnl:,.0f}). "
-                                f"Entry: ${pos['entry_price']:.4f} → Now: ${current_price:.4f}"
-                            )
-                            results["actions"].append(
-                                f"⚠️ SMS warning: {pos['symbol']} ({side.upper()}) closing in {minutes_remaining:.0f}min"
-                            )
-
-                    # ── FORCE EXIT after 1 hour ──
-                    if hours_held >= MAX_HOLD_HOURS:
-                        side_verb = "covered" if side == "short" else "sold"
-                        sell_reason = (
-                            f"AUTO-EXIT ({side.upper()}): {pos['symbol']} held {hours_held:.1f}h "
-                            f"(max {MAX_HOLD_HOURS}h). P&L: {pnl_pct:+.1f}%. FORCED CLOSE."
-                        )
-                        sell_result = execute_sell(user_id, pos["id"], current_price, sell_reason)
-                        if sell_result["success"]:
-                            results["actions"].append(
-                                f"Auto-exit: {side_verb} {pos['symbol']} ({side.upper()}) after {hours_held:.1f}h (P&L: {pnl_pct:+.1f}%)"
-                            )
-                            # Send SMS notification for auto-close
-                            _send_trade_sms(
-                                user_id,
-                                f"🔴 AUTO-CLOSED {pos['symbol']} ({side.upper()}) after {hours_held:.1f}h | "
-                                f"P&L: {pnl_pct:+.1f}% (${pnl:,.0f})"
-                            )
-                            ll = _get_learning_loop()
-                            if ll:
-                                try: ll.evaluate_trade_close(pos["coin_id"], current_price, pnl_pct, hold_duration_minutes=seconds_held / 60, exit_reason="auto_exit")
-                                except Exception: pass
-                        continue
-                except Exception:
-                    pass
-
-        except Exception as e:
-            logger.warning("Position update failed for %s: %s", pos.get("coin_id"), e)
+    # ── STEP 1: Fast position management (SL/TP/trailing/auto-exit) ──
+    # This is now handled by fast_position_check() called every 10s.
+    # Still call it here for manual cycle triggers via /api/trader/run-cycle.
+    pos_result = await fast_position_check(user_id, cg_collector)
+    results["positions_updated"] = pos_result["positions_updated"]
+    results["actions"].extend(pos_result["actions"])
 
     # ── STEP 2: DIVERSIFIED PORTFOLIO — open new LONG and SHORT positions ──
     # Re-fetch balance and open positions after step 1 (some may have closed)
@@ -1936,13 +1957,17 @@ def ensure_system_wallet():
 
 async def continuous_trading_loop(cg_collector, gemini_client=None):
     """
-    Always-on background trading loop.
+    Always-on background trading loop — two-tier architecture.
 
-    Runs every AUTO_TRADE_INTERVAL_SECONDS:
-      1. Calls auto_trade_cycle() to research + buy/sell
-      2. Evaluates past predictions via LearningLoop
-      3. Generates strategy adjustments from outcomes
-      4. Never crashes — catches all exceptions
+    FAST tier (every cycle, ~10s):
+      - fast_position_check() — batch price fetch + SL/TP/trailing/auto-exit
+      - Ensures positions close within seconds of expiry
+
+    SLOW tier (every RESEARCH_EVERY_N_CYCLES cycles, ~60s):
+      - Full auto_trade_cycle() — research, ML, backtests, new trades
+      - Learning loop evaluation & strategy adjustments
+
+    Never crashes — catches all exceptions.
     """
     global _autotrader_running
     _autotrader_running = True
@@ -1950,84 +1975,115 @@ async def continuous_trading_loop(cg_collector, gemini_client=None):
 
     logger.info(
         "=== NEXYPHER AUTO-TRADER STARTED === "
-        "User: SYSTEM(%d) | Balance: ₹%s | Interval: %ds",
+        "User: SYSTEM(%d) | Balance: ₹%s | Fast-check: %ds | Research every %d cycles (~%ds)",
         SYSTEM_USER_ID,
         f"{SYSTEM_INITIAL_BALANCE:,.0f}",
         AUTO_TRADE_INTERVAL_SECONDS,
+        RESEARCH_EVERY_N_CYCLES,
+        AUTO_TRADE_INTERVAL_SECONDS * RESEARCH_EVERY_N_CYCLES,
     )
 
     while _autotrader_running:
         cycle_count += 1
+        is_research_cycle = (cycle_count % RESEARCH_EVERY_N_CYCLES == 0)
+
         try:
-            logger.info("── Auto-trade cycle #%d starting ──", cycle_count)
+            if is_research_cycle:
+                # ── SLOW TIER: full research + position management ──
+                logger.info("── Research cycle #%d starting (full) ──", cycle_count)
 
-            # 1. Run the main trading cycle (research → buy/sell)
-            result = await auto_trade_cycle(
-                user_id=SYSTEM_USER_ID,
-                cg_collector=cg_collector,
-                gemini_client=gemini_client,
-            )
+                result = await auto_trade_cycle(
+                    user_id=SYSTEM_USER_ID,
+                    cg_collector=cg_collector,
+                    gemini_client=gemini_client,
+                )
 
-            status = result.get("status", "ok")
-            actions = result.get("actions", [])
-            new_trades = result.get("new_trades", 0)
-            positions_updated = result.get("positions_updated", 0)
+                status = result.get("status", "ok")
+                actions = result.get("actions", [])
+                new_trades = result.get("new_trades", 0)
+                positions_updated = result.get("positions_updated", 0)
 
-            logger.info(
-                "Auto-trade cycle #%d complete — status: %s | "
-                "new_trades: %d | positions_updated: %d | actions: %d",
-                cycle_count, status, new_trades, positions_updated, len(actions),
-            )
-            for action in actions:
-                logger.info("  → %s", action)
+                logger.info(
+                    "Research cycle #%d complete — status: %s | "
+                    "new_trades: %d | positions_updated: %d | actions: %d",
+                    cycle_count, status, new_trades, positions_updated, len(actions),
+                )
+                for action in actions:
+                    logger.info("  → %s", action)
 
-            # Record cycle summary in ring buffer for the Cycle Log UI
-            _cycle_log.appendleft({
-                "cycle": cycle_count,
-                "time": datetime.now(timezone.utc).isoformat(),
-                "status": status,
-                "new_trades": new_trades,
-                "positions_updated": positions_updated,
-                "actions": actions[:5],  # keep max 5 action strings per entry
-                "portfolio": result.get("portfolio_summary", {}),
-            })
+                # Record cycle summary in ring buffer for the Cycle Log UI
+                _cycle_log.appendleft({
+                    "cycle": cycle_count,
+                    "time": datetime.now(timezone.utc).isoformat(),
+                    "status": status,
+                    "new_trades": new_trades,
+                    "positions_updated": positions_updated,
+                    "actions": actions[:5],
+                    "portfolio": result.get("portfolio_summary", {}),
+                    "type": "research",
+                })
 
-            # 2. Evaluate past predictions (learning from mistakes)
-            ll = _get_learning_loop()
-            if ll:
-                try:
-                    eval_result = await ll.evaluate_pending(cg_collector)
-                    eval_24h = eval_result.get("evaluated_24h", 0) if isinstance(eval_result, dict) else 0
-                    eval_7d = eval_result.get("evaluated_7d", 0) if isinstance(eval_result, dict) else 0
-                    if eval_24h or eval_7d:
-                        logger.info(
-                            "Learning loop evaluated %d (24h) + %d (7d) predictions",
-                            eval_24h, eval_7d,
-                        )
-                except Exception as e:
-                    logger.warning("Learning evaluation error: %s", e)
-
-                # 3. Generate strategy adjustments every 100 cycles (~50 min)
-                # BUGFIX: Was every 10 cycles (5 min), creating thousands of redundant
-                # DB records over 300+ trades that stacked penalties exponentially.
-                if cycle_count % 100 == 0:
+                # Learning loop: evaluate past predictions
+                ll = _get_learning_loop()
+                if ll:
                     try:
-                        adjustments = ll.generate_adjustments()
-                        if adjustments:
+                        eval_result = await ll.evaluate_pending(cg_collector)
+                        eval_24h = eval_result.get("evaluated_24h", 0) if isinstance(eval_result, dict) else 0
+                        eval_7d = eval_result.get("evaluated_7d", 0) if isinstance(eval_result, dict) else 0
+                        if eval_24h or eval_7d:
                             logger.info(
-                                "Generated %d strategy adjustments from trade history",
-                                len(adjustments) if isinstance(adjustments, list) else 0,
+                                "Learning loop evaluated %d (24h) + %d (7d) predictions",
+                                eval_24h, eval_7d,
                             )
                     except Exception as e:
-                        logger.warning("Strategy adjustment error: %s", e)
+                        logger.warning("Learning evaluation error: %s", e)
 
-                # 4. Snapshot accuracy every 50 cycles
-                if cycle_count % 50 == 0:
-                    try:
-                        ll.snapshot_accuracy()
-                        logger.info("Accuracy snapshot saved (cycle #%d)", cycle_count)
-                    except Exception:
-                        pass
+                    # Strategy adjustments every 100 cycles
+                    if cycle_count % 100 == 0:
+                        try:
+                            adjustments = ll.generate_adjustments()
+                            if adjustments:
+                                logger.info(
+                                    "Generated %d strategy adjustments from trade history",
+                                    len(adjustments) if isinstance(adjustments, list) else 0,
+                                )
+                        except Exception as e:
+                            logger.warning("Strategy adjustment error: %s", e)
+
+                    # Snapshot accuracy every 50 cycles
+                    if cycle_count % 50 == 0:
+                        try:
+                            ll.snapshot_accuracy()
+                            logger.info("Accuracy snapshot saved (cycle #%d)", cycle_count)
+                        except Exception:
+                            pass
+
+            else:
+                # ── FAST TIER: position management only (~1-2s) ──
+                pos_result = await fast_position_check(SYSTEM_USER_ID, cg_collector)
+
+                actions = pos_result.get("actions", [])
+                positions_closed = pos_result.get("positions_closed", 0)
+                positions_updated = pos_result.get("positions_updated", 0)
+
+                if actions:
+                    logger.info(
+                        "Fast-check cycle #%d — closed: %d | updated: %d | actions: %d",
+                        cycle_count, positions_closed, positions_updated, len(actions),
+                    )
+                    for action in actions:
+                        logger.info("  → %s", action)
+
+                    # Record fast-check actions in cycle log
+                    _cycle_log.appendleft({
+                        "cycle": cycle_count,
+                        "time": datetime.now(timezone.utc).isoformat(),
+                        "status": "ok",
+                        "new_trades": 0,
+                        "positions_updated": positions_updated,
+                        "actions": actions[:5],
+                        "type": "fast_check",
+                    })
 
         except Exception as e:
             logger.error("Auto-trade cycle #%d FAILED: %s", cycle_count, e, exc_info=True)
