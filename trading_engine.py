@@ -43,8 +43,8 @@ logger = logging.getLogger(__name__)
 SYSTEM_USER_ID = 1  # trades under the primary user account so dashboard shows activity
 SYSTEM_INITIAL_BALANCE = 10_000_000.0  # ₹1,00,00,000 (1 Cr)
 AUTO_TRADE_INTERVAL_SECONDS = 30   # 30 seconds — continuous market scanning
-MAX_HOLD_HOURS = 24                 # auto-sell if TP/SL not hit within 24 hours (aligned with model prediction horizon)
-WARNING_MINUTES_BEFORE_CLOSE = 30   # SMS warning 30 min before auto-close
+MAX_HOLD_HOURS = 2                  # auto-sell if TP/SL not hit within 2 hours (fast rotation for model training)
+WARNING_MINUTES_BEFORE_CLOSE = 10   # SMS warning 10 min before auto-close
 MAX_PORTFOLIO_SLOTS = 15            # 10-15 simultaneous positions
 MAX_POSITION_PCT = 15.0             # no single token > 15% of portfolio
 MIN_POSITION_AMOUNT = 100           # minimum $ per position (lowered for small wallets)
@@ -245,8 +245,8 @@ def get_trade_settings(user_id: int) -> Dict[str, Any]:
     return {
         "user_id": user_id, "auto_trade_enabled": 1,  # ON by default
         "max_trade_pct": 20.0, "daily_loss_limit_pct": 10.0,
-        "max_open_positions": 15, "stop_loss_pct": 3.0,
-        "take_profit_pct": 5.0, "cooldown_minutes": 0,
+        "max_open_positions": 15, "stop_loss_pct": 1.5,
+        "take_profit_pct": 2.0, "cooldown_minutes": 0,
         "min_market_cap": 1000000, "risk_level": "aggressive",
     }
 
@@ -259,9 +259,9 @@ def update_trade_settings(user_id: int, settings: Dict[str, Any]) -> Dict[str, A
         "max_trade_pct": settings.get("max_trade_pct", 20.0),
         "daily_loss_limit_pct": settings.get("daily_loss_limit_pct", 10.0),
         "max_open_positions": settings.get("max_open_positions", 5),
-        "stop_loss_pct": settings.get("stop_loss_pct", 8.0),
-        "take_profit_pct": settings.get("take_profit_pct", 20.0),
-        "cooldown_minutes": settings.get("cooldown_minutes", 5),
+        "stop_loss_pct": settings.get("stop_loss_pct", 1.5),
+        "take_profit_pct": settings.get("take_profit_pct", 2.0),
+        "cooldown_minutes": settings.get("cooldown_minutes", 0),
         "min_market_cap": settings.get("min_market_cap", 1000000),
         "risk_level": settings.get("risk_level", "moderate"),
         "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -411,7 +411,7 @@ def _send_trade_sms(user_id: int, message: str):
         logger.warning("SMS send failed for user %d: %s", user_id, e)
 
 
-def execute_buy(user_id, coin_id, coin_name, symbol, price, amount, ai_score, ai_reasoning, stop_loss_pct=8.0, take_profit_pct=20.0, side="long"):
+def execute_buy(user_id, coin_id, coin_name, symbol, price, amount, ai_score, ai_reasoning, stop_loss_pct=1.5, take_profit_pct=2.0, side="long"):
     """Execute a buy (LONG) or short-sell (SHORT) order."""
     sb = get_supabase()
     try:
@@ -571,10 +571,23 @@ def execute_sell(user_id, position_id, current_price, reason="manual"):
         ll = _get_learning_loop()
         if ll:
             try:
+                # Compute hold duration from position open time
+                _sell_hold_minutes = 0.0
+                _sell_opened = pos.get("opened_at") or pos.get("created_at", "")
+                if _sell_opened:
+                    try:
+                        _ot = datetime.fromisoformat(_sell_opened.replace("Z", "+00:00"))
+                        if _ot.tzinfo is None:
+                            _ot = _ot.replace(tzinfo=timezone.utc)
+                        _sell_hold_minutes = (datetime.now(timezone.utc) - _ot).total_seconds() / 60
+                    except Exception:
+                        pass
                 ll.evaluate_trade_close(
                     token_ticker=pos["coin_id"],
                     exit_price=current_price,
                     pnl_pct=pnl_pct,
+                    hold_duration_minutes=_sell_hold_minutes,
+                    exit_reason="manual",
                 )
             except Exception:
                 pass
@@ -1054,12 +1067,11 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
         risk_profile = user_prefs.risk_profile
     except Exception:
         confidence_threshold = 5.0
-        max_daily = 100
+        max_daily = 999_999
         risk_profile = "aggressive"
 
-    # Aggressive mode: remove daily trade cap entirely (let position limits & balance guard)
-    if settings.get("risk_level") == "aggressive":
-        max_daily = 999_999
+    # Always remove daily trade cap — let position limits & balance guard instead
+    max_daily = 999_999
 
     # Trade settings risk_level overrides user prefs (auto-trader sets this to "aggressive")
     risk_profile = settings.get("risk_level", risk_profile)
@@ -1133,6 +1145,18 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
             }).eq("id", pos["id"]).execute()
             results["positions_updated"] += 1
 
+            # Compute hold duration for learning loop metadata
+            _opened_at_str = pos.get("opened_at") or pos.get("created_at", "")
+            _hold_minutes = 0.0
+            if _opened_at_str:
+                try:
+                    _opened_at = datetime.fromisoformat(_opened_at_str.replace("Z", "+00:00"))
+                    if _opened_at.tzinfo is None:
+                        _opened_at = _opened_at.replace(tzinfo=timezone.utc)
+                    _hold_minutes = (datetime.now(timezone.utc) - _opened_at).total_seconds() / 60
+                except Exception:
+                    pass
+
             # Check stop-loss (works for both LONG and SHORT)
             if pnl_pct <= -settings["stop_loss_pct"]:
                 side_verb = "covered" if side == "short" else "sold"
@@ -1148,7 +1172,7 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
                     )
                     ll = _get_learning_loop()
                     if ll:
-                        try: ll.evaluate_trade_close(pos["coin_id"], current_price, pnl_pct)
+                        try: ll.evaluate_trade_close(pos["coin_id"], current_price, pnl_pct, hold_duration_minutes=_hold_minutes, exit_reason="stop_loss")
                         except Exception: pass
                 continue
 
@@ -1167,11 +1191,11 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
                     )
                     ll = _get_learning_loop()
                     if ll:
-                        try: ll.evaluate_trade_close(pos["coin_id"], current_price, pnl_pct)
+                        try: ll.evaluate_trade_close(pos["coin_id"], current_price, pnl_pct, hold_duration_minutes=_hold_minutes, exit_reason="take_profit")
                         except Exception: pass
                 continue
 
-            # Check auto-exit (max hold time = 1 hour) + 5-minute SMS warning
+            # Check auto-exit (max hold time) + SMS warning
             opened_at_str = pos.get("opened_at") or pos.get("created_at", "")
             if opened_at_str:
                 try:
@@ -1218,7 +1242,7 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
                             )
                             ll = _get_learning_loop()
                             if ll:
-                                try: ll.evaluate_trade_close(pos["coin_id"], current_price, pnl_pct)
+                                try: ll.evaluate_trade_close(pos["coin_id"], current_price, pnl_pct, hold_duration_minutes=seconds_held / 60, exit_reason="auto_exit")
                                 except Exception: pass
                         continue
                 except Exception:
@@ -1232,16 +1256,12 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
     balance = _get_wallet_balance(user_id)
     open_positions = get_open_positions(user_id)
 
-    # Check daily trade count limit
-    today_start = datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00+00:00")
-    today_orders = sb.table("trade_orders").select("id").eq("user_id", user_id).gte("created_at", today_start).execute()
-    trades_today = len(today_orders.data) if today_orders.data else 0
-
+    # Daily trade cap removed — unlimited trades (position limits & balance guard)
     logger.info(
-        "Trade check — trades_today: %d | max_daily: %d | balance: %s | open: %d/%d",
-        trades_today, max_daily, f"${balance:,.0f}", len(open_positions), MAX_PORTFOLIO_SLOTS,
+        "Trade check — balance: %s | open: %d/%d",
+        f"${balance:,.0f}", len(open_positions), MAX_PORTFOLIO_SLOTS,
     )
-    if trades_today < max_daily:
+    if True:
         opportunities = await research_opportunities(cg_collector, dex_collector, gemini_client)
 
         # Filter stablecoins, invalid prices, and low market cap
@@ -1385,19 +1405,16 @@ async def auto_trade_cycle(user_id, cg_collector, dex_collector, gemini_client=N
                 score = opp["score"]
 
                 # ── SCORE-TIERED RISK PARAMETERS ──
-                # High conviction = wider stops + more capital
-                # Low conviction = tighter stops + less capital (or skip)
-                # ── SCORE-TIERED RISK PARAMETERS ──
-                # Calibrated for 24h holds: crypto typically moves 2-8% in a day.
-                # Tighter stops = cut losses fast. Realistic targets = lock in gains.
+                # Calibrated for 2h holds (training mode): fast rotation, tight SL/TP.
+                # Goal: maximize learning data points with real trade outcomes.
                 if score >= 80:
-                    effective_sl = max(base_sl, 4.0); effective_tp = 6.0; max_alloc_pct = 10.0
+                    effective_sl = max(base_sl, 2.0); effective_tp = 3.0; max_alloc_pct = 10.0
                 elif score >= 60:
-                    effective_sl = max(base_sl, 3.0); effective_tp = 5.0; max_alloc_pct = 7.0
+                    effective_sl = max(base_sl, 1.8); effective_tp = 2.5; max_alloc_pct = 7.0
                 elif score >= 45:
-                    effective_sl = max(base_sl, 2.5); effective_tp = 4.0; max_alloc_pct = 5.0
+                    effective_sl = max(base_sl, 1.5); effective_tp = 2.0; max_alloc_pct = 5.0
                 elif score >= 35:
-                    effective_sl = max(base_sl, 2.0); effective_tp = 3.5; max_alloc_pct = 3.0
+                    effective_sl = max(base_sl, 1.5); effective_tp = 2.0; max_alloc_pct = 3.0
                 else:
                     logger.info("Skipping %s (score %d < 35) — below quality floor", opp["symbol"], score)
                     continue  # Quality floor: don't trade on very weak signals
@@ -1759,24 +1776,24 @@ def ensure_system_wallet():
                 "max_trade_pct": 20.0,
                 "daily_loss_limit_pct": 10.0,
                 "max_open_positions": 15,
-                "stop_loss_pct": 5.0,
-                "take_profit_pct": 10.0,
+                "stop_loss_pct": 1.5,
+                "take_profit_pct": 2.0,
                 "cooldown_minutes": 0,
                 "min_market_cap": 1000000,
                 "risk_level": "aggressive",
             }).execute()
-            logger.info("Created system auto-trader settings (auto_trade=ON, aggressive, SL=5%%, TP=10%%, 15 positions)")
+            logger.info("Created system auto-trader settings (auto_trade=ON, aggressive, SL=1.5%%, TP=2%%, 15 positions, 2h hold)")
         else:
             # Always force-update key settings on startup
             sb.table("trade_settings").update({
                 "auto_trade_enabled": True,
                 "risk_level": "aggressive",
-                "stop_loss_pct": 5.0,
-                "take_profit_pct": 10.0,
+                "stop_loss_pct": 1.5,
+                "take_profit_pct": 2.0,
                 "max_open_positions": 15,
                 "cooldown_minutes": 0,
             }).eq("user_id", SYSTEM_USER_ID).execute()
-            logger.info("Updated system auto-trader: SL=5%%, TP=10%%, max_positions=15, cooldown=0")
+            logger.info("Updated system auto-trader: SL=1.5%%, TP=2%%, max_positions=15, 2h hold, cooldown=0")
 
         # Ensure trade_stats row exists
         stats = sb.table("trade_stats").select("*").eq("user_id", SYSTEM_USER_ID).execute()

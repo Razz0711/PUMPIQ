@@ -310,7 +310,10 @@ CREATE TABLE IF NOT EXISTS ll_predictions (
     -- Metadata
     created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     evaluated_24h_at      TIMESTAMPTZ DEFAULT NULL,
-    evaluated_7d_at       TIMESTAMPTZ DEFAULT NULL
+    evaluated_7d_at       TIMESTAMPTZ DEFAULT NULL,
+    -- Trade close metadata (for learning quality)
+    hold_duration_minutes DOUBLE PRECISION DEFAULT NULL,
+    exit_reason           TEXT DEFAULT NULL
 );
 
 CREATE TABLE IF NOT EXISTS ll_strategy_adjustments (

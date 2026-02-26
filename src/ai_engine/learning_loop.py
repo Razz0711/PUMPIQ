@@ -397,11 +397,19 @@ class LearningLoop:
         return results
 
     def evaluate_trade_close(
-        self, token_ticker: str, exit_price: float, pnl_pct: float
+        self, token_ticker: str, exit_price: float, pnl_pct: float,
+        hold_duration_minutes: float = 0, exit_reason: str = "unknown",
     ) -> int:
         """
         Immediately evaluate open predictions for a token when a trade closes.
         Called by the trading engine on every sell. Returns number of records updated.
+
+        Args:
+            token_ticker: The coin_id / ticker of the token
+            exit_price: Price at which the position was closed
+            pnl_pct: Realized P&L percentage
+            hold_duration_minutes: How long the position was held (minutes)
+            exit_reason: What triggered the exit — "stop_loss", "take_profit", "auto_exit", or "manual"
         """
         sb = _sb()
         updated = 0
@@ -431,19 +439,26 @@ class LearningLoop:
                 else:
                     correct = abs(pnl_pct) < 2
 
-                sb.table("ll_predictions").update({
+                update_data = {
                     "actual_price_24h": exit_price,
                     "direction_correct_24h": correct,
                     "pnl_pct_24h": round(pnl_pct, 2),
                     "evaluated_24h_at": datetime.now(timezone.utc).isoformat(),
-                }).eq("prediction_id", pred["prediction_id"]).execute()
+                    "hold_duration_minutes": round(hold_duration_minutes, 1),
+                    "exit_reason": exit_reason,
+                }
+
+                sb.table("ll_predictions").update(update_data).eq(
+                    "prediction_id", pred["prediction_id"]
+                ).execute()
                 updated += 1
 
             if updated:
                 logger.info(
                     "Learning loop: evaluated %d predictions for %s "
-                    "(exit=$%.4f, P&L=%.2f%%)",
+                    "(exit=$%.4f, P&L=%.2f%%, held=%.0fmin, reason=%s)",
                     updated, token_ticker, exit_price, pnl_pct,
+                    hold_duration_minutes, exit_reason,
                 )
         except Exception as e:
             logger.warning("evaluate_trade_close failed: %s", e)
