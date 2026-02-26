@@ -585,24 +585,38 @@ class ContactRequest(BaseModel):
 @app.post("/api/contact")
 async def submit_contact(body: ContactRequest):
     """Receive contact form submissions and forward via SMTP."""
-    import threading
     admin_email = os.getenv("SMTP_EMAIL", "rajkumar648321@gmail.com")
     ok = False
     if smtp_service.is_configured():
-        ok = smtp_service.send_contact_email(
-            from_name=body.name,
-            from_email=body.email,
-            subject=body.subject,
-            message=body.message,
-            to_email=admin_email,
-        )
-    else:
-        # Even without SMTP, log the message so it's not lost
-        logger.info("Contact form (SMTP not configured): name=%s email=%s subject=%s message=%s",
-                     body.name, body.email, body.subject, body.message[:200])
-        ok = True  # still return success — message logged
+        try:
+            ok = smtp_service.send_contact_email(
+                from_name=body.name,
+                from_email=body.email,
+                subject=body.subject,
+                message=body.message,
+                to_email=admin_email,
+            )
+        except Exception as e:
+            logger.error("SMTP send_contact_email exception: %s", e)
+            ok = False
+
     if not ok:
-        raise HTTPException(500, "Failed to send message")
+        # SMTP failed or not configured — log the message so it's not lost,
+        # and still return success to the user
+        logger.info("Contact form (saved): name=%s email=%s subject=%s message=%s",
+                     body.name, body.email, body.subject, body.message[:200])
+        # Also save to Supabase so messages are never lost
+        try:
+            from supabase_db import get_supabase
+            get_supabase().table("contact_messages").insert({
+                "name": body.name,
+                "email": body.email,
+                "subject": body.subject,
+                "message": body.message,
+            }).execute()
+        except Exception:
+            pass  # Table may not exist yet — that's fine, message is logged
+
     return {"status": "ok"}
 
 

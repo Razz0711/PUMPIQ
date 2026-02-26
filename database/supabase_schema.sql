@@ -277,6 +277,18 @@ END;
 $$ LANGUAGE plpgsql;
 
 
+-- ─── CONTACT MESSAGES (fallback when SMTP fails) ────────────────────────────
+
+CREATE TABLE IF NOT EXISTS contact_messages (
+    id         BIGSERIAL PRIMARY KEY,
+    name       TEXT NOT NULL,
+    email      TEXT NOT NULL,
+    subject    TEXT NOT NULL DEFAULT 'General Inquiry',
+    message    TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+
 -- ─── LEARNING LOOP TABLES (learning_loop.py) ────────────────────────────────
 -- Persistent storage for AI prediction tracking, replacing ephemeral SQLite.
 
